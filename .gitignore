@@ -1,0 +1,33 @@
+# ClawHalla .gitignore
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Volumes (keep structure, ignore data)
+volumes/openclaw/*
+!volumes/openclaw/.gitkeep
+
+# Node
+node_modules/
+.pnpm-store/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Build artifacts
+dist/
+build/
