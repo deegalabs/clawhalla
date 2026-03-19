@@ -1,0 +1,31 @@
+# ClawHalla -- Pre-configured OpenClaw container
+# User: clawdbot | Node 24 | pnpm | Homebrew | OpenClaw CLI
+#
+# Security: No ports exposed by default. Volume mounted locally only.
+# If exposing the gateway, bind to 127.0.0.1:PORT only.
+#
+# Usage (from clawhalla directory):
+#   docker compose up -d --build
+#   docker compose exec clawhalla bash
+#   # As clawdbot: openclaw onboard
+
+services:
+  clawhalla:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clawhalla:local
+    container_name: clawhalla
+    env_file:
+      - .env
+    volumes:
+      - ./volumes/openclaw:/home/clawdbot/.openclaw
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "source ~/.nvm/nvm.sh && openclaw --version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
