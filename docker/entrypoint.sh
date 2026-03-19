@@ -2,20 +2,19 @@
 # ClawHalla Entrypoint
 # Creates required directories and fixes permissions before starting.
 
-set -e
+set -euo pipefail
 
 OPENCLAW_DIR="/home/clawdbot/.openclaw"
+
+# The mounted volume may be created as root (or with wrong ownership).
+# Ensure base directory exists and is owned by the runtime user before
+# attempting to create subfolders.
+sudo mkdir -p "${OPENCLAW_DIR}"
+sudo chown -R clawdbot:clawdbot "${OPENCLAW_DIR}"
 
 # Create OpenClaw directory structure if not exists
 mkdir -p "${OPENCLAW_DIR}/identity"
 mkdir -p "${OPENCLAW_DIR}/agents/main/agent"
 mkdir -p "${OPENCLAW_DIR}/agents/main/sessions"
 
-# Fix ownership (in case volume was created by root)
-# Run as non-root, so use sudo only when needed.
-if [ "$(stat -c '%U' "${OPENCLAW_DIR}")" != "clawdbot" ]; then
-  sudo chown -R clawdbot:clawdbot "${OPENCLAW_DIR}"
-fi
-
-# Execute the main command
 exec "$@"

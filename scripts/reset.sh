@@ -6,39 +6,49 @@
 
 set -euo pipefail
 
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
+ok() { echo -e "${GREEN}[OK]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+warn() { echo -e "${RED}[WARNING]${NC} $1"; }
+
 cd "$(dirname "$0")/.."
 
-echo "WARNING: This will DELETE all ClawHalla data including:"
-echo "  - Agent configurations"
-echo "  - Session history"
-echo "  - Identity files"
+warn "WARNING: This will DELETE all ClawHalla data including:"
+warn "  - Agent configurations"
+warn "  - Session history"
+warn "  - Identity files"
 echo ""
 read -r -p "Are you sure you want to continue? (y/N): " REPLY
 
 echo ""
 if [[ "${REPLY}" != "y" && "${REPLY}" != "Y" ]]; then
-  echo "Reset cancelled."
+  info "Reset cancelled."
   exit 0
 fi
 
-echo "Stopping containers..."
+info "Stopping containers..."
 docker compose down -v 2>/dev/null || true
 
-echo "Wiping volume data..."
+warn "Wiping volume data..."
 rm -rf ./volumes/openclaw/*
 touch ./volumes/openclaw/.gitkeep
 
-echo "Rebuilding and starting..."
+info "Rebuilding and starting..."
 docker compose up -d --build
 
 sleep 5
 
 if docker compose ps --format '{{.Name}} {{.Status}}' | grep -q "clawhalla"; then
-  echo "ClawHalla has been reset and is running!"
+  ok "ClawHalla has been reset and is running!"
   echo ""
-  echo "Run: docker compose exec clawhalla bash"
-  echo "Then: openclaw onboard"
+  info "Run: docker compose exec clawhalla bash"
+  info "Then: openclaw onboard"
 else
-  echo "ERROR: Container failed to start after reset. Check logs." >&2
-  exit 1
+  error "ERROR: Container failed to start after reset. Check logs."
 fi

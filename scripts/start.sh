@@ -6,33 +6,42 @@
 
 set -euo pipefail
 
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
+ok() { echo -e "${GREEN}[OK]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+warn() { echo -e "${RED}[WARNING]${NC} $1"; }
+
 # Navigate to project root
 cd "$(dirname "$0")/.."
 
 # Check for .env file
 if [ ! -f ".env" ]; then
-  echo "ERROR: .env file not found. Copy .env.example to .env and configure it." >&2
-  exit 1
+  error "ERROR: .env file not found. Copy .env.example to .env and configure it."
 fi
 
-echo "Building and starting ClawHalla..."
+info "Building and starting ClawHalla..."
 docker compose up -d --build
 
-echo "Waiting for container to be ready..."
+info "Waiting for container to be ready..."
 sleep 5
 
 if docker compose ps --format '{{.Name}} {{.Status}}' | grep -q "clawhalla"; then
-  echo "ClawHalla is running!"
+  ok "ClawHalla is running!"
   echo ""
-  echo "Next steps:"
-  echo "  1) Enter the container:  docker compose exec clawhalla bash"
-  echo "  2) Run onboard wizard:   openclaw onboard"
+  info "Next steps:"
+  info "  1) Enter the container:  docker compose exec clawhalla bash"
+  info "  2) Run onboard wizard:   openclaw onboard"
   echo ""
-  echo "Useful commands:"
-  echo "  - Stop:    ./scripts/stop.sh"
-  echo "  - Reset:   ./scripts/reset.sh"
-  echo "  - Logs:    docker compose logs -f clawhalla"
+  info "Useful commands:"
+  info "  - Stop:    ./scripts/stop.sh"
+  info "  - Reset:   ./scripts/reset.sh"
+  info "  - Logs:    docker compose logs -f clawhalla"
 else
-  echo "ERROR: Container failed to start. Check: docker compose logs clawhalla" >&2
-  exit 1
+  error "ERROR: Container failed to start. Check: docker compose logs clawhalla"
 fi
