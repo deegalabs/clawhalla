@@ -14,6 +14,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        CLAWDBOT_PASSWORD: ${CLAWDBOT_PASSWORD:-clawdbot}
     image: clawhalla:local
     container_name: clawhalla
     env_file:

@@ -22,6 +22,29 @@ Bad:
 
 - Hardcoding API keys in the Dockerfile or scripts
 
+## Container User Security
+
+The container runs as user `clawdbot`.
+
+For development convenience, the Docker image sets a password for `clawdbot`
+via the `CLAWDBOT_PASSWORD` build argument.
+
+### For Production
+
+Set `CLAWDBOT_PASSWORD` in your `.env` and rebuild the container:
+
+```bash
+CLAWDBOT_PASSWORD=your-secure-random-password
+
+docker compose down
+docker compose up -d --build
+```
+
+### Recommendation
+
+If you only access the container via `docker exec` (no SSH), the password
+is rarely needed. Still, set a strong value to avoid accidental credential reuse.
+
 ## Secret input modes
 
 When running onboarding in automation, prefer storing keys as references (where supported).

@@ -20,9 +20,10 @@ RUN apt-get install -y \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Create clawdbot user (password: clawdbot@2026)
+# Create clawdbot user (password set via build arg)
+ARG CLAWDBOT_PASSWORD=clawdbot
 RUN adduser --gecos '' --disabled-password clawdbot \
-    && echo 'clawdbot:clawdbot@2026' | chpasswd
+    && echo "clawdbot:${CLAWDBOT_PASSWORD}" | chpasswd
 
 # Sudo access for clawdbot (NOPASSWD for non-interactive scripts)
 RUN echo 'clawdbot ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/clawdbot \
