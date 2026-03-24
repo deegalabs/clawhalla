@@ -1,33 +1,32 @@
-# ClawHalla -- Pre-configured OpenClaw container
-# User: clawdbot | Node 24 | pnpm | Homebrew | OpenClaw CLI
-#
-# Security: No ports exposed by default. Volume mounted locally only.
-# If exposing the gateway, bind to 127.0.0.1:PORT only.
-#
-# Usage (from clawhalla directory):
-#   docker compose up -d --build
-#   docker compose exec clawhalla bash
-#   # As clawdbot: openclaw onboard
+version: "3.8"
 
 services:
   clawhalla:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        CLAWDBOT_PASSWORD: ${CLAWDBOT_PASSWORD:-clawdbot}
-    image: clawhalla:local
+    build: .
     container_name: clawhalla
-    env_file:
-      - .env
+    hostname: clawhalla
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - "18789:18789"
+      - "3333:3000"
     volumes:
       - ./volumes/openclaw:/home/clawdbot/.openclaw
-    tty: true
-    stdin_open: true
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "bash", "-c", "source ~/.nvm/nvm.sh && openclaw --version"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    env_file:
+      - .env
+
+  # Uncomment below to run Mission Control as separate container
+  # mission-control:
+  #   build:
+  #     context: ./apps/mission-control
+  #     dockerfile: Dockerfile
+  #   container_name: clawhalla-mc
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3333:3000"
+  #   environment:
+  #     - GATEWAY_URL=http://clawhalla:18789
+  #     - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+  #   depends_on:
+  #     - clawhalla

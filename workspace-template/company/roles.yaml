@@ -1,0 +1,83 @@
+# Authority rules per tier
+# Used by: conversation routing, decision gates, task assignment
+
+authority:
+  platform_controller:
+    tier: 0
+    can:
+      - manage_runtime
+      - register_agents
+      - initialize_projects
+      - monitor_system
+      - global_config
+      - memory_maintenance
+    cannot:
+      - execute_project_tasks
+      - write_code
+      - create_content
+
+  executive:
+    tier: 1
+    can:
+      - define_architecture
+      - approve_tech_decisions
+      - create_epics
+      - delegate_to_management
+      - veto_decisions
+    cannot:
+      - execute_tasks_directly
+      - deploy_without_qa
+
+  management:
+    tier: 2
+    can:
+      - create_stories
+      - assign_tasks
+      - review_work
+      - escalate_to_executive
+      - approve_task_completion
+    cannot:
+      - approve_architecture
+      - change_org_structure
+      - create_epics
+
+  execution:
+    tier: 3
+    can:
+      - execute_tasks
+      - update_board
+      - communicate_with_peers
+      - request_review
+      - report_blockers
+    cannot:
+      - create_epics
+      - assign_tasks_to_others
+      - approve_deploys
+      - modify_architecture
+
+gates:
+  ceo_gate:
+    approver: human
+    channel: telegram
+    timeout: 24h
+    applies_to:
+      - deploy
+      - external_communication
+      - budget
+      - strategy
+      - architecture_approval
+
+  hierarchical_gate:
+    approver: next_tier_up
+    auto_approve_after: 4h
+    applies_to:
+      - code_review
+      - task_completion
+      - story_acceptance
+
+  autonomous:
+    approver: self
+    applies_to:
+      - variable_naming
+      - local_refactor
+      - research_direction

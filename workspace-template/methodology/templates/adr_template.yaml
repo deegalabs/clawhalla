@@ -1,0 +1,10 @@
+adr:
+  id: "ADR-{number}"
+  title: ""
+  status: proposed
+  date: ""
+  deciders: []
+  context: ""
+  decision: ""
+  consequences: ""
+  alternatives_considered: []

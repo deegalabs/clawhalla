@@ -1,0 +1,11 @@
+task:
+  id: "task_{number}"
+  story: ""
+  title: ""
+  status: ready
+  assigned_to: null
+  priority: medium
+  required_skill: null
+  estimated_hours: 0
+  created_by: ""
+  created_at: ""

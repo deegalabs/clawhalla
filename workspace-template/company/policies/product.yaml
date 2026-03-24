@@ -1,0 +1,10 @@
+product:
+  methodology: ai_agil
+  prioritization:
+    method: weighted_scoring
+    factors: [impact, effort, urgency, alignment]
+  approvals:
+    epic_creation: ceo_gate
+    story_creation: management
+    task_creation: management
+    deploy: ceo_gate

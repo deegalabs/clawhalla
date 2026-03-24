@@ -1,0 +1,32 @@
+# ClawHalla Organization Structure
+# Copy this file to org_structure.yaml and customize for your team.
+
+org:
+  name: "My Organization"
+  owner: "Your Name"
+  owner_role: ceo
+
+  tiers:
+    0: platform
+    1: executive
+    2: management
+    3: execution
+
+  agents:
+    claw:
+      tier: 0
+      role: system_controller
+      model: claude-opus-4-5
+      manages: []
+      note: "Platform controller. Configure your agents below."
+
+    # Add your agents here following this pattern:
+    # agent_name:
+    #   tier: 1-3
+    #   role: your_role
+    #   model: claude-sonnet-4-5
+    #   manages: [agent1, agent2]
+    #   reports_to: parent_agent
+    #   squad: your_squad
+
+  squads: {}

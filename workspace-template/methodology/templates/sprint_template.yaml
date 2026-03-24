@@ -1,0 +1,11 @@
+sprint:
+  id: "sprint_{number}"
+  name: ""
+  project: ""
+  start: ""
+  end: ""
+  goal: ""
+  squad: ""
+  stories: []
+  velocity_target: 0
+  status: planning

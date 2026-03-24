@@ -1,0 +1,14 @@
+security:
+  audit_required_for:
+    - smart_contracts
+    - authentication
+    - payment_processing
+  auditor: tyr
+  findings_severity:
+    critical: "Block deploy. Fix immediately."
+    high: "Fix before next sprint."
+    medium: "Schedule fix."
+    low: "Track in backlog."
+  secrets:
+    storage: env_vars
+    never_in_code: true

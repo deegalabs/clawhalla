@@ -31,3 +31,14 @@ pnpm-debug.log*
 # Build artifacts
 dist/
 build/
+
+# Mission Control
+apps/mission-control/node_modules/
+apps/mission-control/.next/
+apps/mission-control/.env
+apps/mission-control/data/
+apps/mission-control/*.db
+
+# Workspace data (user-specific, never commit)
+volumes/
+workspace-template/company/org_structure.yaml

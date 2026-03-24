@@ -1,0 +1,10 @@
+story:
+  id: "story_{number}"
+  epic: ""
+  title: "As a [role], I want [feature] so that [benefit]"
+  status: backlog
+  points: 0
+  created_by: ""
+  acceptance_criteria: []
+  tasks: []
+  created_at: ""

@@ -1,0 +1,17 @@
+engineering:
+  code_standards:
+    language: english
+    commits: conventional
+    review_required: true
+    reviewer_min_tier: 2
+    tests_required: true
+  branching:
+    strategy: github_flow
+    main_branch: main
+  deploy:
+    requires_gate: ceo_gate
+    requires_qa: true
+  context_limits:
+    alert_at_percent: 40
+    hard_stop_percent: 75
+    max_retries: 3

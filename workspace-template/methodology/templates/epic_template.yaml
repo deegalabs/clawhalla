@@ -1,0 +1,11 @@
+epic:
+  id: "epic_{number}"
+  title: ""
+  description: ""
+  status: draft
+  created_by: ""
+  approved_by: ""
+  priority: medium
+  project: ""
+  acceptance_criteria: []
+  created_at: ""
