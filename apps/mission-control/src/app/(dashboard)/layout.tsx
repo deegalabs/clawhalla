@@ -4,20 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
-const navLinks = [
-  { href: '/', label: 'Dashboard', icon: DashboardIcon },
-  { href: '/tasks', label: 'Tasks', icon: TasksIcon },
-  { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
-  { href: '/projects', label: 'Projects', icon: ProjectsIcon },
-  { href: '/memory', label: 'Memory', icon: MemoryIcon },
-  { href: '/docs', label: 'Docs', icon: DocsIcon },
-  { href: '/team', label: 'Team', icon: TeamIcon },
-  { href: '/content', label: 'Content', icon: ContentIcon },
-  { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
-  { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
-  { href: '/settings', label: 'Settings', icon: SettingsIcon },
-];
-
 // Minimal SVG icons (16x16)
 function DashboardIcon({ className }: { className?: string }) {
   return (
@@ -132,6 +118,20 @@ function SearchIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
+const navLinks = [
+  { href: '/', label: 'Dashboard', icon: DashboardIcon },
+  { href: '/tasks', label: 'Tasks', icon: TasksIcon },
+  { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
+  { href: '/projects', label: 'Projects', icon: ProjectsIcon },
+  { href: '/memory', label: 'Memory', icon: MemoryIcon },
+  { href: '/docs', label: 'Docs', icon: DocsIcon },
+  { href: '/team', label: 'Team', icon: TeamIcon },
+  { href: '/content', label: 'Content', icon: ContentIcon },
+  { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
+  { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
+  { href: '/settings', label: 'Settings', icon: SettingsIcon },
+];
 
 function GatewayHealthIndicator() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
