@@ -81,6 +81,18 @@ export const projects = sqliteTable('projects', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
 });
 
+export const costEvents = sqliteTable('cost_events', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull(),
+  model: text('model').notNull(),
+  action: text('action').notNull(), // session, task, search, api_call
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  estimatedCost: integer('estimated_cost_cents').notNull().default(0), // in cents
+  taskId: text('task_id'),
+  timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
+});
+
 export const activities = sqliteTable('activities', {
   id: text('id').primaryKey(),
   agentId: text('agent_id').notNull(),
