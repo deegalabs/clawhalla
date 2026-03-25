@@ -241,9 +241,38 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {/* Next Up */}
+      {crons.filter(c => c.state?.nextRunAtMs).length > 0 && (
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Next Up</h3>
+          <div className="space-y-2">
+            {crons
+              .filter(c => c.state?.nextRunAtMs)
+              .sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0))
+              .slice(0, 5)
+              .map(cron => {
+                const nextRun = cron.state?.nextRunAtMs ? new Date(cron.state.nextRunAtMs) : null;
+                const diffMs = nextRun ? nextRun.getTime() - Date.now() : 0;
+                const diffMins = Math.max(0, Math.floor(diffMs / 60000));
+                const timeLabel = diffMins < 60 ? `in ${diffMins}m` : `in ${Math.floor(diffMins / 60)}h ${diffMins % 60}m`;
+
+                return (
+                  <div key={cron.id} className="flex items-center justify-between px-3 py-2 bg-[#0a0a0b] rounded">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-300">{cron.name}</span>
+                      <span className="text-[10px] text-gray-600 capitalize">@{cron.agentId}</span>
+                    </div>
+                    <span className="text-xs text-amber-400">{timeLabel}</span>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {/* Cron List */}
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-        <h3 className="text-lg font-semibold text-gray-100 mb-4">All Scheduled Jobs ({crons.length})</h3>
+      <div className="bg-[#111113] rounded-lg p-5 border border-[#1e1e21]">
+        <h3 className="text-sm font-semibold text-gray-200 mb-4">All Scheduled Jobs ({crons.length})</h3>
         <div className="space-y-2">
           {crons.map(cron => {
             const colors = squadColors[cron.agentId] || squadColors.default;
