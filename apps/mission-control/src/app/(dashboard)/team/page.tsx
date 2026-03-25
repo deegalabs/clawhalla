@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface OrgAgent {
   id: string;
@@ -110,13 +110,170 @@ function AgentCard({ agent }: { agent: Agent }) {
   );
 }
 
+const modelOptions = [
+  { value: 'claude-sonnet-4-5', label: 'Sonnet 4.5 (balanced)' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (strategic)' },
+  { value: 'claude-haiku-4-5', label: 'Haiku 4.5 (fast/cheap)' },
+  { value: 'claude-opus-4-6', label: 'Opus 4.6 (max reasoning)' },
+];
+
+const squadOptions = [
+  { value: '', label: 'None' },
+  { value: 'dev_squad', label: 'Dev Squad' },
+  { value: 'blockchain_squad', label: 'Blockchain Squad' },
+  { value: 'clop_cabinet', label: 'Clop Cabinet' },
+  { value: 'product_squad', label: 'Product Squad' },
+];
+
+function CreateAgentForm({ onCreated }: { onCreated: () => void }) {
+  const [form, setForm] = useState({
+    id: '', name: '', role: '', model: 'claude-sonnet-4-5',
+    tier: 3, squad: '', reportsTo: '', emoji: '🤖',
+    skills: 'clawban', description: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const handleSubmit = async () => {
+    if (!form.id || !form.name || !form.role) {
+      setError('ID, name, and role are required');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch('/api/agents/factory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          squad: form.squad || null,
+          skills: form.skills.split(',').map(s => s.trim()).filter(Boolean),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSuccess(`Agent "${data.agent.name}" created successfully`);
+        setForm({ id: '', name: '', role: '', model: 'claude-sonnet-4-5', tier: 3, squad: '', reportsTo: '', emoji: '🤖', skills: 'clawban', description: '' });
+        onCreated();
+      } else {
+        setError(data.error || 'Failed to create agent');
+      }
+    } catch {
+      setError('Failed to create agent');
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-5 space-y-4">
+      <h3 className="text-sm font-semibold text-gray-200">New Agent</h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">ID</label>
+          <input
+            type="text" placeholder="agent_id"
+            value={form.id}
+            onChange={e => setForm({ ...form, id: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 font-mono focus:outline-none focus:border-amber-500"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Name</label>
+          <input
+            type="text" placeholder="Agent Name"
+            value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Role</label>
+          <input
+            type="text" placeholder="Senior Developer"
+            value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Emoji</label>
+          <input
+            type="text" placeholder="🤖"
+            value={form.emoji} onChange={e => setForm({ ...form, emoji: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Model</label>
+          <select value={form.model} onChange={e => setForm({ ...form, model: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+            {modelOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Tier</label>
+          <select value={form.tier} onChange={e => setForm({ ...form, tier: parseInt(e.target.value) })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+            <option value={1}>1 — Executive</option>
+            <option value={2}>2 — Management</option>
+            <option value={3}>3 — Execution</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Squad</label>
+          <select value={form.squad} onChange={e => setForm({ ...form, squad: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+            {squadOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-1">Reports to</label>
+          <input
+            type="text" placeholder="Manager agent id"
+            value={form.reportsTo} onChange={e => setForm({ ...form, reportsTo: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-[11px] text-gray-500 mb-1">Skills (comma-separated)</label>
+        <input
+          type="text" placeholder="clawban, coding-agent, github"
+          value={form.skills} onChange={e => setForm({ ...form, skills: e.target.value })}
+          className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+        />
+      </div>
+      <div>
+        <label className="block text-[11px] text-gray-500 mb-1">Description (optional)</label>
+        <textarea
+          placeholder="Brief description of what this agent does..."
+          value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
+          rows={2}
+          className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500 resize-none"
+        />
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {success && <p className="text-xs text-green-400">{success}</p>}
+      <button
+        onClick={handleSubmit} disabled={saving}
+        className="px-4 py-1.5 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-50"
+      >
+        {saving ? 'Creating...' : 'Create Agent'}
+      </button>
+    </div>
+  );
+}
+
 export default function TeamPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [squads, setSquads] = useState<OrgSquad[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
 
-  useEffect(() => {
-    async function fetchData() {
+  const fetchData = useCallback(async () => {
       try {
         // Fetch org structure and gateway sessions in parallel
         const [orgRes, sessRes] = await Promise.all([
@@ -164,12 +321,13 @@ export default function TeamPage() {
         // Silent fallback — show empty state
       }
       setLoading(false);
-    }
+  }, []);
 
+  useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
 
   const tier0 = agents.filter(a => a.tier === 0);
   const tier1 = agents.filter(a => a.tier === 1);
@@ -198,7 +356,13 @@ export default function TeamPage() {
           <h2 className="text-2xl font-bold text-gray-100">Meet the Team</h2>
           <p className="text-gray-400 mt-1">{agents.length} AI agents across {squads.length} squads</p>
         </div>
-        <div className="flex gap-4 text-sm">
+        <div className="flex gap-4 text-sm items-center">
+          <button
+            onClick={() => setShowCreate(!showCreate)}
+            className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400"
+          >
+            {showCreate ? 'Cancel' : '+ Create Agent'}
+          </button>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-green-500"></span>
             <span className="text-gray-400">{activeCount} active</span>
@@ -209,6 +373,9 @@ export default function TeamPage() {
           </div>
         </div>
       </div>
+
+      {/* Create Agent Form */}
+      {showCreate && <CreateAgentForm onCreated={fetchData} />}
 
       {/* Tier 0 - Platform */}
       {tier0.length > 0 && (
