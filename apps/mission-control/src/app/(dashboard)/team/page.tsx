@@ -65,12 +65,13 @@ const statusColors = {
   offline: { bg: 'bg-gray-500/10', text: 'text-gray-500', dot: 'bg-gray-500' },
 };
 
-function getStatus(lastActivity?: number): 'active' | 'idle' | 'offline' {
-  if (!lastActivity) return 'offline';
+function getStatus(lastActivity: number | undefined, gatewayConnected: boolean): 'active' | 'idle' | 'offline' {
+  if (!gatewayConnected) return 'offline';
+  if (!lastActivity) return 'idle';
   const diff = Date.now() - lastActivity;
   if (diff < 2 * 60 * 1000) return 'active';
   if (diff < 30 * 60 * 1000) return 'idle';
-  return 'offline';
+  return 'idle'; // Changed from 'offline' — if gateway is connected, agents are idle not offline
 }
 
 function timeAgo(ms?: number): string {
@@ -148,7 +149,7 @@ export default function TeamPage() {
             id,
             name: id.charAt(0).toUpperCase() + id.slice(1),
             ...meta,
-            status: getStatus(session?.lastActivity),
+            status: getStatus(session?.lastActivity, data.ok),
             lastActivity: session?.lastActivity,
             liveModel: session?.model,
           };

@@ -10,6 +10,8 @@ interface Task {
   priority: string;
   assignedTo?: string;
   createdAt: string;
+  source?: 'mc' | 'workspace';
+  story?: string;
 }
 
 const columns = [
@@ -32,9 +34,31 @@ export default function TasksPage() {
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
 
   useEffect(() => {
-    fetch('/api/tasks')
-      .then((res) => res.json())
-      .then((data) => setTasks(data))
+    Promise.all([
+      fetch('/api/tasks').then(r => r.json()),
+      fetch('/api/board/sync?project=clawhalla').then(r => r.json())
+    ])
+      .then(([mcTasks, yamlData]) => {
+        const mcTasksNormalized = mcTasks.map((t: Task) => ({ ...t, source: 'mc' }));
+        const yamlTasks = (yamlData.tasks || []).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          status: t.status || 'backlog',
+          assignedTo: t.assigned_to,
+          priority: t.priority || 'medium',
+          createdAt: t.created_at || new Date().toISOString(),
+          source: 'workspace',
+          story: t.story,
+        }));
+        
+        // Merge (workspace tasks override MC if same ID)
+        const allTasks = [...yamlTasks, ...mcTasksNormalized.filter(
+          (mt: Task) => !yamlTasks.find((yt: Task) => yt.id === mt.id)
+        )];
+        
+        setTasks(allTasks);
+      })
       .catch(console.error);
   }, []);
 
@@ -91,7 +115,12 @@ export default function TasksPage() {
                     key={task.id}
                     className={`bg-gray-800 rounded-lg p-4 border-l-4 ${priorityColors[task.priority as keyof typeof priorityColors]} cursor-pointer hover:bg-gray-750 transition-colors`}
                   >
-                    <div className="font-semibold text-gray-100 mb-2">{task.title}</div>
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="font-semibold text-gray-100">{task.title}</div>
+                      <span className={`text-xs px-2 py-0.5 rounded ${task.source === 'workspace' ? 'bg-green-900 text-green-300' : 'bg-blue-900 text-blue-300'}`}>
+                        {task.source === 'workspace' ? 'YAML' : 'MC'}
+                      </span>
+                    </div>
                     {task.description && (
                       <p className="text-sm text-gray-400 mb-2 line-clamp-2">{task.description}</p>
                     )}

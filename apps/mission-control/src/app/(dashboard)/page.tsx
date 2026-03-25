@@ -37,13 +37,14 @@ function getDisplayName(id: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-function getStatus(lastActivity?: number): 'active' | 'idle' | 'offline' {
-  if (!lastActivity) return 'offline';
+function getStatus(lastActivity: number | undefined, gatewayConnected: boolean): 'active' | 'idle' | 'offline' {
+  if (!gatewayConnected) return 'offline';
+  if (!lastActivity) return 'idle';
   const now = Date.now();
   const diff = now - lastActivity;
-  if (diff < 2 * 60 * 1000) return 'active';
-  if (diff < 30 * 60 * 1000) return 'idle';
-  return 'offline';
+  if (diff < 2 * 60 * 1000) return 'active'; // <2 min
+  if (diff < 30 * 60 * 1000) return 'idle'; // <30 min
+  return 'idle'; // Changed from 'offline' — if gateway is connected, agents are idle not offline
 }
 
 function timeAgo(ms: number): string {
@@ -97,7 +98,7 @@ export default function DashboardPage() {
               emoji: meta.emoji,
               role: meta.role,
               model: s.model || 'unknown',
-              status: getStatus(s.lastActivityMs || s.lastActivity),
+              status: getStatus(s.lastActivityMs || s.lastActivity, true),
               lastActivity: s.lastActivityMs || s.lastActivity,
             });
           }
