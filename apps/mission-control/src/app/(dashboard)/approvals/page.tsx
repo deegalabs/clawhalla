@@ -57,36 +57,6 @@ export default function ApprovalsPage() {
 
   useEffect(() => {
     fetchApprovals();
-    
-    // Seed sample data if empty
-    const seedData = async () => {
-      const res = await fetch('/api/approvals');
-      const data = await res.json();
-      if (data.pending?.length === 0 && data.history?.length === 0) {
-        await fetch('/api/approvals', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: 'Deploy Mission Control to production',
-            type: 'deploy',
-            requestedBy: 'thor',
-            context: 'Sprint 3 complete. All features tested locally. Ready for production deployment.',
-          }),
-        });
-        await fetch('/api/approvals', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: 'ADR-002: Heartbeat Integration Architecture',
-            type: 'architecture',
-            requestedBy: 'odin',
-            context: 'Defines how agents poll Mission Control for tasks during OpenClaw heartbeats.',
-          }),
-        });
-        fetchApprovals();
-      }
-    };
-    seedData();
   }, []);
 
   const handleDecision = async (id: string, decision: 'approved' | 'rejected') => {

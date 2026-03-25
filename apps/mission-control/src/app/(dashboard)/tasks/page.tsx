@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, DragEvent } from 'react';
 
 interface Task {
   id: string;
@@ -9,67 +9,85 @@ interface Task {
   status: string;
   priority: string;
   assignedTo?: string;
+  assigned_to?: string;
+  storyId?: string;
+  story_id?: string;
+  sprintId?: string;
+  sprint_id?: string;
+  notes?: string;
   createdAt: string;
-  source?: 'mc' | 'workspace';
-  story?: string;
+  created_at?: string;
+  completedAt?: string;
+  completed_at?: string;
+  source?: string;
 }
 
 const columns = [
-  { id: 'backlog', label: 'Backlog', color: 'gray' },
-  { id: 'in_progress', label: 'In Progress', color: 'blue' },
-  { id: 'review', label: 'Review', color: 'amber' },
-  { id: 'done', label: 'Done', color: 'green' }
+  { id: 'backlog', label: 'Backlog', color: 'border-t-gray-500', bgHover: 'bg-gray-500/5' },
+  { id: 'in_progress', label: 'In Progress', color: 'border-t-blue-500', bgHover: 'bg-blue-500/5' },
+  { id: 'review', label: 'Review', color: 'border-t-amber-500', bgHover: 'bg-amber-500/5' },
+  { id: 'done', label: 'Done', color: 'border-t-green-500', bgHover: 'bg-green-500/5' },
 ];
 
-const priorityColors = {
-  low: 'border-gray-600',
-  medium: 'border-blue-500',
-  high: 'border-amber-500',
-  critical: 'border-red-500'
+const priorityColors: Record<string, string> = {
+  low: 'border-l-gray-600',
+  medium: 'border-l-blue-500',
+  high: 'border-l-amber-500',
+  critical: 'border-l-red-500',
 };
+
+const priorityDots: Record<string, string> = {
+  low: 'bg-gray-500',
+  medium: 'bg-blue-500',
+  high: 'bg-amber-500',
+  critical: 'bg-red-500',
+};
+
+function normalizeTask(t: Task): Task {
+  return {
+    ...t,
+    assignedTo: t.assignedTo || t.assigned_to,
+    storyId: t.storyId || t.story_id,
+    sprintId: t.sprintId || t.sprint_id,
+    createdAt: t.createdAt || t.created_at || new Date().toISOString(),
+    completedAt: t.completedAt || t.completed_at,
+  };
+}
+
+function timeAgo(dateStr?: string): string {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
 
   const fetchTasks = useCallback(() => {
-    Promise.all([
-      fetch('/api/tasks').then(r => r.json()),
-      fetch('/api/board/sync?project=clawhalla').then(r => r.json())
-    ])
-      .then(([mcTasks, yamlData]) => {
-        const mcTasksNormalized = mcTasks.map((t: Task) => ({ ...t, source: 'mc' }));
-        const yamlTasks = (yamlData.tasks || []).map((t: any) => ({
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          status: t.status || 'backlog',
-          assignedTo: t.assigned_to,
-          priority: t.priority || 'medium',
-          createdAt: t.created_at || new Date().toISOString(),
-          source: 'workspace',
-          story: t.story,
-        }));
-
-        // Merge (workspace tasks override MC if same ID)
-        const allTasks = [...yamlTasks, ...mcTasksNormalized.filter(
-          (mt: Task) => !yamlTasks.find((yt: Task) => yt.id === mt.id)
-        )];
-
+    fetch('/api/board/sync?project=clawhalla')
+      .then(r => r.json())
+      .then(data => {
+        const allTasks = (data.tasks || []).map((t: Task) => normalizeTask(t));
         setTasks(allTasks);
       })
       .catch(console.error);
   }, []);
 
-  // Initial fetch + polling fallback
   useEffect(() => {
     fetchTasks();
     const interval = setInterval(fetchTasks, 30000);
     return () => clearInterval(interval);
   }, [fetchTasks]);
 
-  // SSE: auto-refresh when board files change
+  // SSE for real-time board updates
   useEffect(() => {
     let es: EventSource | null = null;
     try {
@@ -80,154 +98,211 @@ export default function TasksPage() {
           fetchTasks();
         }
       };
-    } catch {
-      // SSE not available
-    }
+    } catch { /* SSE not available */ }
     return () => { if (es) es.close(); };
   }, [fetchTasks]);
+
+  // Drag and drop handlers
+  const handleDragStart = (e: DragEvent, taskId: string) => {
+    e.dataTransfer.setData('text/plain', taskId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: DragEvent, columnId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(columnId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverColumn(null);
+  };
+
+  const handleDrop = (e: DragEvent, newStatus: string) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (taskId) {
+      handleStatusChange(taskId, newStatus);
+    }
+  };
+
+  const handleStatusChange = async (taskId: string, newStatus: string) => {
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+    } catch {
+      fetchTasks(); // Revert on error
+    }
+  };
 
   const handleCreateTask = async () => {
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTask)
+        body: JSON.stringify(newTask),
       });
-      const created = await res.json();
-      setTasks([...tasks, created]);
+      await res.json();
       setShowModal(false);
       setNewTask({ title: '', description: '', priority: 'medium', assignedTo: '' });
+      fetchTasks();
     } catch (error) {
       console.error('Failed to create task:', error);
     }
   };
 
-  const handleStatusChange = async (taskId: string, newStatus: string) => {
-    try {
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      setTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-    } catch (error) {
-      console.error('Failed to update task:', error);
-    }
-  };
+  // Stats
+  const backlogCount = tasks.filter(t => t.status === 'backlog').length;
+  const inProgressCount = tasks.filter(t => t.status === 'in_progress').length;
+  const reviewCount = tasks.filter(t => t.status === 'review').length;
+  const doneCount = tasks.filter(t => t.status === 'done').length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[11px] text-gray-500 uppercase tracking-wider">Backlog</div>
+          <div className="text-2xl font-bold text-gray-400 mt-1">{backlogCount}</div>
+        </div>
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[11px] text-blue-400 uppercase tracking-wider">In Progress</div>
+          <div className="text-2xl font-bold text-blue-400 mt-1">{inProgressCount}</div>
+        </div>
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[11px] text-amber-400 uppercase tracking-wider">Review</div>
+          <div className="text-2xl font-bold text-amber-400 mt-1">{reviewCount}</div>
+        </div>
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[11px] text-green-400 uppercase tracking-wider">Done</div>
+          <div className="text-2xl font-bold text-green-400 mt-1">{doneCount}</div>
+        </div>
+      </div>
+
+      {/* Board header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-100">Task Board</h2>
+        <h2 className="text-lg font-semibold text-gray-100">Task Board</h2>
         <button
           onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium rounded-lg transition-colors"
+          className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400"
         >
           + New Task
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {columns.map((column) => (
-          <div key={column.id} className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-            <h3 className="text-lg font-semibold text-gray-100 mb-4">{column.label}</h3>
-            <div className="space-y-3">
-              {tasks
-                .filter((task) => task.status === column.id)
-                .map((task) => (
+      {/* Kanban columns */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {columns.map(column => {
+          const columnTasks = tasks.filter(t => t.status === column.id);
+          const isDragOver = dragOverColumn === column.id;
+
+          return (
+            <div
+              key={column.id}
+              className={`bg-[#111113] rounded-lg border border-[#1e1e21] border-t-2 ${column.color} min-h-[300px] flex flex-col ${isDragOver ? column.bgHover : ''}`}
+              onDragOver={(e) => handleDragOver(e, column.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, column.id)}
+            >
+              {/* Column header */}
+              <div className="px-4 py-3 flex items-center justify-between border-b border-[#1e1e21]">
+                <span className="text-sm font-medium text-gray-300">{column.label}</span>
+                <span className="text-xs text-gray-600 bg-[#1a1a1d] px-2 py-0.5 rounded">{columnTasks.length}</span>
+              </div>
+
+              {/* Cards */}
+              <div className="p-2 flex-1 space-y-2 overflow-y-auto">
+                {columnTasks.map(task => (
                   <div
                     key={task.id}
-                    className={`bg-gray-800 rounded-lg p-4 border-l-4 ${priorityColors[task.priority as keyof typeof priorityColors]} cursor-pointer hover:bg-gray-750 transition-colors`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, task.id)}
+                    className={`bg-[#0a0a0b] rounded-lg p-3 border-l-2 ${priorityColors[task.priority] || 'border-l-gray-600'} cursor-grab active:cursor-grabbing hover:bg-[#141416] group`}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="font-semibold text-gray-100">{task.title}</div>
-                      <span className={`text-xs px-2 py-0.5 rounded ${task.source === 'workspace' ? 'bg-green-900 text-green-300' : 'bg-blue-900 text-blue-300'}`}>
-                        {task.source === 'workspace' ? 'YAML' : 'MC'}
-                      </span>
-                    </div>
-                    {task.description && (
-                      <p className="text-sm text-gray-400 mb-2 line-clamp-2">{task.description}</p>
-                    )}
+                    <div className="text-sm text-gray-200 font-medium leading-tight">{task.title}</div>
                     {task.assignedTo && (
-                      <div className="text-xs text-amber-500">@{task.assignedTo}</div>
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <span className={`w-1.5 h-1.5 rounded-full ${priorityDots[task.priority] || 'bg-gray-500'}`}></span>
+                        <span className="text-[11px] text-amber-500">@{task.assignedTo}</span>
+                      </div>
                     )}
-                    <div className="mt-3 flex gap-2">
-                      {column.id !== 'done' && (
-                        <button
-                          onClick={() => {
-                            const nextStatus = column.id === 'backlog' ? 'in_progress' : column.id === 'in_progress' ? 'review' : 'done';
-                            handleStatusChange(task.id, nextStatus);
-                          }}
-                          className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded"
-                        >
-                          Move →
-                        </button>
-                      )}
-                    </div>
+                    {task.storyId && (
+                      <div className="text-[10px] text-gray-600 mt-1">{task.storyId}</div>
+                    )}
+                    {task.completedAt && (
+                      <div className="text-[10px] text-gray-600 mt-1">{timeAgo(task.completedAt)}</div>
+                    )}
+                    {/* Mobile: Move button */}
+                    {column.id !== 'done' && (
+                      <button
+                        onClick={() => {
+                          const next = column.id === 'backlog' ? 'in_progress' : column.id === 'in_progress' ? 'review' : 'done';
+                          handleStatusChange(task.id, next);
+                        }}
+                        className="mt-2 text-[10px] text-gray-600 hover:text-gray-300 md:opacity-0 md:group-hover:opacity-100"
+                      >
+                        Move →
+                      </button>
+                    )}
                   </div>
                 ))}
+                {columnTasks.length === 0 && (
+                  <div className="text-xs text-gray-700 text-center py-8">
+                    {isDragOver ? 'Drop here' : 'No tasks'}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
+      {/* Create modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md border border-gray-800">
-            <h3 className="text-xl font-bold text-gray-100 mb-4">Create New Task</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Title</label>
-                <input
-                  type="text"
-                  value={newTask.title}
-                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:border-amber-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Description</label>
-                <textarea
-                  value={newTask.description}
-                  onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:border-amber-500 focus:outline-none"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Priority</label>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-[#111113] rounded-lg p-5 w-full max-w-md border border-[#1e1e21]">
+            <h3 className="text-sm font-semibold text-gray-200 mb-4">New Task</h3>
+            <div className="space-y-3">
+              <input
+                type="text" placeholder="Task title"
+                value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
+              />
+              <textarea
+                placeholder="Description (optional)" rows={3}
+                value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500 resize-none"
+              />
+              <div className="grid grid-cols-2 gap-3">
                 <select
-                  value={newTask.priority}
-                  onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:border-amber-500 focus:outline-none"
+                  value={newTask.priority} onChange={e => setNewTask({ ...newTask, priority: e.target.value })}
+                  className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
                   <option value="high">High</option>
                   <option value="critical">Critical</option>
                 </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">Assign To</label>
                 <input
-                  type="text"
-                  value={newTask.assignedTo}
-                  onChange={(e) => setNewTask({ ...newTask, assignedTo: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:border-amber-500 focus:outline-none"
-                  placeholder="Agent ID (e.g., thor)"
+                  type="text" placeholder="@agent"
+                  value={newTask.assignedTo} onChange={e => setNewTask({ ...newTask, assignedTo: e.target.value })}
+                  className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
                 />
               </div>
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={handleCreateTask}
-                  className="flex-1 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-gray-900 font-medium rounded-lg transition-colors"
-                >
+              <div className="flex gap-2 pt-2">
+                <button onClick={handleCreateTask}
+                  className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
                   Create
                 </button>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors"
-                >
+                <button onClick={() => setShowModal(false)}
+                  className="flex-1 px-4 py-2 text-xs font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">
                   Cancel
                 </button>
               </div>

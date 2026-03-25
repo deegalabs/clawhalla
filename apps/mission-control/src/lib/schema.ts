@@ -14,6 +14,42 @@ export const agents = sqliteTable('agents', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull()
 });
 
+export const epics = sqliteTable('epics', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  status: text('status').notNull().default('active'),
+  createdBy: text('created_by'),
+  approvedBy: text('approved_by'),
+  priority: text('priority').default('medium'),
+  notes: text('notes'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
+export const stories = sqliteTable('stories', {
+  id: text('id').primaryKey(),
+  epicId: text('epic_id'),
+  title: text('title').notNull(),
+  status: text('status').notNull().default('backlog'),
+  points: integer('points'),
+  assignedTo: text('assigned_to'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+});
+
+export const sprints = sqliteTable('sprints', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  status: text('status').notNull().default('planning'),
+  startDate: text('start_date'),
+  endDate: text('end_date'),
+  storyIds: text('story_ids'), // JSON array
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
 export const tasks = sqliteTable('tasks', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
@@ -22,9 +58,12 @@ export const tasks = sqliteTable('tasks', {
   priority: text('priority').notNull().default('medium'),
   assignedTo: text('assigned_to'),
   projectId: text('project_id'),
+  storyId: text('story_id'),
+  sprintId: text('sprint_id'),
   estimatedHours: integer('estimated_hours'),
   actualHours: integer('actual_hours'),
   tags: text('tags'),
+  notes: text('notes'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
   completedAt: integer('completed_at', { mode: 'timestamp' })
