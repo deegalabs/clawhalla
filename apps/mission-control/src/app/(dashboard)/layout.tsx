@@ -12,6 +12,7 @@ const navLinks = [
   { href: '/memory', label: 'Memory', icon: MemoryIcon },
   { href: '/docs', label: 'Docs', icon: DocsIcon },
   { href: '/team', label: 'Team', icon: TeamIcon },
+  { href: '/content', label: 'Content', icon: ContentIcon },
   { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
   { href: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -91,6 +92,14 @@ function ApprovalsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 1.5l2 4 4.5.5-3.25 3 .75 4.5L8 11.5 3.95 13.5l.75-4.5L1.5 6l4.5-.5z" />
+    </svg>
+  );
+}
+
+function ContentIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h12M2 6.5h8M2 10h10M2 13.5h6" />
     </svg>
   );
 }
