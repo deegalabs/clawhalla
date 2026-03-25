@@ -1,7 +1,9 @@
 import { watch } from 'chokidar';
-import { join } from 'path';
+import { join, extname } from 'path';
+import { searchIndex } from './search';
 
 const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+const INDEXABLE_EXTS = new Set(['.md', '.yaml', '.yml']);
 
 export interface FileEvent {
   type: 'created' | 'updated' | 'deleted';
@@ -33,9 +35,9 @@ class WorkspaceWatcher {
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
     });
 
-    watcher.on('add', (path) => this.emit('created', path));
-    watcher.on('change', (path) => this.emit('updated', path));
-    watcher.on('unlink', (path) => this.emit('deleted', path));
+    watcher.on('add', (path) => { this.emit('created', path); this.reindex(path); });
+    watcher.on('change', (path) => { this.emit('updated', path); this.reindex(path); });
+    watcher.on('unlink', (path) => { this.emit('deleted', path); this.deindex(path); });
   }
 
   private emit(type: FileEvent['type'], fullPath: string) {
@@ -52,6 +54,19 @@ class WorkspaceWatcher {
       } catch {
         // Don't let one listener crash others
       }
+    }
+  }
+
+  private reindex(fullPath: string) {
+    if (INDEXABLE_EXTS.has(extname(fullPath).toLowerCase())) {
+      searchIndex.indexFile(fullPath).catch(() => {});
+    }
+  }
+
+  private deindex(fullPath: string) {
+    if (INDEXABLE_EXTS.has(extname(fullPath).toLowerCase())) {
+      const relativePath = fullPath.replace(WORKSPACE + '/', '');
+      searchIndex.removeFile(relativePath);
     }
   }
 
