@@ -2,43 +2,28 @@
 
 import { useState, useEffect } from 'react';
 
-interface AgentMeta {
+interface OrgAgent {
+  id: string;
+  name: string;
   emoji: string;
   role: string;
   model: string;
   tier: number;
   squad: string | null;
   reportsTo: string;
+  manages: string[];
+  skills: string[];
 }
 
-const AGENT_METADATA: Record<string, AgentMeta> = {
-  main: { emoji: '🦞', role: 'System Controller', model: 'claude-opus-4-5', tier: 0, squad: null, reportsTo: 'Daniel (CEO)' },
-  odin: { emoji: '👁️', role: 'CTO', model: 'claude-sonnet-4-6', tier: 1, squad: 'dev_squad', reportsTo: 'Claw' },
-  vidar: { emoji: '⛓️', role: 'Blockchain Architect', model: 'claude-sonnet-4-6', tier: 1, squad: 'blockchain_squad', reportsTo: 'Claw' },
-  saga: { emoji: '📜', role: 'Research Lead (CPO)', model: 'claude-sonnet-4-6', tier: 1, squad: 'product_squad', reportsTo: 'Claw' },
-  thor: { emoji: '⚡', role: 'Tech Lead', model: 'claude-sonnet-4-5', tier: 2, squad: 'dev_squad', reportsTo: 'Odin' },
-  frigg: { emoji: '👑', role: 'Coordinator / PA', model: 'claude-haiku-4-5', tier: 2, squad: 'clop_cabinet', reportsTo: 'Odin' },
-  tyr: { emoji: '⚖️', role: 'Security Auditor', model: 'claude-opus-4-5', tier: 2, squad: 'blockchain_squad', reportsTo: 'Vidar' },
-  freya: { emoji: '✨', role: 'Senior Developer', model: 'claude-sonnet-4-5', tier: 3, squad: 'dev_squad', reportsTo: 'Thor' },
-  heimdall: { emoji: '👁️‍🗨️', role: 'QA / Observability', model: 'claude-haiku-4-5', tier: 3, squad: 'dev_squad', reportsTo: 'Thor' },
-  volund: { emoji: '🔨', role: 'Developer / GitHub', model: 'claude-sonnet-4-5', tier: 3, squad: 'dev_squad', reportsTo: 'Thor' },
-  sindri: { emoji: '🔥', role: 'Solidity Developer', model: 'claude-sonnet-4-5', tier: 3, squad: 'blockchain_squad', reportsTo: 'Vidar' },
-  skadi: { emoji: '❄️', role: 'Cairo Developer', model: 'claude-sonnet-4-5', tier: 3, squad: 'blockchain_squad', reportsTo: 'Vidar' },
-  mimir: { emoji: '🧠', role: 'Knowledge Curator', model: 'claude-sonnet-4-5', tier: 3, squad: 'clop_cabinet', reportsTo: 'Frigg' },
-  bragi: { emoji: '🎭', role: 'Content Creator', model: 'claude-sonnet-4-5', tier: 3, squad: 'clop_cabinet', reportsTo: 'Frigg' },
-  loki: { emoji: '🎲', role: 'Monitor / Analytics', model: 'claude-sonnet-4-5', tier: 3, squad: 'clop_cabinet', reportsTo: 'Frigg' },
-};
-
-const squads = [
-  { id: 'dev_squad', name: 'Dev Squad', chief: 'Odin', domain: 'Software development, infrastructure, and DevOps', color: 'blue' },
-  { id: 'blockchain_squad', name: 'Blockchain Squad', chief: 'Vidar', domain: 'Smart contracts, Solidity, Cairo, and Web3', color: 'purple' },
-  { id: 'clop_cabinet', name: 'Clop Cabinet', chief: 'Frigg', domain: 'Personal assistance, content, research, and analytics', color: 'green' },
-  { id: 'product_squad', name: 'Product Squad', chief: 'Saga', domain: 'Product strategy, research, and market analysis', color: 'amber' },
-];
-
-interface Agent extends AgentMeta {
+interface OrgSquad {
   id: string;
   name: string;
+  chief: string;
+  domain: string;
+  members: string[];
+}
+
+interface Agent extends OrgAgent {
   status: 'active' | 'idle' | 'offline';
   lastActivity?: number;
   liveModel?: string;
@@ -59,6 +44,13 @@ const squadBorderColors: Record<string, string> = {
   product_squad: 'border-l-amber-500',
 };
 
+const squadCardColors: Record<string, string> = {
+  dev_squad: 'blue',
+  blockchain_squad: 'purple',
+  clop_cabinet: 'green',
+  product_squad: 'amber',
+};
+
 const statusColors = {
   active: { bg: 'bg-green-500/10', text: 'text-green-500', dot: 'bg-green-500' },
   idle: { bg: 'bg-amber-500/10', text: 'text-amber-500', dot: 'bg-amber-500' },
@@ -71,7 +63,7 @@ function getStatus(lastActivity: number | undefined, gatewayConnected: boolean):
   const diff = Date.now() - lastActivity;
   if (diff < 2 * 60 * 1000) return 'active';
   if (diff < 30 * 60 * 1000) return 'idle';
-  return 'idle'; // Changed from 'offline' — if gateway is connected, agents are idle not offline
+  return 'idle';
 }
 
 function timeAgo(ms?: number): string {
@@ -92,7 +84,7 @@ function AgentCard({ agent }: { agent: Agent }) {
   const modelColor = modelColors[displayModel] || 'bg-gray-500/20 text-gray-400';
   const squadBorder = agent.squad ? squadBorderColors[agent.squad] : 'border-l-gray-500';
   const statusStyle = statusColors[agent.status];
-  
+
   return (
     <div className={`bg-gray-800 rounded-lg p-4 border border-gray-700 border-l-4 ${squadBorder} hover:border-gray-600 transition-colors`}>
       <div className="text-3xl mb-2">{agent.emoji}</div>
@@ -109,31 +101,42 @@ function AgentCard({ agent }: { agent: Agent }) {
         )}
       </div>
       <div className="text-xs text-gray-500 mt-2">reports to: {agent.reportsTo}</div>
+      {agent.manages.length > 0 && (
+        <div className="text-xs text-gray-600 mt-1">
+          manages: {agent.manages.join(', ')}
+        </div>
+      )}
     </div>
   );
 }
 
 export default function TeamPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [squads, setSquads] = useState<OrgSquad[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchSessions() {
+    async function fetchData() {
       try {
-        const res = await fetch('/api/gateway/sessions');
-        const data = await res.json();
-        
+        // Fetch org structure and gateway sessions in parallel
+        const [orgRes, sessRes] = await Promise.all([
+          fetch('/api/org-structure'),
+          fetch('/api/gateway/sessions'),
+        ]);
+
+        const orgData = await orgRes.json();
+        const sessData = await sessRes.json();
+
+        // Build session map from gateway
         const sessionMap = new Map<string, { lastActivity?: number; model?: string }>();
-        
-        if (data.ok && data.sessions) {
-          const sessionList = Array.isArray(data.sessions) 
-            ? data.sessions 
-            : data.sessions.sessions || [];
-          
+        if (sessData.ok && sessData.sessions) {
+          const sessionList = Array.isArray(sessData.sessions)
+            ? sessData.sessions
+            : sessData.sessions.sessions || [];
           for (const s of sessionList) {
             const rawId = s.agentId || s.key || s.id || '';
             const id = rawId.replace(/^agent:/, '').split(':')[0];
-            if (id && AGENT_METADATA[id]) {
+            if (id) {
               sessionMap.set(id, {
                 lastActivity: s.lastActivityMs || s.lastActivity,
                 model: s.model,
@@ -141,35 +144,30 @@ export default function TeamPage() {
             }
           }
         }
-        
-        // Build agents list
-        const agentList: Agent[] = Object.entries(AGENT_METADATA).map(([id, meta]) => {
-          const session = sessionMap.get(id);
-          return {
-            id,
-            name: id.charAt(0).toUpperCase() + id.slice(1),
-            ...meta,
-            status: getStatus(session?.lastActivity, data.ok),
-            lastActivity: session?.lastActivity,
-            liveModel: session?.model,
-          };
-        });
-        
-        setAgents(agentList);
+
+        if (orgData.ok && orgData.org) {
+          // Build agents from org_structure.yaml + live session data
+          const agentList: Agent[] = orgData.org.agents.map((a: OrgAgent) => {
+            const session = sessionMap.get(a.id);
+            return {
+              ...a,
+              status: getStatus(session?.lastActivity, sessData.ok),
+              lastActivity: session?.lastActivity,
+              liveModel: session?.model,
+            };
+          });
+
+          setAgents(agentList);
+          setSquads(orgData.org.squads);
+        }
       } catch {
-        // Fallback to static data
-        setAgents(Object.entries(AGENT_METADATA).map(([id, meta]) => ({
-          id,
-          name: id.charAt(0).toUpperCase() + id.slice(1),
-          ...meta,
-          status: 'offline' as const,
-        })));
+        // Silent fallback — show empty state
       }
       setLoading(false);
     }
-    
-    fetchSessions();
-    const interval = setInterval(fetchSessions, 30000);
+
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -177,7 +175,7 @@ export default function TeamPage() {
   const tier1 = agents.filter(a => a.tier === 1);
   const tier2 = agents.filter(a => a.tier === 2);
   const tier3 = agents.filter(a => a.tier === 3);
-  
+
   const activeCount = agents.filter(a => a.status === 'active').length;
   const idleCount = agents.filter(a => a.status === 'idle').length;
 
@@ -190,7 +188,7 @@ export default function TeamPage() {
       {/* Mission Statement */}
       <div className="bg-amber-900/20 border border-amber-700 rounded-lg p-6 text-center">
         <p className="text-lg italic text-amber-200">
-          "Enterprise Autonomous AI Operating System — Monte seu time de desenvolvimento AI"
+          &quot;Enterprise Autonomous AI Operating System — Monte seu time de desenvolvimento AI&quot;
         </p>
       </div>
 
@@ -198,7 +196,7 @@ export default function TeamPage() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">Meet the Team</h2>
-          <p className="text-gray-400 mt-1">{agents.length} AI agents across 4 squads</p>
+          <p className="text-gray-400 mt-1">{agents.length} AI agents across {squads.length} squads</p>
         </div>
         <div className="flex gap-4 text-sm">
           <div className="flex items-center gap-2">
@@ -213,61 +211,69 @@ export default function TeamPage() {
       </div>
 
       {/* Tier 0 - Platform */}
-      <div>
-        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
-          Tier 0 — {tierLabels[0]}
-        </div>
-        <div className="flex justify-center">
-          <div className="w-80">
-            {tier0[0] && <AgentCard agent={tier0[0]} />}
+      {tier0.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+            Tier 0 — {tierLabels[0]}
+          </div>
+          <div className="flex justify-center">
+            <div className="w-80">
+              {tier0[0] && <AgentCard agent={tier0[0]} />}
+            </div>
+          </div>
+          <div className="flex justify-center my-4">
+            <div className="w-px h-8 bg-gray-700"></div>
           </div>
         </div>
-        <div className="flex justify-center my-4">
-          <div className="w-px h-8 bg-gray-700"></div>
-        </div>
-      </div>
+      )}
 
       {/* Tier 1 - Executive */}
-      <div>
-        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
-          Tier 1 — {tierLabels[1]}
+      {tier1.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+            Tier 1 — {tierLabels[1]}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+            {tier1.map(agent => (
+              <AgentCard key={agent.id} agent={agent} />
+            ))}
+          </div>
+          <div className="flex justify-center my-4">
+            <div className="w-px h-8 bg-gray-700"></div>
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-          {tier1.map(agent => (
-            <AgentCard key={agent.id} agent={agent} />
-          ))}
-        </div>
-        <div className="flex justify-center my-4">
-          <div className="w-px h-8 bg-gray-700"></div>
-        </div>
-      </div>
+      )}
 
       {/* Tier 2 - Management */}
-      <div>
-        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
-          Tier 2 — {tierLabels[2]}
+      {tier2.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+            Tier 2 — {tierLabels[2]}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+            {tier2.map(agent => (
+              <AgentCard key={agent.id} agent={agent} />
+            ))}
+          </div>
+          <div className="flex justify-center my-4">
+            <div className="w-px h-8 bg-gray-700"></div>
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-          {tier2.map(agent => (
-            <AgentCard key={agent.id} agent={agent} />
-          ))}
-        </div>
-        <div className="flex justify-center my-4">
-          <div className="w-px h-8 bg-gray-700"></div>
-        </div>
-      </div>
+      )}
 
       {/* Tier 3 - Execution */}
-      <div>
-        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
-          Tier 3 — {tierLabels[3]}
+      {tier3.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
+            Tier 3 — {tierLabels[3]}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {tier3.map(agent => (
+              <AgentCard key={agent.id} agent={agent} />
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {tier3.map(agent => (
-            <AgentCard key={agent.id} agent={agent} />
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Squad Summary */}
       <div className="mt-12">
@@ -281,8 +287,8 @@ export default function TeamPage() {
               purple: 'border-l-purple-500',
               green: 'border-l-green-500',
               amber: 'border-l-amber-500',
-            }[squad.color];
-            
+            }[squadCardColors[squad.id] || 'blue'];
+
             return (
               <div key={squad.id} className={`bg-gray-900 rounded-lg p-4 border border-gray-800 border-l-4 ${borderColor}`}>
                 <div className="flex justify-between items-start">
@@ -297,8 +303,8 @@ export default function TeamPage() {
                 <p className="text-xs text-gray-500 mt-2">{squad.domain}</p>
                 <div className="mt-3 flex flex-wrap gap-1">
                   {members.map(m => (
-                    <span 
-                      key={m.id} 
+                    <span
+                      key={m.id}
                       className={`text-xs px-2 py-0.5 rounded ${
                         m.status === 'active' ? 'bg-green-500/10 text-green-400' :
                         m.status === 'idle' ? 'bg-amber-500/10 text-amber-400' :

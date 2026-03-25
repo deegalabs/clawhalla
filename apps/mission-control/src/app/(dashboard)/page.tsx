@@ -1,50 +1,38 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
-// Fallback metadata for agents we know about
-const AGENT_METADATA: Record<string, { emoji: string; role: string; tier: number }> = {
-  main: { emoji: '🦞', role: 'System Controller', tier: 0 },
-  odin: { emoji: '👁️', role: 'CTO', tier: 1 },
-  vidar: { emoji: '⛓️', role: 'Blockchain Architect', tier: 1 },
-  saga: { emoji: '📜', role: 'Research Lead (CPO)', tier: 1 },
-  thor: { emoji: '⚡', role: 'Tech Lead', tier: 2 },
-  frigg: { emoji: '👑', role: 'Coordinator / PA', tier: 2 },
-  tyr: { emoji: '⚖️', role: 'Security Auditor', tier: 2 },
-  freya: { emoji: '✨', role: 'Senior Developer', tier: 3 },
-  heimdall: { emoji: '👁️‍🗨️', role: 'QA / Observability', tier: 3 },
-  volund: { emoji: '🔨', role: 'Developer / GitHub', tier: 3 },
-  sindri: { emoji: '🔥', role: 'Solidity Developer', tier: 3 },
-  skadi: { emoji: '❄️', role: 'Cairo Developer', tier: 3 },
-  mimir: { emoji: '🧠', role: 'Knowledge Curator', tier: 3 },
-  bragi: { emoji: '🎭', role: 'Content Creator', tier: 3 },
-  loki: { emoji: '🎲', role: 'Monitor / Analytics', tier: 3 },
-};
-
-interface Agent {
+interface OrgAgent {
   id: string;
   name: string;
   emoji: string;
   role: string;
   model: string;
+  tier: number;
+}
+
+interface Agent extends OrgAgent {
   status: 'active' | 'idle' | 'offline';
   lastActivity?: number;
 }
 
-function getDisplayName(id: string): string {
-  const clean = id.replace(/^:subagent:/, '').replace(/:$/, '').replace(/^agent:/, '');
-  return clean.charAt(0).toUpperCase() + clean.slice(1);
+interface Activity {
+  id: string;
+  agentId: string;
+  action: string;
+  target: string | null;
+  details: string | null;
+  timestamp: string;
 }
 
 function getStatus(lastActivity: number | undefined, gatewayConnected: boolean): 'active' | 'idle' | 'offline' {
   if (!gatewayConnected) return 'offline';
   if (!lastActivity) return 'idle';
-  const now = Date.now();
-  const diff = now - lastActivity;
-  if (diff < 2 * 60 * 1000) return 'active'; // <2 min
-  if (diff < 30 * 60 * 1000) return 'idle'; // <30 min
-  return 'idle'; // Changed from 'offline' — if gateway is connected, agents are idle not offline
+  const diff = Date.now() - lastActivity;
+  if (diff < 2 * 60 * 1000) return 'active';
+  if (diff < 30 * 60 * 1000) return 'idle';
+  return 'idle';
 }
 
 function timeAgo(ms: number): string {
@@ -63,102 +51,122 @@ const statusColors = {
   offline: { bg: 'bg-gray-500/10', text: 'text-gray-500', dot: 'bg-gray-500' },
 };
 
+const actionLabels: Record<string, string> = {
+  task_started: 'started task',
+  task_completed: 'completed task',
+  task_updated: 'updated task',
+  heartbeat_check: 'heartbeat check',
+  approval_requested: 'requested approval',
+  approval_resolved: 'resolved approval',
+  file_created: 'created file',
+  file_updated: 'updated file',
+  session_started: 'session started',
+  session_ended: 'session ended',
+};
+
 export default function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [gatewayOk, setGatewayOk] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const res = await fetch('/api/gateway/sessions');
-        const data = await res.json();
-        
-        if (data.ok && data.sessions) {
-          setGatewayOk(true);
-          const sessionList = Array.isArray(data.sessions) 
-            ? data.sessions 
-            : data.sessions.sessions || [];
-          
-          // Build agent list from sessions + metadata
-          const seenIds = new Set<string>();
-          const mapped: Agent[] = [];
-          
-          for (const s of sessionList) {
-            const rawId = s.agentId || s.key || s.id || 'unknown';
-            const id = rawId.replace(/^agent:/, '').split(':')[0];
-            if (seenIds.has(id)) continue;
-            seenIds.add(id);
-            
-            const meta = AGENT_METADATA[id] || { emoji: '🤖', role: 'Agent', tier: 3 };
-            mapped.push({
-              id,
-              name: getDisplayName(id),
-              emoji: meta.emoji,
-              role: meta.role,
-              model: s.model || 'unknown',
-              status: getStatus(s.lastActivityMs || s.lastActivity, true),
+  const fetchData = useCallback(async () => {
+    try {
+      // Fetch org structure, gateway sessions, and activities in parallel
+      const [orgRes, sessRes, actRes] = await Promise.all([
+        fetch('/api/org-structure'),
+        fetch('/api/gateway/sessions'),
+        fetch('/api/activities?limit=10'),
+      ]);
+
+      const orgData = await orgRes.json();
+      const sessData = await sessRes.json();
+      const actData = await actRes.json();
+
+      const gwOk = sessData.ok === true;
+      setGatewayOk(gwOk);
+
+      // Build session map
+      const sessionMap = new Map<string, { lastActivity?: number; model?: string }>();
+      if (gwOk && sessData.sessions) {
+        const sessionList = Array.isArray(sessData.sessions)
+          ? sessData.sessions
+          : sessData.sessions.sessions || [];
+        for (const s of sessionList) {
+          const rawId = s.agentId || s.key || s.id || '';
+          const id = rawId.replace(/^agent:/, '').split(':')[0];
+          if (id) {
+            sessionMap.set(id, {
               lastActivity: s.lastActivityMs || s.lastActivity,
+              model: s.model,
             });
           }
-          
-          // Add missing agents from metadata
-          for (const [id, meta] of Object.entries(AGENT_METADATA)) {
-            if (!seenIds.has(id)) {
-              mapped.push({
-                id,
-                name: getDisplayName(id),
-                emoji: meta.emoji,
-                role: meta.role,
-                model: 'unknown',
-                status: 'offline',
-              });
-            }
-          }
-          
-          // Sort by tier then name
-          mapped.sort((a, b) => {
-            const tierA = AGENT_METADATA[a.id]?.tier ?? 3;
-            const tierB = AGENT_METADATA[b.id]?.tier ?? 3;
-            if (tierA !== tierB) return tierA - tierB;
-            return a.name.localeCompare(b.name);
-          });
-          
-          setAgents(mapped);
-        } else {
-          setGatewayOk(false);
-          setAgents(Object.entries(AGENT_METADATA).map(([id, meta]) => ({
-            id,
-            name: getDisplayName(id),
-            emoji: meta.emoji,
-            role: meta.role,
-            model: 'unknown',
-            status: 'offline' as const,
-          })));
         }
-      } catch {
-        setGatewayOk(false);
-        setAgents(Object.entries(AGENT_METADATA).map(([id, meta]) => ({
-          id,
-          name: getDisplayName(id),
-          emoji: meta.emoji,
-          role: meta.role,
-          model: 'unknown',
-          status: 'offline' as const,
-        })));
       }
-      setLoading(false);
-      setLastRefresh(Date.now());
+
+      if (orgData.ok && orgData.org) {
+        const mapped: Agent[] = orgData.org.agents.map((a: OrgAgent) => {
+          const session = sessionMap.get(a.id);
+          return {
+            ...a,
+            status: getStatus(session?.lastActivity, gwOk),
+            lastActivity: session?.lastActivity,
+          };
+        });
+        mapped.sort((a, b) => {
+          if (a.tier !== b.tier) return a.tier - b.tier;
+          return a.name.localeCompare(b.name);
+        });
+        setAgents(mapped);
+      }
+
+      if (Array.isArray(actData)) {
+        setActivities(actData);
+      }
+    } catch {
+      setGatewayOk(false);
     }
-    
+    setLoading(false);
+    setLastRefresh(Date.now());
+  }, []);
+
+  // Initial fetch + polling
+  useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
+
+  // SSE: auto-refresh on workspace file changes
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/sse');
+      es.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'file_change') {
+          // Refresh data when workspace files change
+          fetchData();
+        }
+      };
+      es.onerror = () => {
+        // Reconnect handled automatically by EventSource
+      };
+    } catch {
+      // SSE not available — fall back to polling only
+    }
+    return () => { if (es) es.close(); };
+  }, [fetchData]);
 
   const activeCount = agents.filter(a => a.status === 'active').length;
   const idleCount = agents.filter(a => a.status === 'idle').length;
+
+  // Find agent emoji by id
+  const agentEmoji = (id: string) => {
+    const agent = agents.find(a => a.id === id);
+    return agent?.emoji || '🤖';
+  };
 
   return (
     <div className="space-y-6">
@@ -195,7 +203,7 @@ export default function DashboardPage() {
             Refreshed {timeAgo(lastRefresh)}
           </span>
         </div>
-        
+
         {loading ? (
           <div className="text-center py-8 text-gray-500">Loading agents...</div>
         ) : (
@@ -226,12 +234,38 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Quick Actions */}
+      {/* Activity Feed + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
           <h3 className="text-xl font-semibold text-gray-100 mb-4">Recent Activity</h3>
           <div className="space-y-3">
-            <p className="text-gray-500 text-sm">Activity feed coming soon...</p>
+            {activities.length === 0 ? (
+              <p className="text-gray-500 text-sm">No recent activity</p>
+            ) : (
+              activities.map(act => (
+                <div key={act.id} className="flex items-start gap-3 py-2 border-b border-gray-800 last:border-0">
+                  <span className="text-lg">{agentEmoji(act.agentId)}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-200">
+                      <span className="font-medium capitalize">{act.agentId}</span>
+                      {' '}
+                      <span className="text-gray-400">
+                        {actionLabels[act.action] || act.action}
+                      </span>
+                      {act.target && (
+                        <span className="text-gray-500"> — {act.target}</span>
+                      )}
+                    </div>
+                    {act.details && (
+                      <p className="text-xs text-gray-500 mt-0.5 truncate">{act.details}</p>
+                    )}
+                    <div className="text-xs text-gray-600 mt-0.5">
+                      {timeAgo(new Date(act.timestamp).getTime())}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">

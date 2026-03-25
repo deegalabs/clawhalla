@@ -14,6 +14,7 @@
     "@trpc/react-query": "^11.15.0",
     "@trpc/server": "^11.15.0",
     "better-sqlite3": "^12.8.0",
+    "chokidar": "^5.0.0",
     "drizzle-orm": "^0.45.1",
     "next": "16.2.1",
     "react": "19.2.4",
