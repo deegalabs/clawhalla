@@ -13,6 +13,7 @@ const navLinks = [
   { href: '/docs', label: 'Docs', icon: DocsIcon },
   { href: '/team', label: 'Team', icon: TeamIcon },
   { href: '/content', label: 'Content', icon: ContentIcon },
+  { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
   { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
   { href: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
@@ -92,6 +93,16 @@ function ApprovalsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 1.5l2 4 4.5.5-3.25 3 .75 4.5L8 11.5 3.95 13.5l.75-4.5L1.5 6l4.5-.5z" />
+    </svg>
+  );
+}
+
+function MarketplaceIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 6l2-4h10l2 4" />
+      <rect x="1" y="6" width="14" height="8" rx="1" />
+      <path d="M6 6v8M10 6v8" />
     </svg>
   );
 }
