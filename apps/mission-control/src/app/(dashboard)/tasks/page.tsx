@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface Task {
   id: string;
@@ -33,7 +33,7 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false);
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
 
-  useEffect(() => {
+  const fetchTasks = useCallback(() => {
     Promise.all([
       fetch('/api/tasks').then(r => r.json()),
       fetch('/api/board/sync?project=clawhalla').then(r => r.json())
@@ -51,16 +51,40 @@ export default function TasksPage() {
           source: 'workspace',
           story: t.story,
         }));
-        
+
         // Merge (workspace tasks override MC if same ID)
         const allTasks = [...yamlTasks, ...mcTasksNormalized.filter(
           (mt: Task) => !yamlTasks.find((yt: Task) => yt.id === mt.id)
         )];
-        
+
         setTasks(allTasks);
       })
       .catch(console.error);
   }, []);
+
+  // Initial fetch + polling fallback
+  useEffect(() => {
+    fetchTasks();
+    const interval = setInterval(fetchTasks, 30000);
+    return () => clearInterval(interval);
+  }, [fetchTasks]);
+
+  // SSE: auto-refresh when board files change
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/sse');
+      es.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'file_change' && data.event?.path?.includes('board/')) {
+          fetchTasks();
+        }
+      };
+    } catch {
+      // SSE not available
+    }
+    return () => { if (es) es.close(); };
+  }, [fetchTasks]);
 
   const handleCreateTask = async () => {
     try {
