@@ -13,6 +13,7 @@ const navLinks = [
   { href: '/docs', label: 'Docs', icon: DocsIcon },
   { href: '/team', label: 'Team', icon: TeamIcon },
   { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
+  { href: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
 // Minimal SVG icons (16x16)
@@ -90,6 +91,15 @@ function ApprovalsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M8 1.5l2 4 4.5.5-3.25 3 .75 4.5L8 11.5 3.95 13.5l.75-4.5L1.5 6l4.5-.5z" />
+    </svg>
+  );
+}
+
+function SettingsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="2.5" />
+      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.4 1.4M11.55 11.55l1.4 1.4M3.05 12.95l1.4-1.4M11.55 4.45l1.4-1.4" />
     </svg>
   );
 }

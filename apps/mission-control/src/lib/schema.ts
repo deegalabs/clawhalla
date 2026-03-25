@@ -63,6 +63,19 @@ export const approvals = sqliteTable('approvals', {
   resolvedAt: integer('resolved_at', { mode: 'timestamp' })
 });
 
+export const secrets = sqliteTable('secrets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  encryptedValue: text('encrypted_value').notNull(),
+  iv: text('iv').notNull(),
+  category: text('category').notNull().default('api_key'),
+  createdBy: text('created_by').notNull().default('daniel'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  lastAccessedAt: integer('last_accessed_at', { mode: 'timestamp' }),
+});
+
 export const workspaceFiles = sqliteTable('workspace_files', {
   id: text('id').primaryKey(),
   path: text('path').notNull(),
