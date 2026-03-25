@@ -106,6 +106,18 @@ function AgentCard({ agent }: { agent: Agent }) {
           manages: {agent.manages.join(', ')}
         </div>
       )}
+      {agent.skills.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {agent.skills.slice(0, 4).map(skill => (
+            <span key={skill} className="text-[9px] px-1.5 py-0.5 bg-[#1a1a1d] text-gray-500 rounded">
+              {skill}
+            </span>
+          ))}
+          {agent.skills.length > 4 && (
+            <span className="text-[9px] text-gray-600">+{agent.skills.length - 4}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

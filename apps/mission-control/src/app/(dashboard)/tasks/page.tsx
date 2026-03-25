@@ -2,6 +2,38 @@
 
 import { useState, useEffect, useCallback, DragEvent } from 'react';
 
+type BoardView = 'kanban' | 'sprints' | 'epics';
+
+interface Epic {
+  id: string;
+  title: string;
+  status: string;
+  notes?: string;
+}
+
+interface Story {
+  id: string;
+  epicId?: string;
+  epic_id?: string;
+  title: string;
+  status: string;
+  points?: number;
+  assignedTo?: string;
+  assigned_to?: string;
+}
+
+interface Sprint {
+  id: string;
+  name: string;
+  status: string;
+  startDate?: string;
+  start_date?: string;
+  endDate?: string;
+  end_date?: string;
+  storyIds?: string;
+  story_ids?: string;
+}
+
 interface Task {
   id: string;
   title: string;
@@ -67,6 +99,10 @@ function timeAgo(dateStr?: string): string {
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [epicsData, setEpicsData] = useState<Epic[]>([]);
+  const [storiesData, setStoriesData] = useState<Story[]>([]);
+  const [sprintsData, setSprintsData] = useState<Sprint[]>([]);
+  const [view, setView] = useState<BoardView>('kanban');
   const [showModal, setShowModal] = useState(false);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
@@ -75,8 +111,10 @@ export default function TasksPage() {
     fetch('/api/board/sync?project=clawhalla')
       .then(r => r.json())
       .then(data => {
-        const allTasks = (data.tasks || []).map((t: Task) => normalizeTask(t));
-        setTasks(allTasks);
+        setTasks((data.tasks || []).map((t: Task) => normalizeTask(t)));
+        setEpicsData(data.epics || []);
+        setStoriesData(data.stories || []);
+        setSprintsData(data.sprints || []);
       })
       .catch(console.error);
   }, []);
@@ -186,9 +224,24 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Board header */}
+      {/* Board header + view tabs */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-100">Task Board</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold text-gray-100">Board</h2>
+          <div className="flex gap-1 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
+            {(['kanban', 'sprints', 'epics'] as BoardView[]).map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 text-xs rounded-md capitalize ${
+                  view === v ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
         <button
           onClick={() => setShowModal(true)}
           className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400"
@@ -197,8 +250,107 @@ export default function TasksPage() {
         </button>
       </div>
 
+      {/* Sprints view */}
+      {view === 'sprints' && (
+        <div className="space-y-4">
+          {sprintsData.map(sprint => {
+            const sprintStoryIds = sprint.storyIds || sprint.story_ids;
+            const storyIds: string[] = sprintStoryIds ? (typeof sprintStoryIds === 'string' ? JSON.parse(sprintStoryIds) : sprintStoryIds) : [];
+            const sprintTasks = tasks.filter(t => t.sprintId === sprint.id || storyIds.includes(t.storyId || ''));
+            const doneCount = sprintTasks.filter(t => t.status === 'done').length;
+            const progress = sprintTasks.length > 0 ? Math.round((doneCount / sprintTasks.length) * 100) : 0;
+
+            return (
+              <div key={sprint.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-200">{sprint.name}</h3>
+                    <div className="text-[11px] text-gray-600 mt-0.5">
+                      {sprint.startDate || sprint.start_date} → {sprint.endDate || sprint.end_date}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xs px-2 py-0.5 rounded capitalize ${
+                      sprint.status === 'done' ? 'bg-green-500/20 text-green-400' :
+                      sprint.status === 'active' ? 'bg-blue-500/20 text-blue-400' :
+                      'bg-gray-500/20 text-gray-400'
+                    }`}>
+                      {sprint.status}
+                    </span>
+                    <span className="text-xs text-gray-500">{doneCount}/{sprintTasks.length}</span>
+                  </div>
+                </div>
+                <div className="h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
+                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {sprintTasks.map(task => (
+                    <div key={task.id} className={`px-3 py-2 rounded border-l-2 ${priorityColors[task.priority] || 'border-l-gray-600'} bg-[#0a0a0b]`}>
+                      <div className="text-xs text-gray-300 truncate">{task.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${task.status === 'done' ? 'bg-green-500' : task.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-600'}`} />
+                        <span className="text-[10px] text-gray-600">{task.assignedTo ? `@${task.assignedTo}` : ''}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {sprintTasks.length === 0 && (
+                    <div className="col-span-4 text-xs text-gray-700 py-2">No tasks in this sprint</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Epics view */}
+      {view === 'epics' && (
+        <div className="space-y-4">
+          {epicsData.map(epic => {
+            const epicStories = storiesData.filter(s => (s.epicId || s.epic_id) === epic.id);
+            const epicTasks = tasks.filter(t => epicStories.some(s => s.id === t.storyId));
+            const doneStories = epicStories.filter(s => s.status === 'done').length;
+            const progress = epicStories.length > 0 ? Math.round((doneStories / epicStories.length) * 100) : 0;
+
+            return (
+              <div key={epic.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-200">{epic.title}</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded capitalize ${
+                    epic.status === 'done' ? 'bg-green-500/20 text-green-400' :
+                    epic.status === 'active' ? 'bg-amber-500/20 text-amber-400' :
+                    'bg-gray-500/20 text-gray-400'
+                  }`}>
+                    {epic.status}
+                  </span>
+                </div>
+                {epic.notes && <p className="text-xs text-gray-500 mb-3">{epic.notes}</p>}
+                <div className="h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
+                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="text-[11px] text-gray-600 mb-3">{doneStories}/{epicStories.length} stories • {epicTasks.length} tasks</div>
+                <div className="space-y-1.5">
+                  {epicStories.map(story => {
+                    const storyTasks = tasks.filter(t => t.storyId === story.id);
+                    const storyDone = storyTasks.filter(t => t.status === 'done').length;
+                    return (
+                      <div key={story.id} className="flex items-center gap-3 px-3 py-2 bg-[#0a0a0b] rounded">
+                        <span className={`w-2 h-2 rounded-full ${story.status === 'done' ? 'bg-green-500' : 'bg-gray-600'}`} />
+                        <span className="text-xs text-gray-300 flex-1 truncate">{story.title}</span>
+                        {story.points && <span className="text-[10px] text-gray-600">{story.points}pt</span>}
+                        <span className="text-[10px] text-gray-600">{storyDone}/{storyTasks.length}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Kanban columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {view === 'kanban' && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {columns.map(column => {
           const columnTasks = tasks.filter(t => t.status === column.id);
           const isDragOver = dragOverColumn === column.id;
@@ -262,7 +414,7 @@ export default function TasksPage() {
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* Create modal */}
       {showModal && (

@@ -119,18 +119,33 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-const navLinks = [
-  { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
-  { href: '/tasks', label: 'Tasks', icon: TasksIcon },
-  { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
-  { href: '/projects', label: 'Projects', icon: ProjectsIcon },
-  { href: '/memory', label: 'Memory', icon: MemoryIcon },
-  { href: '/docs', label: 'Docs', icon: DocsIcon },
-  { href: '/team', label: 'Team', icon: TeamIcon },
-  { href: '/content', label: 'Content', icon: ContentIcon },
-  { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
-  { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
-  { href: '/settings', label: 'Settings', icon: SettingsIcon },
+const navSections = [
+  {
+    label: 'Work',
+    links: [
+      { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
+      { href: '/tasks', label: 'Tasks', icon: TasksIcon },
+      { href: '/projects', label: 'Projects', icon: ProjectsIcon },
+      { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
+      { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
+    ],
+  },
+  {
+    label: 'Knowledge',
+    links: [
+      { href: '/memory', label: 'Memory', icon: MemoryIcon },
+      { href: '/docs', label: 'Docs', icon: DocsIcon },
+      { href: '/content', label: 'Content', icon: ContentIcon },
+    ],
+  },
+  {
+    label: 'System',
+    links: [
+      { href: '/team', label: 'Team', icon: TeamIcon },
+      { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
+      { href: '/settings', label: 'Settings', icon: SettingsIcon },
+    ],
+  },
 ];
 
 function GatewayHealthIndicator() {
@@ -193,31 +208,40 @@ export default function DashboardLayout({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 space-y-0.5">
-          {navLinks.map((link) => {
-            const isActive = pathname === link.href;
-            const Icon = link.icon;
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium ${
-                  isActive
-                    ? 'bg-[#1e1e21] text-gray-100'
-                    : 'text-gray-500 hover:bg-[#1a1a1d] hover:text-gray-300'
-                }`}
-              >
-                <Icon className={isActive ? 'text-amber-500' : 'text-gray-600'} />
-                <span>{link.label}</span>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 space-y-4 overflow-y-auto py-1">
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <div className="px-3 mb-1.5 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
+                {section.label}
+              </div>
+              <div className="space-y-0.5">
+                {section.links.map((link) => {
+                  const isActive = pathname === link.href;
+                  const Icon = link.icon;
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium ${
+                        isActive
+                          ? 'bg-[#1e1e21] text-gray-100'
+                          : 'text-gray-500 hover:bg-[#1a1a1d] hover:text-gray-300'
+                      }`}
+                    >
+                      <Icon className={isActive ? 'text-amber-500' : 'text-gray-600'} />
+                      <span>{link.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-[#1e1e21]">
           <GatewayHealthIndicator />
-          <div className="text-[10px] text-gray-700 mt-1.5">ClawHalla v0.4</div>
+          <div className="text-[10px] text-gray-700 mt-1.5">ClawHalla v1.0</div>
         </div>
       </aside>
 
@@ -227,7 +251,7 @@ export default function DashboardLayout({
         <header className="h-12 bg-[#111113] border-b border-[#1e1e21] flex items-center justify-between px-6">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-medium text-gray-200">
-              {navLinks.find((l) => l.href === pathname)?.label || 'Dashboard'}
+              {navSections.flatMap(s => s.links).find((l) => l.href === pathname)?.label || 'Dashboard'}
             </h2>
           </div>
           <div className="flex items-center gap-4">
