@@ -3,18 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
-interface OrgAgent {
+interface AgentHealth {
   id: string;
-  name: string;
-  emoji: string;
-  role: string;
-  model: string;
-  tier: number;
-}
-
-interface Agent extends OrgAgent {
-  status: 'active' | 'idle' | 'offline';
-  lastActivity?: number;
+  state: 'active' | 'idle' | 'stalled' | 'stuck' | 'offline';
+  idleMinutes: number | null;
 }
 
 interface Activity {
@@ -26,17 +18,40 @@ interface Activity {
   timestamp: string;
 }
 
-function getStatus(lastActivity: number | undefined, gatewayConnected: boolean): 'active' | 'idle' | 'offline' {
-  if (!gatewayConnected) return 'offline';
-  if (!lastActivity) return 'idle';
-  const diff = Date.now() - lastActivity;
-  if (diff < 2 * 60 * 1000) return 'active';
-  if (diff < 30 * 60 * 1000) return 'idle';
-  return 'idle';
+interface BoardData {
+  tasks: { status: string }[];
+  sprints: { id: string; name: string; status: string }[];
 }
 
-function timeAgo(ms: number): string {
-  const diff = Date.now() - ms;
+interface UsageData {
+  today: { totalCostUsd: string; inputTokens: number; outputTokens: number; events: number };
+}
+
+interface ApprovalData {
+  pending: unknown[];
+}
+
+const AGENT_EMOJIS: Record<string, string> = {
+  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮',
+  thor: '⚡', frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️',
+  volund: '🔧', sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
+};
+
+const actionLabels: Record<string, string> = {
+  task_started: 'started task', task_completed: 'completed task',
+  task_updated: 'updated board', heartbeat_check: 'heartbeat',
+  file_created: 'created file', file_updated: 'updated file',
+  session_started: 'session started', session_ended: 'session ended',
+  approval_requested: 'requested approval', approval_resolved: 'resolved approval',
+};
+
+const healthDots: Record<string, string> = {
+  active: 'bg-green-500', idle: 'bg-gray-500', stalled: 'bg-amber-500 animate-pulse',
+  stuck: 'bg-red-500 animate-pulse', offline: 'bg-gray-700',
+};
+
+function timeAgo(ms: number | string): string {
+  const diff = Date.now() - (typeof ms === 'string' ? new Date(ms).getTime() : ms);
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
@@ -45,256 +60,232 @@ function timeAgo(ms: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-const statusColors = {
-  active: { bg: 'bg-green-500/10', text: 'text-green-500', dot: 'bg-green-500' },
-  idle: { bg: 'bg-amber-500/10', text: 'text-amber-500', dot: 'bg-amber-500' },
-  offline: { bg: 'bg-gray-500/10', text: 'text-gray-500', dot: 'bg-gray-500' },
-};
-
-const actionLabels: Record<string, string> = {
-  task_started: 'started task',
-  task_completed: 'completed task',
-  task_updated: 'updated task',
-  heartbeat_check: 'heartbeat check',
-  approval_requested: 'requested approval',
-  approval_resolved: 'resolved approval',
-  file_created: 'created file',
-  file_updated: 'updated file',
-  session_started: 'session started',
-  session_ended: 'session ended',
-};
+const quickNav = [
+  { href: '/tasks', label: 'Tasks', icon: '✓', desc: 'Kanban board' },
+  { href: '/pipeline', label: 'Pipeline', icon: '⚡', desc: 'Build status' },
+  { href: '/team', label: 'Team', icon: '👥', desc: 'Agent hierarchy' },
+  { href: '/office', label: 'Office', icon: '🏢', desc: 'Live agents' },
+  { href: '/memory', label: 'Memory', icon: '🧠', desc: 'Knowledge base' },
+  { href: '/content', label: 'Content', icon: '✍️', desc: 'Create posts' },
+  { href: '/council', label: 'Council', icon: '🔬', desc: 'R&D insights' },
+  { href: '/settings', label: 'Settings', icon: '🔒', desc: 'Vault & config' },
+];
 
 export default function DashboardPage() {
-  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agents, setAgents] = useState<AgentHealth[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [board, setBoard] = useState<BoardData | null>(null);
+  const [usage, setUsage] = useState<UsageData | null>(null);
+  const [approvals, setApprovals] = useState<ApprovalData | null>(null);
   const [gatewayOk, setGatewayOk] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch org structure, gateway sessions, and activities in parallel
-      const [orgRes, sessRes, actRes] = await Promise.all([
-        fetch('/api/org-structure'),
-        fetch('/api/gateway/sessions'),
-        fetch('/api/activities?limit=10'),
+      const [healthRes, actRes, boardRes, usageRes, approvalRes] = await Promise.all([
+        fetch('/api/agents/health'),
+        fetch('/api/activities?limit=12'),
+        fetch('/api/board/sync?project=clawhalla'),
+        fetch('/api/usage'),
+        fetch('/api/approvals'),
       ]);
 
-      const orgData = await orgRes.json();
-      const sessData = await sessRes.json();
+      const healthData = await healthRes.json();
       const actData = await actRes.json();
+      const boardData = await boardRes.json();
+      const usageData = await usageRes.json();
+      const approvalData = await approvalRes.json();
 
-      const gwOk = sessData.ok === true;
-      setGatewayOk(gwOk);
-
-      // Build session map
-      const sessionMap = new Map<string, { lastActivity?: number; model?: string }>();
-      if (gwOk && sessData.sessions) {
-        const sessionList = Array.isArray(sessData.sessions)
-          ? sessData.sessions
-          : sessData.sessions.sessions || [];
-        for (const s of sessionList) {
-          const rawId = s.agentId || s.key || s.id || '';
-          const id = rawId.replace(/^agent:/, '').split(':')[0];
-          if (id) {
-            sessionMap.set(id, {
-              lastActivity: s.lastActivityMs || s.lastActivity,
-              model: s.model,
-            });
-          }
-        }
+      if (healthData.ok) {
+        setAgents(healthData.agents);
+        setGatewayOk(healthData.gatewayOk);
       }
-
-      if (orgData.ok && orgData.org) {
-        const mapped: Agent[] = orgData.org.agents.map((a: OrgAgent) => {
-          const session = sessionMap.get(a.id);
-          return {
-            ...a,
-            status: getStatus(session?.lastActivity, gwOk),
-            lastActivity: session?.lastActivity,
-          };
-        });
-        mapped.sort((a, b) => {
-          if (a.tier !== b.tier) return a.tier - b.tier;
-          return a.name.localeCompare(b.name);
-        });
-        setAgents(mapped);
-      }
-
-      if (Array.isArray(actData)) {
-        setActivities(actData);
-      }
-    } catch {
-      setGatewayOk(false);
-    }
+      if (Array.isArray(actData)) setActivities(actData);
+      if (boardData.tasks) setBoard(boardData);
+      if (usageData.ok) setUsage(usageData);
+      setApprovals(approvalData);
+    } catch { /* silent */ }
     setLoading(false);
-    setLastRefresh(Date.now());
   }, []);
 
-  // Initial fetch + polling
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 20000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  // SSE: auto-refresh on workspace file changes
   useEffect(() => {
     let es: EventSource | null = null;
     try {
       es = new EventSource('/api/sse');
-      es.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'file_change') {
-          // Refresh data when workspace files change
-          fetchData();
-        }
-      };
-      es.onerror = () => {
-        // Reconnect handled automatically by EventSource
-      };
-    } catch {
-      // SSE not available — fall back to polling only
-    }
+      es.onmessage = () => fetchData();
+    } catch { /* */ }
     return () => { if (es) es.close(); };
   }, [fetchData]);
 
-  const activeCount = agents.filter(a => a.status === 'active').length;
-  const idleCount = agents.filter(a => a.status === 'idle').length;
+  // Computed
+  const activeAgents = agents.filter(a => a.state === 'active').length;
+  const stalledAgents = agents.filter(a => a.state === 'stalled' || a.state === 'stuck').length;
+  const tasksInProgress = board?.tasks.filter(t => t.status === 'in_progress').length || 0;
+  const tasksInReview = board?.tasks.filter(t => t.status === 'review').length || 0;
+  const tasksDone = board?.tasks.filter(t => t.status === 'done').length || 0;
+  const tasksBacklog = board?.tasks.filter(t => t.status === 'backlog').length || 0;
+  const totalTasks = board?.tasks.length || 0;
+  const pendingApprovals = approvals?.pending?.length || 0;
+  const activeSprint = board?.sprints?.find(s => s.status === 'active' || s.status === 'done');
+  const sprintProgress = totalTasks > 0 ? Math.round((tasksDone / totalTasks) * 100) : 0;
 
-  // Find agent emoji by id
-  const agentEmoji = (id: string) => {
-    const agent = agents.find(a => a.id === id);
-    return agent?.emoji || '🤖';
-  };
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-gray-600 text-sm">Loading dashboard...</div>;
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-2">Active Agents</div>
-          <div className="text-3xl font-bold text-green-500">{activeCount}</div>
-          <div className="text-xs text-gray-500 mt-1">{idleCount} idle</div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-2">Total Agents</div>
-          <div className="text-3xl font-bold text-amber-500">{agents.length}</div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-2">Gateway Status</div>
-          <div className={`text-3xl font-bold ${gatewayOk ? 'text-green-500' : 'text-red-500'}`}>
+    <div className="space-y-5">
+      {/* Row 1: System Health */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {/* Gateway */}
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Gateway</div>
+          <div className={`text-lg font-bold mt-1 ${gatewayOk ? 'text-green-400' : 'text-red-400'}`}>
             {gatewayOk ? 'Online' : 'Offline'}
           </div>
         </div>
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <div className="text-sm text-gray-400 mb-2">Last Refresh</div>
-          <div className="text-3xl font-bold text-blue-500">
-            {loading ? '...' : timeAgo(lastRefresh)}
+
+        {/* Active Agents */}
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Agents</div>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-lg font-bold text-green-400">{activeAgents}</span>
+            <span className="text-xs text-gray-600">active</span>
+          </div>
+          {stalledAgents > 0 && (
+            <div className="text-[10px] text-amber-400 mt-0.5">⚠ {stalledAgents} stalled</div>
+          )}
+        </div>
+
+        {/* Pipeline */}
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Building</div>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-lg font-bold text-blue-400">{tasksInProgress}</span>
+            <span className="text-xs text-gray-600">in progress</span>
+          </div>
+          {tasksInReview > 0 && (
+            <div className="text-[10px] text-amber-400 mt-0.5">{tasksInReview} in review</div>
+          )}
+        </div>
+
+        {/* Shipped */}
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Shipped</div>
+          <div className="text-lg font-bold text-green-400 mt-1">{tasksDone}</div>
+        </div>
+
+        {/* Approvals */}
+        <div className={`bg-[#111113] rounded-lg p-4 border ${pendingApprovals > 0 ? 'border-amber-500/40' : 'border-[#1e1e21]'}`}>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Approvals</div>
+          <div className={`text-lg font-bold mt-1 ${pendingApprovals > 0 ? 'text-amber-400' : 'text-gray-500'}`}>
+            {pendingApprovals}
+          </div>
+          {pendingApprovals > 0 && (
+            <Link href="/approvals" className="text-[10px] text-amber-400 hover:text-amber-300">Review →</Link>
+          )}
+        </div>
+
+        {/* Cost Today */}
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Cost Today</div>
+          <div className="text-lg font-bold text-gray-300 mt-1">
+            ${usage?.today.totalCostUsd || '0.00'}
+          </div>
+          {usage && usage.today.events > 0 && (
+            <div className="text-[10px] text-gray-600 mt-0.5">{usage.today.events} events</div>
+          )}
+        </div>
+      </div>
+
+      {/* Row 2: Sprint Progress + Agent Health Strip */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Sprint */}
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-medium text-gray-300">
+              {activeSprint?.name || 'Current Sprint'}
+            </div>
+            <span className="text-xs text-gray-500">{tasksDone}/{totalTasks}</span>
+          </div>
+          <div className="h-2 bg-[#1a1a1d] rounded-full overflow-hidden">
+            <div className="h-full bg-amber-500 rounded-full" style={{ width: `${sprintProgress}%` }} />
+          </div>
+          <div className="flex justify-between mt-2 text-[10px] text-gray-600">
+            <span>{tasksBacklog} backlog</span>
+            <span>{tasksInProgress} building</span>
+            <span>{tasksDone} done</span>
+          </div>
+        </div>
+
+        {/* Agent Health Strip */}
+        <div className="lg:col-span-2 bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Agent Health</div>
+          <div className="flex flex-wrap gap-2">
+            {agents.map(a => (
+              <div key={a.id} className="flex items-center gap-1.5 px-2 py-1 bg-[#0a0a0b] rounded">
+                <span className={`w-2 h-2 rounded-full ${healthDots[a.state]}`} />
+                <span className="text-xs">{AGENT_EMOJIS[a.id] || '🤖'}</span>
+                <span className="text-[10px] text-gray-400 capitalize">{a.id === 'main' ? 'claw' : a.id}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Organization Grid */}
-      <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-gray-100">Organization</h3>
-          <span className="text-xs text-gray-500">
-            Refreshed {timeAgo(lastRefresh)}
-          </span>
-        </div>
-
-        {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading agents...</div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {agents.map(agent => {
-              const colors = statusColors[agent.status];
-              return (
-                <div
-                  key={agent.id}
-                  className="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-amber-500 transition-colors"
-                >
-                  <div className="text-3xl mb-2">{agent.emoji}</div>
-                  <div className="text-sm font-semibold text-gray-100">{agent.name}</div>
-                  <div className="text-xs text-gray-400 mt-1">{agent.role}</div>
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${colors.dot}`}></span>
-                    <span className={`text-xs ${colors.text}`}>{agent.status}</span>
-                  </div>
-                  {agent.lastActivity && (
-                    <div className="text-xs text-gray-600 mt-1">
-                      {timeAgo(agent.lastActivity)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      {/* Row 3: Activity Feed + Quick Nav */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Activity Feed */}
+        <div className="lg:col-span-3 bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#1e1e21] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+              <span className="text-xs font-medium text-gray-300">Live Activity</span>
+            </div>
+            <span className="text-[10px] text-gray-600">SSE connected</span>
           </div>
-        )}
-      </div>
-
-      {/* Activity Feed + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <h3 className="text-xl font-semibold text-gray-100 mb-4">Recent Activity</h3>
-          <div className="space-y-3">
+          <div className="divide-y divide-[#1e1e21]">
             {activities.length === 0 ? (
-              <p className="text-gray-500 text-sm">No recent activity</p>
+              <div className="px-4 py-6 text-center text-gray-600 text-xs">No recent activity</div>
             ) : (
               activities.map(act => (
-                <div key={act.id} className="flex items-start gap-3 py-2 border-b border-gray-800 last:border-0">
-                  <span className="text-lg">{agentEmoji(act.agentId)}</span>
+                <div key={act.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-[#141416]">
+                  <span className="text-base">{AGENT_EMOJIS[act.agentId] || '🤖'}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm text-gray-200">
-                      <span className="font-medium capitalize">{act.agentId}</span>
-                      {' '}
-                      <span className="text-gray-400">
-                        {actionLabels[act.action] || act.action}
-                      </span>
-                      {act.target && (
-                        <span className="text-gray-500"> — {act.target}</span>
-                      )}
-                    </div>
-                    {act.details && (
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">{act.details}</p>
-                    )}
-                    <div className="text-xs text-gray-600 mt-0.5">
-                      {timeAgo(new Date(act.timestamp).getTime())}
-                    </div>
+                    <span className="text-xs text-gray-300 font-medium capitalize">{act.agentId}</span>
+                    <span className="text-xs text-gray-600"> {actionLabels[act.action] || act.action}</span>
+                    {act.target && <span className="text-xs text-gray-700"> — {act.target}</span>}
                   </div>
+                  <span className="text-[10px] text-gray-700 shrink-0">{timeAgo(act.timestamp)}</span>
                 </div>
               ))
             )}
           </div>
         </div>
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <h3 className="text-xl font-semibold text-gray-100 mb-4">Quick Actions</h3>
-          <div className="space-y-3">
-            <Link
-              href="/tasks"
-              className="block p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">✓</span>
+
+        {/* Quick Nav */}
+        <div className="lg:col-span-2 bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">Quick Navigation</div>
+          <div className="grid grid-cols-2 gap-2">
+            {quickNav.map(nav => (
+              <Link
+                key={nav.href}
+                href={nav.href}
+                className="flex items-center gap-2.5 px-3 py-2.5 bg-[#0a0a0b] rounded-lg border border-[#1e1e21] hover:border-amber-500/30 hover:bg-[#141416]"
+              >
+                <span className="text-base">{nav.icon}</span>
                 <div>
-                  <div className="font-semibold text-gray-100">View Tasks</div>
-                  <div className="text-sm text-gray-400">Kanban board and assignments</div>
+                  <div className="text-xs font-medium text-gray-200">{nav.label}</div>
+                  <div className="text-[10px] text-gray-600">{nav.desc}</div>
                 </div>
-              </div>
-            </Link>
-            <Link
-              href="/approvals"
-              className="block p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">✋</span>
-                <div>
-                  <div className="font-semibold text-gray-100">Pending Approvals</div>
-                  <div className="text-sm text-gray-400">Review and approve requests</div>
-                </div>
-              </div>
-            </Link>
+              </Link>
+            ))}
           </div>
         </div>
       </div>
