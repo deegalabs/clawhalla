@@ -83,6 +83,16 @@ function ApprovalsIcon({ className }: { className?: string }) {
   );
 }
 
+function OfficeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="3" width="14" height="11" rx="1" />
+      <path d="M4 7h3v4H4zM9 7h3v4H9z" />
+      <path d="M1 3l7-2 7 2" />
+    </svg>
+  );
+}
+
 function PipelineIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -172,6 +182,7 @@ const navSections = [
     label: 'System',
     links: [
       { href: '/team', label: 'Team', icon: TeamIcon },
+      { href: '/office', label: 'Office', icon: OfficeIcon },
       { href: '/feedback', label: 'Feedback', icon: FeedbackIcon },
       { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
       { href: '/settings', label: 'Settings', icon: SettingsIcon },
