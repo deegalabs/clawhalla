@@ -120,7 +120,7 @@ function SearchIcon({ className }: { className?: string }) {
 }
 
 const navLinks = [
-  { href: '/', label: 'Dashboard', icon: DashboardIcon },
+  { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
   { href: '/tasks', label: 'Tasks', icon: TasksIcon },
   { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
   { href: '/projects', label: 'Projects', icon: ProjectsIcon },
