@@ -83,6 +83,14 @@ function ApprovalsIcon({ className }: { className?: string }) {
   );
 }
 
+function PipelineIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 4h4v8H1zM6 6h4v6H6zM11 2h4v12h-4z" />
+    </svg>
+  );
+}
+
 function CouncilIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -147,6 +155,7 @@ const navSections = [
       { href: '/tasks', label: 'Tasks', icon: TasksIcon },
       { href: '/projects', label: 'Projects', icon: ProjectsIcon },
       { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
+      { href: '/pipeline', label: 'Pipeline', icon: PipelineIcon },
       { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
     ],
   },
