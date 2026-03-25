@@ -30,7 +30,7 @@ interface IAgentRegistry {
     function deactivateTemplate(uint256 id) external;
 
     /// @notice Record an installation (called by Marketplace)
-    function recordInstall(uint256 id) external;
+    function recordInstall(uint256 id, address buyer) external;
 
     /// @notice Get template details
     function getTemplate(uint256 id) external view returns (AgentTemplate memory);

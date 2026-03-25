@@ -24,6 +24,7 @@ contract LicenseNFT is ILicenseNFT {
 
     address public marketplace;
     address public owner;
+    address public pendingOwner;
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
@@ -39,12 +40,18 @@ contract LicenseNFT is ILicenseNFT {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
+    event MarketplaceUpdated(address indexed oldMarketplace, address indexed newMarketplace);
+    event OwnershipTransferStarted(address indexed oldOwner, address indexed newOwner);
+    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
 
     constructor() {
         owner = msg.sender;
     }
 
+    /// [MEDIUM-004] Zero address check + [LOW-002] Event
     function setMarketplace(address _marketplace) external onlyOwner {
+        require(_marketplace != address(0), "Zero address");
+        emit MarketplaceUpdated(marketplace, _marketplace);
         marketplace = _marketplace;
     }
 
@@ -90,8 +97,18 @@ contract LicenseNFT is ILicenseNFT {
         emit LicenseRevoked(tokenId);
     }
 
-    function licensesOf(address user) external view returns (uint256[] memory) {
-        return _userLicenses[user];
+    /// [MEDIUM-002 FIX] Return only valid licenses (filters stale entries from transfers)
+    function licensesOf(address user) external view returns (uint256[] memory validTemplates) {
+        uint256[] storage all = _userLicenses[user];
+        uint256 count;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (_hasLicense[user][all[i]]) count++;
+        }
+        validTemplates = new uint256[](count);
+        uint256 idx;
+        for (uint256 i = 0; i < all.length; i++) {
+            if (_hasLicense[user][all[i]]) validTemplates[idx++] = all[i];
+        }
     }
 
     // --- ERC-721 core ---
@@ -158,5 +175,19 @@ contract LicenseNFT is ILicenseNFT {
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == 0x80ac58cd // ERC-721
             || interfaceId == 0x01ffc9a7; // ERC-165
+    }
+
+    /// [MEDIUM-003] Two-step ownership transfer
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Zero address");
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "Not pending owner");
+        emit OwnershipTransferred(owner, pendingOwner);
+        owner = pendingOwner;
+        pendingOwner = address(0);
     }
 }
