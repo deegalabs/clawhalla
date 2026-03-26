@@ -204,7 +204,6 @@ const navSections = [
       { href: '/office', label: 'Office', icon: OfficeIcon },
       { href: '/terminal', label: 'Terminal', icon: TerminalIcon },
       { href: '/feedback', label: 'Autopilot', icon: FeedbackIcon },
-      { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
       { href: '/settings', label: 'Settings', icon: SettingsIcon },
     ],
   },
@@ -317,7 +316,6 @@ export default function DashboardLayout({
             </h2>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-[11px] text-gray-600">15 agents • 4 squads</span>
           </div>
         </header>
 

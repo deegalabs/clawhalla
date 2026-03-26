@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, DragEvent } from 'react';
+import { MarkdownView } from '@/components/ui/markdown-view';
 
 // Types
 interface Task {
@@ -73,13 +74,40 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
   onSave: (t: Task) => void; onDelete: (id: string) => void;
 }) {
   const [form, setForm] = useState({ ...task });
-  const [tab, setTab] = useState<'details' | 'checklist' | 'notes'>('details');
+  const [tab, setTab] = useState<'details' | 'checklist' | 'notes' | 'dispatch'>('details');
   const [checklist, setChecklist] = useState<{ text: string; done: boolean }[]>(() => {
     try { const parsed = JSON.parse(task.notes || '[]'); return Array.isArray(parsed) ? parsed.filter((c: { text?: string }) => c && typeof c.text === 'string') as { text: string; done: boolean }[] : []; }
     catch { return []; }
   });
   const [newCheckItem, setNewCheckItem] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; output: string; duration?: number; agentId?: string } | null>(null);
+
+  const handleDispatch = async () => {
+    setDispatching(true);
+    setDispatchResult(null);
+    setTab('dispatch');
+    try {
+      const res = await fetch('/api/dispatch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: form.id }),
+      });
+      const data = await res.json();
+      setDispatchResult({
+        ok: data.success,
+        output: data.output || data.error || 'No output',
+        duration: data.duration,
+        agentId: data.agentId,
+      });
+      if (data.success) {
+        setForm(prev => ({ ...prev, status: 'done' }));
+      }
+    } catch (err) {
+      setDispatchResult({ ok: false, output: String(err) });
+    }
+    setDispatching(false);
+  };
 
   const handleSave = () => {
     const notes = checklist.length > 0 ? JSON.stringify(checklist) : form.notes;
@@ -126,10 +154,10 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
 
         {/* Tabs */}
         <div className="px-5 pt-1 flex gap-0.5 border-b border-[#1e1e21] shrink-0">
-          {(['details', 'checklist', 'notes'] as const).map(t => (
+          {(['details', 'checklist', 'notes', 'dispatch'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 text-[11px] rounded-t capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
-              {t}{t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
+              {t === 'dispatch' ? '▶ Dispatch' : t}{t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
             </button>
           ))}
         </div>
@@ -182,9 +210,75 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
             </div>
           )}
           {tab === 'notes' && (
-            <textarea rows={14} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })}
-              placeholder="Notes, code snippets, links..."
-              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 resize-none leading-relaxed" />
+            <div>
+              <MarkdownView content={form.notes || ''} defaultView="rendered" maxHeight="max-h-[40vh]" />
+              <textarea rows={8} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })}
+                placeholder="Notes, code snippets, links..."
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 focus-visible:outline-none resize-none leading-relaxed mt-2" />
+            </div>
+          )}
+          {tab === 'dispatch' && (
+            <div className="space-y-3">
+              {/* Dispatch info */}
+              <div className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Dispatch Info</div>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div><span className="text-gray-600">Agent:</span> <span className="text-amber-400">@{form.assignedTo || 'main'}</span></div>
+                  <div><span className="text-gray-600">Priority:</span> <span className="text-gray-300">{form.priority || 'medium'}</span></div>
+                  <div><span className="text-gray-600">Status:</span> <span className="text-gray-300">{form.status}</span></div>
+                  <div><span className="text-gray-600">Project:</span> <span className="text-gray-300">{form.projectId || '—'}</span></div>
+                </div>
+              </div>
+
+              {/* Run button */}
+              {!dispatching && !dispatchResult && (
+                <button onClick={handleDispatch}
+                  className="w-full py-3 text-sm font-medium bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-400 flex items-center justify-center gap-2">
+                  <span>▶</span> Run Task — Dispatch to @{form.assignedTo || 'main'}
+                </button>
+              )}
+
+              {/* Running state */}
+              {dispatching && (
+                <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 text-center">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <span className="flex gap-1">
+                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </span>
+                  </div>
+                  <div className="text-sm text-amber-400">Agent @{form.assignedTo || 'main'} executing...</div>
+                  <div className="text-[10px] text-gray-600 mt-1">This may take up to 2 minutes</div>
+                </div>
+              )}
+
+              {/* Result */}
+              {dispatchResult && (
+                <div className={`rounded-lg border p-4 ${dispatchResult.ok ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`text-lg ${dispatchResult.ok ? '' : ''}`}>{dispatchResult.ok ? '✅' : '❌'}</span>
+                    <div>
+                      <div className={`text-sm font-medium ${dispatchResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                        {dispatchResult.ok ? 'Task Completed' : 'Task Failed'}
+                      </div>
+                      <div className="text-[10px] text-gray-600">
+                        Agent: @{dispatchResult.agentId}
+                        {dispatchResult.duration && ` • ${Math.round(dispatchResult.duration / 1000)}s`}
+                      </div>
+                    </div>
+                  </div>
+                  <MarkdownView content={dispatchResult.output} maxHeight="max-h-60" />
+                  {/* Retry button if failed */}
+                  {!dispatchResult.ok && (
+                    <button onClick={() => { setDispatchResult(null); handleDispatch(); }}
+                      className="mt-3 px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -321,10 +415,17 @@ export default function TasksPage() {
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
                   {colTasks.map(task => (
-                    <div key={task.id} draggable onDragStart={e => onDragStart(e, task.id)} onClick={() => setSelectedTask(task)}
-                      className={`bg-[#0a0a0b] rounded-lg p-2.5 border-l-2 ${priorityConfig[task.priority]?.border || 'border-l-gray-600'} cursor-pointer hover:bg-[#141416]`}>
-                      <div className="text-[12px] text-gray-200 font-medium leading-tight">{task.title}</div>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <div key={task.id} draggable onDragStart={e => onDragStart(e, task.id)}
+                      className={`bg-[#0a0a0b] rounded-lg p-2.5 border-l-2 ${priorityConfig[task.priority]?.border || 'border-l-gray-600'} cursor-pointer hover:bg-[#141416] group/card`}>
+                      <div className="flex items-start justify-between" onClick={() => setSelectedTask(task)}>
+                        <div className="text-[12px] text-gray-200 font-medium leading-tight flex-1">{task.title}</div>
+                        {task.status !== 'done' && task.assignedTo && (
+                          <button onClick={e => { e.stopPropagation(); setSelectedTask(task); setTimeout(() => { const el = document.querySelector('[data-tab="dispatch"]') as HTMLButtonElement; el?.click(); }, 100); }}
+                            className="opacity-0 group-hover/card:opacity-100 text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 shrink-0 ml-1"
+                            title="Dispatch to agent">▶</button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap" onClick={() => setSelectedTask(task)}>
                         {task.assignedTo && <span className="flex items-center gap-1 text-[10px] text-amber-500">{AGENT_EMOJIS[task.assignedTo] && <span className="text-xs">{AGENT_EMOJIS[task.assignedTo]}</span>}@{task.assignedTo}</span>}
                         {task.tags && task.tags.split(',').filter(Boolean).slice(0, 2).map(tag => <span key={tag} className="text-[9px] px-1 py-0.5 bg-[#1a1a1d] text-gray-500 rounded">{tag.trim()}</span>)}
                       </div>
