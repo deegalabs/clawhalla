@@ -51,6 +51,7 @@ function GitPanel() {
   const [repo, setRepo] = useState<GitRepo | null>(null);
   const [pushing, setPushing] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const fetch_ = useCallback(async () => {
     try { const r = await fetch('/api/git'); const d = await r.json(); if (d.ok) setRepo(d.repo); } catch {}
@@ -68,30 +69,44 @@ function GitPanel() {
   const name = repo.remote.split('/').slice(-2).join('/').replace('.git', '');
 
   return (
-    <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[#1e1e21] flex items-center justify-between">
+    <div className="border-t border-[#1e1e21]">
+      {/* Collapsible header */}
+      <button onClick={() => setExpanded(!expanded)} className="w-full px-5 py-2.5 flex items-center justify-between hover:bg-[#0a0a0b]">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">⎇</span>
-          <span className="text-xs font-medium text-gray-200">{name}</span>
+          <span className="text-[10px] text-gray-500">{expanded ? '▼' : '▶'}</span>
+          <span className="text-[10px] text-gray-400">⎇</span>
+          <span className="text-[11px] font-medium text-gray-300">{name}</span>
           <span className="text-[10px] text-gray-600">({repo.branch})</span>
         </div>
         <div className="flex items-center gap-2">
-          {repo.ahead > 0 && <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">{repo.ahead} ahead</span>}
-          {repo.ahead === 0 && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">Up to date</span>}
-          <button onClick={push} disabled={pushing || repo.ahead === 0} className="px-2.5 py-1 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">{pushing ? '...' : 'Push'}</button>
-          <button onClick={fetch_} className="px-2.5 py-1 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-300">↻</button>
+          {repo.ahead > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">{repo.ahead} ahead</span>}
+          {repo.ahead === 0 && <span className="text-[9px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">✓</span>}
         </div>
-      </div>
-      {result && <div className="px-4 py-1.5 bg-[#0a0a0b] border-b border-[#1e1e21] text-[10px] text-gray-400 font-mono">{result}</div>}
-      <div className="max-h-[200px] overflow-y-auto divide-y divide-[#1e1e21]">
-        {repo.commits.slice(0, 6).map((c, i) => (
-          <div key={c.hash} className="px-4 py-1.5 flex items-center gap-2 text-xs hover:bg-[#1a1a1d]">
-            <code className="text-amber-500/60 font-mono w-14 shrink-0">{c.hash}</code>
-            <span className={i < repo.ahead ? 'text-gray-200' : 'text-gray-500'}>{c.message}</span>
-            {i < repo.ahead && <span className="text-[9px] text-amber-500/40 ml-auto">unpushed</span>}
+      </button>
+      {expanded && (
+        <div className="border-t border-[#1e1e21]">
+          <div className="px-5 py-2 flex gap-2">
+            <button onClick={push} disabled={pushing || repo.ahead === 0} className="px-2.5 py-1 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">{pushing ? 'Pushing...' : 'Push'}</button>
+            <button onClick={fetch_} className="px-2.5 py-1 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-300">Refresh</button>
           </div>
-        ))}
-      </div>
+          {result && <div className="px-5 py-1.5 text-[10px] text-gray-400 font-mono">{result}</div>}
+          <div className="max-h-[180px] overflow-y-auto divide-y divide-[#1e1e21]">
+            {repo.commits.slice(0, 8).map((c, i) => (
+              <div key={c.hash} className="px-5 py-1.5 flex items-center gap-2 text-[11px] hover:bg-[#1a1a1d]">
+                <code className="text-amber-500/60 font-mono w-14 shrink-0">{c.hash}</code>
+                <span className={`flex-1 truncate ${i < repo.ahead ? 'text-gray-200' : 'text-gray-500'}`}>{c.message}</span>
+                {i < repo.ahead && <span className="text-[9px] text-amber-500/40 shrink-0">unpushed</span>}
+              </div>
+            ))}
+          </div>
+          {repo.dirty && (
+            <div className="px-5 py-2 bg-red-500/5 border-t border-[#1e1e21]">
+              <div className="text-[10px] text-red-400 font-medium mb-0.5">Uncommitted:</div>
+              {repo.changedFiles.map(f => <div key={f} className="text-[10px] text-gray-600 font-mono">{f}</div>)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -180,6 +195,9 @@ function ProjectDetail({ project, taskData, onClose }: { project: Project; taskD
           )}
         </div>
 
+        {/* Git Panel (inside project if has repo) */}
+        {project.repo && <GitPanel />}
+
         {/* Footer */}
         <div className="px-5 py-3 border-t border-[#1e1e21] flex justify-end">
           <button onClick={onClose} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded hover:text-gray-200">Close</button>
@@ -235,9 +253,6 @@ export default function ProjectsPage() {
           ))}
         </div>
       </div>
-
-      {/* Git Panel */}
-      <GitPanel />
 
       {/* Project Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
