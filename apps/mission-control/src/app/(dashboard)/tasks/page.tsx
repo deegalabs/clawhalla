@@ -220,6 +220,22 @@ export default function TasksPage() {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [filter, setFilter] = useState({ search: '', assignee: '', priority: '' });
   const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '', sprintId: '', storyId: '', tags: '', estimatedHours: '' });
+  const [showNewSprint, setShowNewSprint] = useState(false);
+  const [showNewEpic, setShowNewEpic] = useState(false);
+  const [newSprint, setNewSprint] = useState({ name: '', startDate: '', endDate: '' });
+  const [newEpic, setNewEpic] = useState({ title: '', priority: 'medium', notes: '' });
+
+  const handleCreateSprint = async () => {
+    if (!newSprint.name) return;
+    await fetch('/api/sprints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newSprint) });
+    setShowNewSprint(false); setNewSprint({ name: '', startDate: '', endDate: '' }); fetchTasks();
+  };
+
+  const handleCreateEpic = async () => {
+    if (!newEpic.title) return;
+    await fetch('/api/epics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newEpic) });
+    setShowNewEpic(false); setNewEpic({ title: '', priority: 'medium', notes: '' }); fetchTasks();
+  };
 
   const fetchTasks = useCallback(() => {
     fetch('/api/board/sync?project=clawhalla').then(r => r.json()).then(data => {
@@ -344,8 +360,8 @@ export default function TasksPage() {
                     }} className="opacity-0 group-hover:opacity-100 px-1 py-0.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[9px] text-gray-400 focus:outline-none">
                       <option value="planning">Planning</option><option value="active">Active</option><option value="done">Done</option>
                     </select>
-                    <button onClick={async () => { if (confirm(`Delete sprint "${sp.name}"?`)) { await fetch(`/api/sprints?id=${sp.id}`, { method: 'DELETE' }); fetchTasks(); }}}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400">×</button>
+                    <button onClick={async () => { await fetch(`/api/sprints?id=${sp.id}`, { method: 'DELETE' }); fetchTasks(); }}
+                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400" title="Delete sprint">×</button>
                   </div>
                 </div>
                 <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-3"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
@@ -363,15 +379,34 @@ export default function TasksPage() {
               </div>
             );
           })}
-          {/* New Sprint inline */}
-          <button onClick={async () => {
-            const name = prompt('Sprint name:'); if (!name) return;
-            const start = prompt('Start date (YYYY-MM-DD):') || '';
-            const end = prompt('End date (YYYY-MM-DD):') || '';
-            await fetch('/api/sprints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, startDate: start, endDate: end }) }); fetchTasks();
-          }} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
-            + New Sprint
-          </button>
+          {/* New Sprint form */}
+          {showNewSprint ? (
+            <div className="bg-[#111113] rounded-lg border border-amber-500/30 p-4 space-y-3">
+              <div className="text-xs font-semibold text-gray-200">New Sprint</div>
+              <input type="text" placeholder="Sprint name" value={newSprint.name} onChange={e => setNewSprint({ ...newSprint, name: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" autoFocus />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Start Date</label>
+                  <input type="date" value={newSprint.startDate} onChange={e => setNewSprint({ ...newSprint, startDate: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">End Date</label>
+                  <input type="date" value={newSprint.endDate} onChange={e => setNewSprint({ ...newSprint, endDate: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleCreateSprint} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
+                <button onClick={() => setShowNewSprint(false)} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setShowNewSprint(true)} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
+              + New Sprint
+            </button>
+          )}
         </div>
       )}
 
@@ -392,8 +427,8 @@ export default function TasksPage() {
                     }} className="opacity-0 group-hover:opacity-100 px-1 py-0.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[9px] text-gray-400 focus:outline-none">
                       <option value="active">Active</option><option value="done">Done</option><option value="backlog">Backlog</option>
                     </select>
-                    <button onClick={async () => { if (confirm(`Delete epic "${epic.title}"?`)) { await fetch(`/api/epics?id=${epic.id}`, { method: 'DELETE' }); fetchTasks(); }}}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400">×</button>
+                    <button onClick={async () => { await fetch(`/api/epics?id=${epic.id}`, { method: 'DELETE' }); fetchTasks(); }}
+                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400" title="Delete epic">×</button>
                   </div>
                 </div>
                 {epic.notes && <p className="text-[10px] text-gray-500 mb-2">{epic.notes}</p>}
@@ -411,15 +446,36 @@ export default function TasksPage() {
               </div>
             );
           })}
-          {/* New Epic inline */}
-          <button onClick={async () => {
-            const title = prompt('Epic title:'); if (!title) return;
-            const priority = prompt('Priority (low/medium/high/critical):') || 'medium';
-            const notes = prompt('Notes (optional):') || '';
-            await fetch('/api/epics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, priority, notes }) }); fetchTasks();
-          }} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
-            + New Epic
-          </button>
+          {/* New Epic form */}
+          {showNewEpic ? (
+            <div className="bg-[#111113] rounded-lg border border-amber-500/30 p-4 space-y-3">
+              <div className="text-xs font-semibold text-gray-200">New Epic</div>
+              <input type="text" placeholder="Epic title" value={newEpic.title} onChange={e => setNewEpic({ ...newEpic, title: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" autoFocus />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Priority</label>
+                  <select value={newEpic.priority} onChange={e => setNewEpic({ ...newEpic, priority: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 mb-1">Notes</label>
+                  <input type="text" placeholder="Optional notes" value={newEpic.notes} onChange={e => setNewEpic({ ...newEpic, notes: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleCreateEpic} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
+                <button onClick={() => setShowNewEpic(false)} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setShowNewEpic(true)} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
+              + New Epic
+            </button>
+          )}
         </div>
       )}
 
