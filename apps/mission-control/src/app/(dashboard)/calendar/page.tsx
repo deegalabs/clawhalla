@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { PageLoading } from '@/components/ui/loading';
+import { autoTask } from '@/lib/tasks';
 
 interface CronJob {
   id: string;
@@ -92,18 +94,23 @@ export default function CalendarPage() {
   const doAction = async (id: string, action: string) => {
     setActionLoading(id);
     await fetch('/api/crons', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, action }) });
+    const job = crons.find(c => c.id === id);
+    if (job) autoTask.cronAction(action, job.name);
     fetchCrons(); setActionLoading(null);
   };
 
   const doDelete = async (id: string) => {
+    const job = crons.find(c => c.id === id);
     setActionLoading(id);
     await fetch(`/api/crons?id=${id}`, { method: 'DELETE' });
+    if (job) autoTask.cronAction('deleted', job.name);
     fetchCrons(); setActionLoading(null);
   };
 
   const handleCreate = async () => {
     if (!newCron.name || !newCron.message) return;
     await fetch('/api/crons', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCron) });
+    autoTask.cronAction('created', newCron.name);
     setShowCreate(false); setNewCron({ name: '', agentId: 'main', cron: '0 * * * *', message: '', model: '', timezone: '' }); fetchCrons();
   };
 
@@ -116,6 +123,7 @@ export default function CalendarPage() {
     if (!editingCron) return;
     await fetch('/api/crons', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: editingCron.id, name: editForm.name, cron: editForm.cron, message: editForm.message }) });
+    autoTask.cronAction('updated', editForm.name);
     setEditingCron(null); fetchCrons();
   };
 
@@ -128,6 +136,7 @@ export default function CalendarPage() {
     const newExpr = `${parts[0]} ${hour} ${parts[2]} ${parts[3]} ${dayIdx}`;
     await fetch('/api/crons', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: cronId, cron: newExpr }) });
+    autoTask.cronAction('rescheduled', job.name);
     fetchCrons();
   };
 
@@ -299,7 +308,7 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {loading && <div className="text-center py-8 text-gray-600 text-xs">Loading...</div>}
+      {loading && <PageLoading title="Loading calendar..." />}
 
       {/* Create Modal */}
       {showCreate && (

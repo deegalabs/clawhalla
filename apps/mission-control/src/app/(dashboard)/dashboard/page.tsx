@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { PageLoading } from '@/components/ui/loading';
 
 interface AgentHealth {
   id: string;
@@ -136,7 +137,7 @@ export default function DashboardPage() {
   const sprintProgress = totalTasks > 0 ? Math.round((tasksDone / totalTasks) * 100) : 0;
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-gray-600 text-sm">Loading dashboard...</div>;
+    return <PageLoading title="Loading dashboard..." />;
   }
 
   return (

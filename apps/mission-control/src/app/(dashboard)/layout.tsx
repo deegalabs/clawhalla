@@ -101,6 +101,16 @@ function OfficeIcon({ className }: { className?: string }) {
   );
 }
 
+function TerminalIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="2" width="14" height="12" rx="2" />
+      <path d="M4 6l3 2.5L4 11" />
+      <path d="M9 11h3" />
+    </svg>
+  );
+}
+
 function PipelineIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -192,7 +202,8 @@ const navSections = [
     links: [
       { href: '/team', label: 'Team', icon: TeamIcon },
       { href: '/office', label: 'Office', icon: OfficeIcon },
-      { href: '/feedback', label: 'Feedback', icon: FeedbackIcon },
+      { href: '/terminal', label: 'Terminal', icon: TerminalIcon },
+      { href: '/feedback', label: 'Autopilot', icon: FeedbackIcon },
       { href: '/marketplace', label: 'Marketplace', icon: MarketplaceIcon },
       { href: '/settings', label: 'Settings', icon: SettingsIcon },
     ],

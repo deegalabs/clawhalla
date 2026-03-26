@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { PageLoading } from '@/components/ui/loading';
 
 interface AgentHealth {
   id: string;
@@ -70,6 +71,7 @@ export default function FactoryPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [usage, setUsage] = useState<UsageData | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
@@ -89,6 +91,7 @@ export default function FactoryPage() {
       if (Array.isArray(actData)) setActivities(actData);
       if (usageData.ok) setUsage(usageData);
     } catch {}
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -119,6 +122,10 @@ export default function FactoryPage() {
 
   // Agent utilization (agents with cost data)
   const agentUsage = usage?.byAgent || {};
+
+  if (loading) {
+    return <PageLoading title="Loading factory..." />;
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)] gap-4">

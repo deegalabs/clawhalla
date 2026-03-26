@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { MarkdownView } from '@/components/ui/markdown-view';
 
 interface MemoryEntry { name: string; path: string; date: string; size: number; wordCount: number; content: string; modifiedAt: string; }
 interface LongTermMemory { content: string; wordCount: number; modifiedAt: string | null; size: number; }
@@ -206,7 +207,7 @@ export default function MemoryPage() {
               <div className="text-[10px] text-gray-500 mt-0.5">{selected.wordCount.toLocaleString()} words • {(selected.size / 1024).toFixed(1)}KB</div>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap text-xs text-gray-300 font-mono leading-relaxed">{selected.content}</pre>
+              <MarkdownView content={selected.content} maxHeight="max-h-[60vh]" />
             </div>
           </>
         ) : viewContent ? (
@@ -215,7 +216,7 @@ export default function MemoryPage() {
               <h2 className="text-sm font-semibold text-gray-100">{viewContent.title}</h2>
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap text-xs text-gray-300 font-mono leading-relaxed">{viewContent.content}</pre>
+              <MarkdownView content={viewContent.content} maxHeight="max-h-[60vh]" />
             </div>
           </>
         ) : (

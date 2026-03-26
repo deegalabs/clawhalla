@@ -17,7 +17,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="antialiased font-sans bg-[#0a0a0b] text-gray-200">
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0a0a0b" />
+      </head>
+      <body className="antialiased font-sans bg-[#0a0a0b] text-gray-200" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

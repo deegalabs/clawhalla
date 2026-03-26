@@ -19,10 +19,14 @@
   background: #555;
 }
 
-/* Focus ring — amber accent */
+/* Focus ring — amber accent (skip textareas inside chat pill) */
 *:focus-visible {
   outline: 2px solid #f59e0b;
   outline-offset: 1px;
+}
+textarea:focus-visible,
+input:focus-visible {
+  outline: none;
 }
 
 /* Mark highlight for search */

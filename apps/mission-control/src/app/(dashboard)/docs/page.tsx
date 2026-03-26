@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { MarkdownView } from '@/components/ui/markdown-view';
 
 interface DocEntry { name: string; path: string; category: string; size: number; wordCount: number; modifiedAt: string; content: string; }
 interface SearchResult { path: string; title: string; category: string; snippet: string; word_count: number; size: number; last_modified: number; }
@@ -231,7 +232,7 @@ export default function DocsPage() {
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto px-5 py-4">
-                <pre className="whitespace-pre-wrap text-xs text-gray-300 font-mono leading-relaxed">{selected.content}</pre>
+                <MarkdownView content={selected.content} maxHeight="max-h-[60vh]" />
               </div>
             </>
           ) : (

@@ -1,6 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { PageLoading } from '@/components/ui/loading';
+import { MarkdownView } from '@/components/ui/markdown-view';
+import { autoTask } from '@/lib/tasks';
 
 interface SearchResult { path: string; title: string; category: string; snippet: string; word_count: number; last_modified: number; }
 interface UsageData { today: { totalCostUsd: string; inputTokens: number; outputTokens: number; events: number }; byAgent: Record<string, { input: number; output: number; cost: number; count: number }>; byModel: Record<string, { input: number; output: number; cost: number }>; }
@@ -32,15 +35,18 @@ export default function CouncilPage() {
   const [councilMemos, setCouncilMemos] = useState<{ name: string; preview: string; size: number }[]>([]);
   const [startingSession, setStartingSession] = useState(false);
   const [sessionResult, setSessionResult] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/search?q=research+report+analysis&limit=20').then(r => r.json()).then(d => { if (d.ok) setReports(d.results); });
-    fetch('/api/search?q=insight+actionable+opportunity&limit=20').then(r => r.json()).then(d => { if (d.ok) setInsights(d.results); });
-    fetch('/api/search?q=ADR+decision+architecture&category=adr&limit=20').then(r => r.json()).then(d => { if (d.ok) setAdrs(d.results); });
-    fetch('/api/search?q=transcription+video+podcast&limit=20').then(r => r.json()).then(d => { if (d.ok) setTranscriptions(d.results); });
-    fetch('/api/usage').then(r => r.json()).then(d => { if (d.ok) setUsage(d); });
-    fetch('/api/feedback').then(r => r.json()).then(d => { if (d.ok) setLearnings(d.entries?.slice(0, 10) || []); });
-    fetch('/api/council/session').then(r => r.json()).then(d => { if (d.ok) setCouncilMemos(d.memos); });
+    Promise.all([
+      fetch('/api/search?q=research+report+analysis&limit=20').then(r => r.json()).then(d => { if (d.ok) setReports(d.results); }),
+      fetch('/api/search?q=insight+actionable+opportunity&limit=20').then(r => r.json()).then(d => { if (d.ok) setInsights(d.results); }),
+      fetch('/api/search?q=ADR+decision+architecture&category=adr&limit=20').then(r => r.json()).then(d => { if (d.ok) setAdrs(d.results); }),
+      fetch('/api/search?q=transcription+video+podcast&limit=20').then(r => r.json()).then(d => { if (d.ok) setTranscriptions(d.results); }),
+      fetch('/api/usage').then(r => r.json()).then(d => { if (d.ok) setUsage(d); }),
+      fetch('/api/feedback').then(r => r.json()).then(d => { if (d.ok) setLearnings(d.entries?.slice(0, 10) || []); }),
+      fetch('/api/council/session').then(r => r.json()).then(d => { if (d.ok) setCouncilMemos(d.memos); }),
+    ]).finally(() => setLoading(false));
   }, []);
 
   const loadDoc = useCallback(async (path: string) => {
@@ -54,6 +60,10 @@ export default function CouncilPage() {
   }, []);
 
   const totalMemos = reports.length + insights.length + adrs.length;
+
+  if (loading) {
+    return <PageLoading title="Loading council..." />;
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)] gap-4">
@@ -104,7 +114,10 @@ export default function CouncilPage() {
               const res = await fetch('/api/council/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
               const data = await res.json();
               setSessionResult(data.ok ? '🔬 Session started' : data.error);
-              if (data.ok) setTimeout(() => fetch('/api/council/session').then(r => r.json()).then(d => { if (d.ok) setCouncilMemos(d.memos); }), 60000);
+              if (data.ok) {
+                autoTask.councilSession('R&D Council Session');
+                setTimeout(() => fetch('/api/council/session').then(r => r.json()).then(d => { if (d.ok) setCouncilMemos(d.memos); }), 60000);
+              }
             } catch { setSessionResult('Failed'); }
             setStartingSession(false);
           }} disabled={startingSession}
@@ -289,7 +302,7 @@ export default function CouncilPage() {
                 <div className="text-[10px] text-gray-600">{selectedDoc}</div>
               </div>
               <div className="flex-1 overflow-y-auto px-5 py-4">
-                <pre className="whitespace-pre-wrap text-xs text-gray-300 font-mono leading-relaxed">{docContent}</pre>
+                <MarkdownView content={docContent} maxHeight="max-h-[60vh]" />
               </div>
             </>
           ) : (

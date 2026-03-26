@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { autoTask } from '@/lib/tasks';
 
 interface Approval {
   id: string;
@@ -72,11 +73,16 @@ export default function ApprovalsPage() {
   }, [fetchApprovals]);
 
   const handleDecision = async (id: string, decision: 'approved' | 'rejected', reason?: string) => {
+    const approval = pending.find(a => a.id === id);
     await fetch(`/api/approvals/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ decision, decidedBy: 'daniel', reason }),
     });
+    autoTask.approvalAction(
+      decision === 'approved' ? 'Approved' : 'Rejected',
+      approval?.taskId || id
+    );
     setRejectingId(null);
     setRejectReason('');
     fetchApprovals();
@@ -90,6 +96,7 @@ export default function ApprovalsPage() {
         body: JSON.stringify({ decision: 'approved', decidedBy: 'daniel' }),
       });
     }
+    autoTask.approvalAction('Approved all', `${pending.length} pending approvals`);
     fetchApprovals();
   };
 

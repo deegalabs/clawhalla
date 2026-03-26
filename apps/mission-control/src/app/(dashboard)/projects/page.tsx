@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { autoTask } from '@/lib/tasks';
 
 interface Project {
   slug: string; name: string; status: string; description: string;
@@ -269,14 +270,18 @@ export default function ProjectsPage() {
   const handleSave = async (project: Project, isNew: boolean) => {
     if (isNew) {
       await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(project) });
+      autoTask.projectAction('Created project', project.name);
     } else {
       await fetch('/api/projects', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(project) });
+      autoTask.projectAction('Updated project', project.name);
     }
     setEditing(null); setSelected(null); fetchProjects();
   };
 
   const handleDelete = async (slug: string) => {
+    const project = projects.find(p => p.slug === slug);
     await fetch(`/api/projects?slug=${slug}`, { method: 'DELETE' });
+    autoTask.projectAction('Deleted project', project?.name || slug);
     setEditing(null); setSelected(null); fetchProjects();
   };
 
