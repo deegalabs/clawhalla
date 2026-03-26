@@ -69,7 +69,9 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'week' | 'list'>('week');
   const [showCreate, setShowCreate] = useState(false);
+  const [editingCron, setEditingCron] = useState<CronJob | null>(null);
   const [newCron, setNewCron] = useState({ name: '', agentId: 'main', cron: '0 * * * *', message: '', model: '', timezone: '' });
+  const [editForm, setEditForm] = useState({ name: '', cron: '', message: '' });
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const today = new Date();
@@ -104,6 +106,18 @@ export default function CalendarPage() {
     setShowCreate(false); setNewCron({ name: '', agentId: 'main', cron: '0 * * * *', message: '', model: '', timezone: '' }); fetchCrons();
   };
 
+  const openEdit = (job: CronJob) => {
+    setEditingCron(job);
+    setEditForm({ name: job.name, cron: job.schedule?.expr || '', message: job.payload?.message || '' });
+  };
+
+  const handleEdit = async () => {
+    if (!editingCron) return;
+    await fetch('/api/crons', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: editingCron.id, name: editForm.name, cron: editForm.cron, message: editForm.message }) });
+    setEditingCron(null); fetchCrons();
+  };
+
   const alwaysRunning = crons.filter(c => c.enabled && c.schedule?.expr && isFrequent(c.schedule.expr));
   const scheduled = crons.filter(c => c.schedule?.expr && !isFrequent(c.schedule.expr));
 
@@ -114,6 +128,44 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-5">
+      {/* Heartbeat Control */}
+      {(() => {
+        const hb = crons.find(c => c.name.toLowerCase().includes('heartbeat'));
+        if (!hb) return null;
+        return (
+          <div className={`bg-[#111113] rounded-lg p-4 border ${hb.enabled ? 'border-green-500/30' : 'border-red-500/30'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className="text-lg">💓</span>
+                <div>
+                  <div className="text-sm font-medium text-gray-200">{hb.name}</div>
+                  <div className="text-[10px] text-gray-500 font-mono">{hb.schedule?.expr} • @{hb.agentId}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {hb.state?.lastStatus && (
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded ${hb.state.lastStatus === 'ok' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    Last: {hb.state.lastStatus}
+                  </span>
+                )}
+                {hb.state?.nextRunAtMs && (
+                  <span className="text-[10px] text-amber-400">Next: {timeUntil(hb.state.nextRunAtMs)}</span>
+                )}
+                <button onClick={() => doAction(hb.id, 'run')} disabled={actionLoading === hb.id}
+                  className="px-2.5 py-1 text-[10px] bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 disabled:opacity-50">
+                  {actionLoading === hb.id ? '...' : 'Run Now'}
+                </button>
+                <button onClick={() => doAction(hb.id, hb.enabled ? 'disable' : 'enable')} disabled={actionLoading === hb.id}
+                  className={`px-2.5 py-1 text-[10px] rounded ${hb.enabled ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-green-500/10 text-green-400 hover:bg-green-500/20'}`}>
+                  {hb.enabled ? 'Pause' : 'Resume'}
+                </button>
+                <button onClick={() => openEdit(hb)} className="px-2.5 py-1 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-300">Edit</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Always Running */}
       {alwaysRunning.length > 0 && (
         <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
@@ -234,6 +286,8 @@ export default function CalendarPage() {
                       className="px-2 py-1 text-[10px] bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">
                       {job.enabled ? 'Disable' : 'Enable'}
                     </button>
+                    <button onClick={() => openEdit(job)} disabled={isLoading}
+                      className="px-2 py-1 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-200">Edit</button>
                     <button onClick={() => doDelete(job.id)} disabled={isLoading}
                       className="px-2 py-1 text-[10px] text-gray-600 hover:text-red-400">×</button>
                   </div>
@@ -305,6 +359,48 @@ export default function CalendarPage() {
             <div className="flex gap-2 pt-1">
               <button onClick={handleCreate} className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
               <button onClick={() => setShowCreate(false)} className="flex-1 px-4 py-2 text-xs text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Modal */}
+      {editingCron && (
+        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setEditingCron(null)}>
+          <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-200">Edit Cron Job</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs">{AGENT_EMOJIS[editingCron.agentId] || '🤖'}</span>
+                <span className="text-[10px] text-gray-500">@{editingCron.agentId}</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 uppercase mb-1">Name</label>
+              <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 uppercase mb-1">Schedule (cron expression)</label>
+              <input type="text" value={editForm.cron} onChange={e => setEditForm({ ...editForm, cron: e.target.value })}
+                className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 font-mono focus:outline-none focus:border-amber-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 uppercase mb-1">Message</label>
+              <textarea rows={5} value={editForm.message} onChange={e => setEditForm({ ...editForm, message: e.target.value })}
+                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500 resize-none font-mono leading-relaxed" />
+            </div>
+            {editingCron.state && (
+              <div className="bg-[#0a0a0b] rounded p-3 text-[10px] text-gray-500 space-y-1">
+                <div className="font-medium text-gray-400">Status</div>
+                {editingCron.state.lastRunAtMs && <div>Last run: {timeSince(editingCron.state.lastRunAtMs)} • {editingCron.state.lastStatus}</div>}
+                {editingCron.state.lastDurationMs && <div>Duration: {Math.round(editingCron.state.lastDurationMs / 1000)}s</div>}
+                {editingCron.state.nextRunAtMs && <div>Next: in {timeUntil(editingCron.state.nextRunAtMs)}</div>}
+                {(editingCron.state.consecutiveErrors || 0) > 0 && <div className="text-red-400">Consecutive errors: {editingCron.state.consecutiveErrors}</div>}
+              </div>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleEdit} className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Save</button>
+              <button onClick={() => setEditingCron(null)} className="flex-1 px-4 py-2 text-xs text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
             </div>
           </div>
         </div>
