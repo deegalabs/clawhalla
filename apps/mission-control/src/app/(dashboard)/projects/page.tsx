@@ -212,9 +212,21 @@ export default function ProjectsPage() {
   const [selected, setSelected] = useState<Project | null>(null);
   const [taskData, setTaskData] = useState<Record<string, { backlog: number; in_progress: number; review: number; done: number; total: number }>>({});
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [gitInfo, setGitInfo] = useState<{ ahead: number; behind: number; branch: string; dirty: boolean } | null>(null);
+  const [gitAction, setGitAction] = useState<string | null>(null);
+
+  const fetchGit = useCallback(async () => {
+    try { const r = await fetch('/api/git'); const d = await r.json(); if (d.ok) setGitInfo({ ahead: d.repo.ahead, behind: d.repo.behind, branch: d.repo.branch, dirty: d.repo.dirty }); } catch {}
+  }, []);
+
+  const doGitAction = async (action: string) => {
+    setGitAction(action);
+    try { await fetch('/api/git', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) }); fetchGit(); } catch {}
+    setGitAction(null);
+  };
 
   useEffect(() => {
-    // Fetch real task counts from board
+    fetchGit();
     fetch('/api/board/sync?project=clawhalla').then(r => r.json()).then(data => {
       const tasks = data.tasks || [];
       const counts = {
@@ -224,9 +236,9 @@ export default function ProjectsPage() {
         done: tasks.filter((t: { status: string }) => t.status === 'done').length,
         total: tasks.length,
       };
-      setTaskData({ clawhalla: counts, 'mission-control': counts }); // Same board for now
+      setTaskData({ clawhalla: counts, 'mission-control': counts });
     }).catch(() => {});
-  }, []);
+  }, [fetchGit]);
 
   const filtered = statusFilter === 'all' ? projectsData : projectsData.filter(p => p.status === statusFilter);
   const activeCount = projectsData.filter(p => p.status === 'active').length;
@@ -296,7 +308,34 @@ export default function ProjectsPage() {
 
               <div className="flex items-center justify-between pt-2 border-t border-[#1e1e21]">
                 <span className="text-[10px] text-gray-600">{formatSquad(project.squad)}</span>
-                {project.repo && <span className="text-[10px] text-gray-700">↗ repo</span>}
+                {project.repo && gitInfo ? (
+                  <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                    {gitInfo.dirty && <span className="text-[9px] text-red-400" title="Uncommitted changes">●</span>}
+                    {gitInfo.ahead > 0 && (
+                      <>
+                        <span className="text-[9px] text-amber-400">{gitInfo.ahead}↑</span>
+                        <button onClick={() => doGitAction('push')} disabled={gitAction === 'push'}
+                          className="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 disabled:opacity-50">
+                          {gitAction === 'push' ? '...' : 'Push'}
+                        </button>
+                      </>
+                    )}
+                    {gitInfo.behind > 0 && (
+                      <>
+                        <span className="text-[9px] text-blue-400">{gitInfo.behind}↓</span>
+                        <button onClick={() => doGitAction('pull')} disabled={gitAction === 'pull'}
+                          className="text-[9px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 disabled:opacity-50">
+                          {gitAction === 'pull' ? '...' : 'Pull'}
+                        </button>
+                      </>
+                    )}
+                    {gitInfo.ahead === 0 && gitInfo.behind === 0 && !gitInfo.dirty && (
+                      <span className="text-[9px] text-green-500">✓ synced</span>
+                    )}
+                  </div>
+                ) : project.repo ? (
+                  <span className="text-[10px] text-gray-700">↗ repo</span>
+                ) : null}
               </div>
             </div>
           );
