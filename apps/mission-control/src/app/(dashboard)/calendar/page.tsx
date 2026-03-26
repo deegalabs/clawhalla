@@ -140,15 +140,15 @@ export default function CalendarPage() {
     }).filter(Boolean) as (CronJob & { time: string })[];
 
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col h-[calc(100vh-7rem)] gap-4">
       {/* Next Up — unified view, no duplicates */}
       {crons.filter(c => c.enabled && c.state?.nextRunAtMs).length > 0 && (
-        <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-[#1e1e21] flex items-center justify-between">
+        <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden shrink-0">
+          <div className="px-4 py-2 border-b border-[#1e1e21] flex items-center justify-between">
             <div className="text-[10px] text-gray-500 uppercase tracking-wider">Next Up</div>
             <span className="text-[10px] text-gray-600">{crons.filter(c => c.enabled).length} active</span>
           </div>
-          <div className="divide-y divide-[#1e1e21] max-h-[280px] overflow-y-auto">
+          <div className="divide-y divide-[#1e1e21] max-h-[220px] overflow-y-auto">
             {crons.filter(c => c.enabled && c.state?.nextRunAtMs).sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0)).map(c => {
               const isHb = c.name.toLowerCase().includes('heartbeat');
               const isLoading = actionLoading === c.id;
@@ -189,7 +189,7 @@ export default function CalendarPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-200">Schedule</h2>
           <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
@@ -204,14 +204,14 @@ export default function CalendarPage() {
 
       {/* Week View — drag-drop + click to edit */}
       {view === 'week' && !loading && (
-        <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
+        <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden flex-1 min-h-0 flex flex-col">
           <div className="grid grid-cols-8 border-b border-[#1e1e21]">
             <div className="p-2 text-[10px] text-gray-600 border-r border-[#1e1e21]">Time</div>
             {days.map((d, i) => (
               <div key={d} className={`p-2 text-[11px] font-medium text-center border-r border-[#1e1e21] last:border-r-0 ${i === currentDay ? 'bg-amber-500/5 text-amber-400' : 'text-gray-400'}`}>{d}</div>
             ))}
           </div>
-          <div className="max-h-[450px] overflow-y-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {hours.map(h => (
               <div key={h} className="grid grid-cols-8 border-b border-[#1e1e21] last:border-b-0">
                 <div className="p-1.5 text-[10px] text-gray-600 border-r border-[#1e1e21]">{String(h).padStart(2, '0')}:00</div>
@@ -251,7 +251,7 @@ export default function CalendarPage() {
 
       {/* List View */}
       {view === 'list' && !loading && (
-        <div className="space-y-2">
+        <div className="space-y-2 flex-1 min-h-0 overflow-y-auto">
           {crons.map(job => {
             const c = agentColors[job.agentId] || defaultColor;
             const isLoading = actionLoading === job.id;
