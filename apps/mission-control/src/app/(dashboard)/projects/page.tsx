@@ -2,194 +2,237 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-const projects = [
-  { name: "ClawHalla", status: "active", description: "Enterprise AI Operating System — Mission Control dashboard", progress: 30, squad: "dev_squad", updatedDaysAgo: 0 },
-  { name: "Mission Control", status: "active", description: "Next.js dashboard for agent orchestration", progress: 35, squad: "dev_squad", updatedDaysAgo: 0 },
-  { name: "Content Strategy", status: "active", description: "LinkedIn + social media content pipeline", progress: 60, squad: "clop_cabinet", updatedDaysAgo: 1 },
-  { name: "IPÊ City Outreach", status: "active", description: "Community event Apr-May 2026 Jurerê Internacional", progress: 15, squad: null, updatedDaysAgo: 2 },
-  { name: "Safe City", status: "active", description: "Anonymous community safety alert PWA for Florianópolis", progress: 45, squad: "dev_squad", updatedDaysAgo: 5 },
-  { name: "Cronos Shield", status: "paused", description: "AI-powered security ecosystem for Cronos chain", progress: 80, squad: "blockchain_squad", updatedDaysAgo: 14 },
-  { name: "DeegaLabs Webapp", status: "paused", description: "Portfolio website for DeegaLabs", progress: 90, squad: "dev_squad", updatedDaysAgo: 10 },
-  { name: "Shielded BTC", status: "paused", description: "BTC Collateral Protocol on StarkNet", progress: 70, squad: "blockchain_squad", updatedDaysAgo: 21 },
+interface Project {
+  name: string;
+  slug: string;
+  status: 'active' | 'paused' | 'planning' | 'done';
+  description: string;
+  squad: string | null;
+  repo?: string;
+  site?: string;
+  tech?: string[];
+  tasks?: { backlog: number; in_progress: number; review: number; done: number; total: number };
+}
+
+const projectsData: Project[] = [
+  { name: 'ClawHalla', slug: 'clawhalla', status: 'active', description: 'Enterprise AI Operating System — Docker + Mission Control + Agent hierarchy + Smart contracts on Base L2', squad: 'dev_squad', repo: 'https://github.com/deegalabs/clawhalla', site: 'https://clawhalla.xyz', tech: ['Next.js', 'TypeScript', 'SQLite', 'Solidity', 'wagmi', 'Tailwind'] },
+  { name: 'Mission Control', slug: 'mission-control', status: 'active', description: 'Next.js dashboard for multi-agent orchestration — 17 pages, 27 API routes, real-time SSE', squad: 'dev_squad', tech: ['Next.js 15', 'Drizzle ORM', 'FTS5', 'SSE', 'AES-256'] },
+  { name: 'Content Strategy', slug: 'content-strategy', status: 'active', description: 'LinkedIn + social media content pipeline — Mimir researches, Bragi creates, Loki analyzes', squad: 'clop_cabinet', tech: ['LinkedIn API', 'Playwright'] },
+  { name: 'IPÊ City Outreach', slug: 'ipe-city-outreach', status: 'active', description: 'Community event Apr-May 2026, Jurerê Internacional — 1519 contacts, email campaign', squad: null, tech: ['Node.js', 'SMTP'] },
+  { name: 'Safe City', slug: 'safe-city', status: 'paused', description: 'Anonymous community safety alert PWA for Florianópolis — privacy-first, no login required', squad: 'dev_squad', tech: ['PWA', 'React', 'Geolocation'] },
+  { name: 'Cronos Shield', slug: 'cronos-shield', status: 'paused', description: 'AI-powered security ecosystem for Cronos chain — smart contract auditing + DeFi monitoring', squad: 'blockchain_squad', tech: ['Solidity', 'AI Agents'] },
+  { name: 'DeegaLabs Webapp', slug: 'deegalabs-webapp', status: 'paused', description: 'Portfolio website for Deega Labs — company showcase and project gallery', squad: 'dev_squad', tech: ['Astro', 'Tailwind'] },
+  { name: 'Shielded BTC', slug: 'shielded-btc', status: 'paused', description: 'BTC Collateral Protocol on StarkNet — privacy-preserving DeFi with ZK proofs', squad: 'blockchain_squad', tech: ['Cairo', 'StarkNet', 'ZK'] },
 ];
 
-const statusStyles: Record<string, { bg: string; text: string }> = {
-  active: { bg: 'bg-green-500/20', text: 'text-green-400' },
-  paused: { bg: 'bg-amber-500/20', text: 'text-amber-400' },
-  planning: { bg: 'bg-blue-500/20', text: 'text-blue-400' },
+const statusStyles: Record<string, { bg: string; text: string; dot: string }> = {
+  active: { bg: 'bg-green-500/20', text: 'text-green-400', dot: 'bg-green-500' },
+  paused: { bg: 'bg-amber-500/20', text: 'text-amber-400', dot: 'bg-amber-500' },
+  planning: { bg: 'bg-blue-500/20', text: 'text-blue-400', dot: 'bg-blue-500' },
+  done: { bg: 'bg-gray-500/20', text: 'text-gray-400', dot: 'bg-gray-500' },
 };
 
-const squadStyles: Record<string, { bg: string; text: string; progress: string }> = {
-  dev_squad: { bg: 'bg-blue-500/20', text: 'text-blue-400', progress: 'bg-blue-500' },
-  blockchain_squad: { bg: 'bg-purple-500/20', text: 'text-purple-400', progress: 'bg-purple-500' },
-  clop_cabinet: { bg: 'bg-green-500/20', text: 'text-green-400', progress: 'bg-green-500' },
-  product_squad: { bg: 'bg-amber-500/20', text: 'text-amber-400', progress: 'bg-amber-500' },
+const squadColors: Record<string, string> = {
+  dev_squad: 'border-l-blue-500',
+  blockchain_squad: 'border-l-purple-500',
+  clop_cabinet: 'border-l-green-500',
+  product_squad: 'border-l-amber-500',
 };
 
-const defaultSquadStyle = { bg: 'bg-gray-500/20', text: 'text-gray-400', progress: 'bg-gray-500' };
-
-function formatSquadName(squad: string | null): string {
-  if (!squad) return 'Unassigned';
-  return squad.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+function formatSquad(s: string | null): string {
+  if (!s) return 'Unassigned';
+  return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-interface GitRepo {
-  path: string;
-  remote: string;
-  branch: string;
-  ahead: number;
-  behind: number;
-  dirty: boolean;
-  changedFiles: string[];
-  commits: { hash: string; message: string }[];
-  lastCommitDate: string;
-}
+// ─── Git Panel ──────────────────────────────────────────────────
+interface GitRepo { path: string; remote: string; branch: string; ahead: number; behind: number; dirty: boolean; changedFiles: string[]; commits: { hash: string; message: string }[]; }
 
 function GitPanel() {
   const [repo, setRepo] = useState<GitRepo | null>(null);
-  const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
-  const [pushResult, setPushResult] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/git');
-      const data = await res.json();
-      if (data.ok) setRepo(data.repo);
-    } catch {
-      // Silent
-    }
-    setLoading(false);
+  const fetch_ = useCallback(async () => {
+    try { const r = await fetch('/api/git'); const d = await r.json(); if (d.ok) setRepo(d.repo); } catch {}
   }, []);
 
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => { fetch_(); }, [fetch_]);
 
-  const handlePush = async () => {
-    setPushing(true);
-    setPushResult(null);
-    try {
-      const res = await fetch('/api/git', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'push' }),
-      });
-      const data = await res.json();
-      setPushResult(data.ok ? data.output : data.error);
-      if (data.ok) fetchStatus();
-    } catch (e) {
-      setPushResult(e instanceof Error ? e.message : 'Push failed');
-    }
+  const push = async () => {
+    setPushing(true); setResult(null);
+    try { const r = await fetch('/api/git', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'push' }) }); const d = await r.json(); setResult(d.ok ? d.output : d.error); if (d.ok) fetch_(); } catch (e) { setResult(String(e)); }
     setPushing(false);
   };
 
-  if (loading) return <div className="text-gray-500 text-sm">Loading repo status...</div>;
-  if (!repo) return <div className="text-gray-500 text-sm">Git repo not available</div>;
-
-  const repoName = repo.remote.split('/').slice(-2).join('/').replace('.git', '');
+  if (!repo) return null;
+  const name = repo.remote.split('/').slice(-2).join('/').replace('.git', '');
 
   return (
     <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-[#1e1e21] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-gray-400">
-            <circle cx="4" cy="4" r="2" />
-            <circle cx="12" cy="12" r="2" />
-            <circle cx="12" cy="4" r="2" />
-            <path d="M4 6v4c0 1.1.9 2 2 2h4" />
-            <path d="M12 6v0" />
-          </svg>
-          <div>
-            <span className="text-sm font-medium text-gray-200">{repoName}</span>
-            <span className="text-xs text-gray-600 ml-2">({repo.branch})</span>
-          </div>
+      <div className="px-4 py-3 border-b border-[#1e1e21] flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">⎇</span>
+          <span className="text-xs font-medium text-gray-200">{name}</span>
+          <span className="text-[10px] text-gray-600">({repo.branch})</span>
         </div>
-        <div className="flex items-center gap-3">
-          {repo.ahead > 0 && (
-            <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">
-              {repo.ahead} ahead
-            </span>
-          )}
-          {repo.behind > 0 && (
-            <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded">
-              {repo.behind} behind
-            </span>
-          )}
-          {repo.ahead === 0 && repo.behind === 0 && (
-            <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded">
-              Up to date
-            </span>
-          )}
-          <button
-            onClick={handlePush}
-            disabled={pushing || repo.ahead === 0}
-            className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {pushing ? 'Pushing...' : 'Push'}
-          </button>
-          <button
-            onClick={fetchStatus}
-            className="px-3 py-1.5 text-xs text-gray-400 bg-[#1a1a1d] rounded border border-[#1e1e21] hover:text-gray-200"
-          >
-            Refresh
-          </button>
+        <div className="flex items-center gap-2">
+          {repo.ahead > 0 && <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">{repo.ahead} ahead</span>}
+          {repo.ahead === 0 && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">Up to date</span>}
+          <button onClick={push} disabled={pushing || repo.ahead === 0} className="px-2.5 py-1 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">{pushing ? '...' : 'Push'}</button>
+          <button onClick={fetch_} className="px-2.5 py-1 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-300">↻</button>
         </div>
       </div>
-
-      {/* Push result */}
-      {pushResult && (
-        <div className="px-5 py-2 bg-[#0a0a0b] border-b border-[#1e1e21]">
-          <pre className="text-xs text-gray-400 font-mono whitespace-pre-wrap">{pushResult}</pre>
-        </div>
-      )}
-
-      {/* Recent commits */}
-      <div className="divide-y divide-[#1e1e21]">
-        {repo.commits.slice(0, 8).map((commit, i) => (
-          <div key={commit.hash} className="px-5 py-2.5 flex items-center gap-3 hover:bg-[#1a1a1d]">
-            <code className="text-xs text-amber-500/70 font-mono w-16 shrink-0">{commit.hash}</code>
-            <span className={`text-sm ${i < repo.ahead ? 'text-gray-200' : 'text-gray-500'}`}>
-              {commit.message}
-            </span>
-            {i < repo.ahead && (
-              <span className="text-[10px] text-amber-500/50 ml-auto shrink-0">unpushed</span>
-            )}
+      {result && <div className="px-4 py-1.5 bg-[#0a0a0b] border-b border-[#1e1e21] text-[10px] text-gray-400 font-mono">{result}</div>}
+      <div className="max-h-[200px] overflow-y-auto divide-y divide-[#1e1e21]">
+        {repo.commits.slice(0, 6).map((c, i) => (
+          <div key={c.hash} className="px-4 py-1.5 flex items-center gap-2 text-xs hover:bg-[#1a1a1d]">
+            <code className="text-amber-500/60 font-mono w-14 shrink-0">{c.hash}</code>
+            <span className={i < repo.ahead ? 'text-gray-200' : 'text-gray-500'}>{c.message}</span>
+            {i < repo.ahead && <span className="text-[9px] text-amber-500/40 ml-auto">unpushed</span>}
           </div>
         ))}
       </div>
-
-      {/* Dirty files */}
-      {repo.dirty && (
-        <div className="px-5 py-3 border-t border-[#1e1e21] bg-red-500/5">
-          <div className="text-xs text-red-400 font-medium mb-1">Uncommitted changes:</div>
-          {repo.changedFiles.map(f => (
-            <div key={f} className="text-xs text-gray-500 font-mono">{f}</div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-export default function ProjectsPage() {
-  const activeCount = projects.filter(p => p.status === 'active').length;
-  const pausedCount = projects.filter(p => p.status === 'paused').length;
+// ─── Project Detail Modal ────────────────────────────────────────
+function ProjectDetail({ project, taskData, onClose }: { project: Project; taskData: Record<string, { backlog: number; in_progress: number; review: number; done: number; total: number }>; onClose: () => void }) {
+  const status = statusStyles[project.status];
+  const tasks = taskData[project.slug] || { backlog: 0, in_progress: 0, review: 0, done: 0, total: 0 };
+  const progress = tasks.total > 0 ? Math.round((tasks.done / tasks.total) * 100) : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={onClose}>
+      <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[#1e1e21]">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-gray-100">{project.name}</h2>
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${status.bg} ${status.text}`}>{project.status}</span>
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-300">×</button>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{project.description}</p>
+        </div>
+
+        {/* Task stats */}
+        <div className="px-5 py-3 border-b border-[#1e1e21]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] text-gray-500 uppercase">Progress</span>
+            <span className="text-xs text-gray-400">{tasks.done}/{tasks.total} tasks ({progress}%)</span>
+          </div>
+          <div className="h-2 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
+            <div className="h-full bg-amber-500 rounded-full" style={{ width: `${progress}%` }} />
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="text-center px-2 py-1.5 bg-[#0a0a0b] rounded">
+              <div className="text-sm font-bold text-gray-400">{tasks.backlog}</div>
+              <div className="text-[9px] text-gray-600">Backlog</div>
+            </div>
+            <div className="text-center px-2 py-1.5 bg-[#0a0a0b] rounded">
+              <div className="text-sm font-bold text-blue-400">{tasks.in_progress}</div>
+              <div className="text-[9px] text-gray-600">Building</div>
+            </div>
+            <div className="text-center px-2 py-1.5 bg-[#0a0a0b] rounded">
+              <div className="text-sm font-bold text-amber-400">{tasks.review}</div>
+              <div className="text-[9px] text-gray-600">Review</div>
+            </div>
+            <div className="text-center px-2 py-1.5 bg-[#0a0a0b] rounded">
+              <div className="text-sm font-bold text-green-400">{tasks.done}</div>
+              <div className="text-[9px] text-gray-600">Done</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Details */}
+        <div className="px-5 py-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-500 uppercase">Squad</span>
+            <span className="text-xs text-gray-300">{formatSquad(project.squad)}</span>
+          </div>
+          {project.tech && (
+            <div>
+              <span className="text-[10px] text-gray-500 uppercase block mb-1.5">Tech Stack</span>
+              <div className="flex flex-wrap gap-1.5">
+                {project.tech.map(t => (
+                  <span key={t} className="text-[10px] px-2 py-0.5 bg-[#1a1a1d] text-gray-400 rounded">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {project.repo && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-500 uppercase">Repository</span>
+              <a href={project.repo} target="_blank" rel="noopener noreferrer" className="text-xs text-amber-400 hover:text-amber-300">
+                {project.repo.replace('https://github.com/', '')} ↗
+              </a>
+            </div>
+          )}
+          {project.site && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-500 uppercase">Website</span>
+              <a href={project.site} target="_blank" rel="noopener noreferrer" className="text-xs text-amber-400 hover:text-amber-300">
+                {project.site.replace('https://', '')} ↗
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-[#1e1e21] flex justify-end">
+          <button onClick={onClose} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded hover:text-gray-200">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ──────────────────────────────────────────────────
+export default function ProjectsPage() {
+  const [selected, setSelected] = useState<Project | null>(null);
+  const [taskData, setTaskData] = useState<Record<string, { backlog: number; in_progress: number; review: number; done: number; total: number }>>({});
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  useEffect(() => {
+    // Fetch real task counts from board
+    fetch('/api/board/sync?project=clawhalla').then(r => r.json()).then(data => {
+      const tasks = data.tasks || [];
+      const counts = {
+        backlog: tasks.filter((t: { status: string }) => t.status === 'backlog').length,
+        in_progress: tasks.filter((t: { status: string }) => t.status === 'in_progress').length,
+        review: tasks.filter((t: { status: string }) => t.status === 'review').length,
+        done: tasks.filter((t: { status: string }) => t.status === 'done').length,
+        total: tasks.length,
+      };
+      setTaskData({ clawhalla: counts, 'mission-control': counts }); // Same board for now
+    }).catch(() => {});
+  }, []);
+
+  const filtered = statusFilter === 'all' ? projectsData : projectsData.filter(p => p.status === statusFilter);
+  const activeCount = projectsData.filter(p => p.status === 'active').length;
+  const pausedCount = projectsData.filter(p => p.status === 'paused').length;
+
+  return (
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-100">Projects</h2>
-        <div className="flex gap-2 text-sm">
-          <span className="px-2 py-1 bg-gray-800 rounded text-gray-400">
-            {projects.length} total
-          </span>
-          <span className="px-2 py-1 bg-green-500/20 rounded text-green-400">
-            {activeCount} active
-          </span>
-          <span className="px-2 py-1 bg-amber-500/20 rounded text-amber-400">
-            {pausedCount} paused
-          </span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-gray-200">Projects</h2>
+          <div className="flex gap-1.5 text-[10px]">
+            <span className="px-2 py-0.5 bg-[#1a1a1d] rounded text-gray-400">{projectsData.length} total</span>
+            <span className="px-2 py-0.5 bg-green-500/10 rounded text-green-400">{activeCount} active</span>
+            <span className="px-2 py-0.5 bg-amber-500/10 rounded text-amber-400">{pausedCount} paused</span>
+          </div>
+        </div>
+        <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
+          {['all', 'active', 'paused'].map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-2.5 py-1 text-[11px] rounded capitalize ${statusFilter === s ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
+              {s}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -197,51 +240,56 @@ export default function ProjectsPage() {
       <GitPanel />
 
       {/* Project Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {projects.map(project => {
-          const status = statusStyles[project.status] || statusStyles.planning;
-          const squad = project.squad ? squadStyles[project.squad] : defaultSquadStyle;
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {filtered.map(project => {
+          const status = statusStyles[project.status];
+          const tasks = taskData[project.slug];
+          const progress = tasks ? Math.round((tasks.done / tasks.total) * 100) : 0;
+          const borderColor = project.squad ? squadColors[project.squad] : 'border-l-gray-600';
 
           return (
-            <div
-              key={project.name}
-              className="bg-gray-900 rounded-lg p-5 border border-gray-800 hover:border-gray-700 transition-colors"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <h3 className="font-semibold text-gray-100">{project.name}</h3>
-                <span className={`px-2 py-0.5 text-xs rounded ${status.bg} ${status.text} capitalize`}>
-                  {project.status}
-                </span>
+            <div key={project.slug} onClick={() => setSelected(project)}
+              className={`bg-[#111113] rounded-lg p-4 border border-[#1e1e21] border-l-2 ${borderColor} hover:border-[#333] cursor-pointer group`}>
+              <div className="flex items-start justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-100 group-hover:text-amber-400">{project.name}</h3>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded capitalize ${status.bg} ${status.text}`}>{project.status}</span>
               </div>
-              <p className="text-sm text-gray-400 mb-4 line-clamp-2">
-                {project.description}
-              </p>
-              <div className="mb-3">
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-500">Progress</span>
-                  <span className="text-gray-400">{project.progress}%</span>
+              <p className="text-[11px] text-gray-500 mb-3 line-clamp-2 leading-relaxed">{project.description}</p>
+
+              {/* Progress */}
+              {tasks && (
+                <div className="mb-3">
+                  <div className="flex justify-between text-[10px] mb-1">
+                    <span className="text-gray-600">{tasks.done}/{tasks.total} tasks</span>
+                    <span className="text-gray-500">{progress}%</span>
+                  </div>
+                  <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden">
+                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${progress}%` }} />
+                  </div>
                 </div>
-                <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${squad.progress} rounded-full transition-all`}
-                    style={{ width: `${project.progress}%` }}
-                  />
+              )}
+
+              {/* Tech tags */}
+              {project.tech && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {project.tech.slice(0, 3).map(t => (
+                    <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[#0a0a0b] text-gray-600 rounded">{t}</span>
+                  ))}
+                  {project.tech.length > 3 && <span className="text-[9px] text-gray-700">+{project.tech.length - 3}</span>}
                 </div>
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-gray-800">
-                <span className={`px-2 py-0.5 text-xs rounded ${squad.bg} ${squad.text}`}>
-                  {formatSquadName(project.squad)}
-                </span>
-                <span className="text-xs text-gray-500">
-                  {project.updatedDaysAgo === 0
-                    ? 'Updated today'
-                    : `Updated ${project.updatedDaysAgo}d ago`}
-                </span>
+              )}
+
+              <div className="flex items-center justify-between pt-2 border-t border-[#1e1e21]">
+                <span className="text-[10px] text-gray-600">{formatSquad(project.squad)}</span>
+                {project.repo && <span className="text-[10px] text-gray-700">↗ repo</span>}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Detail Modal */}
+      {selected && <ProjectDetail project={selected} taskData={taskData} onClose={() => setSelected(null)} />}
     </div>
   );
 }
