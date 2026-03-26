@@ -2,38 +2,7 @@
 
 import { useState, useEffect, useCallback, DragEvent } from 'react';
 
-type BoardView = 'kanban' | 'sprints' | 'epics';
-
-interface Epic {
-  id: string;
-  title: string;
-  status: string;
-  notes?: string;
-}
-
-interface Story {
-  id: string;
-  epicId?: string;
-  epic_id?: string;
-  title: string;
-  status: string;
-  points?: number;
-  assignedTo?: string;
-  assigned_to?: string;
-}
-
-interface Sprint {
-  id: string;
-  name: string;
-  status: string;
-  startDate?: string;
-  start_date?: string;
-  endDate?: string;
-  end_date?: string;
-  storyIds?: string;
-  story_ids?: string;
-}
-
+// Types
 interface Task {
   id: string;
   title: string;
@@ -46,256 +15,306 @@ interface Task {
   story_id?: string;
   sprintId?: string;
   sprint_id?: string;
+  tags?: string;
   notes?: string;
-  createdAt: string;
+  estimatedHours?: number;
+  estimated_hours?: number;
+  createdAt?: string;
   created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
   completedAt?: string;
   completed_at?: string;
-  source?: string;
 }
 
+type BoardView = 'kanban' | 'sprints' | 'epics';
+
+interface Epic { id: string; title: string; status: string; notes?: string; }
+interface Story { id: string; epicId?: string; epic_id?: string; title: string; status: string; points?: number; }
+interface Sprint { id: string; name: string; status: string; startDate?: string; start_date?: string; endDate?: string; end_date?: string; storyIds?: string; story_ids?: string; }
+
+// Constants
 const columns = [
-  { id: 'backlog', label: 'Backlog', color: 'border-t-gray-500', bgHover: 'bg-gray-500/5' },
-  { id: 'in_progress', label: 'In Progress', color: 'border-t-blue-500', bgHover: 'bg-blue-500/5' },
-  { id: 'review', label: 'Review', color: 'border-t-amber-500', bgHover: 'bg-amber-500/5' },
-  { id: 'done', label: 'Done', color: 'border-t-green-500', bgHover: 'bg-green-500/5' },
+  { id: 'backlog', label: 'Backlog', dotColor: 'bg-gray-500', borderColor: 'border-t-gray-500' },
+  { id: 'in_progress', label: 'In Progress', dotColor: 'bg-blue-500', borderColor: 'border-t-blue-500' },
+  { id: 'review', label: 'Review', dotColor: 'bg-amber-500', borderColor: 'border-t-amber-500' },
+  { id: 'done', label: 'Done', dotColor: 'bg-green-500', borderColor: 'border-t-green-500' },
 ];
 
-const priorityColors: Record<string, string> = {
-  low: 'border-l-gray-600',
-  medium: 'border-l-blue-500',
-  high: 'border-l-amber-500',
-  critical: 'border-l-red-500',
+const priorityConfig: Record<string, { border: string; dot: string; label: string }> = {
+  critical: { border: 'border-l-red-500', dot: 'bg-red-500', label: 'Critical' },
+  high: { border: 'border-l-amber-500', dot: 'bg-amber-500', label: 'High' },
+  medium: { border: 'border-l-blue-500', dot: 'bg-blue-500', label: 'Medium' },
+  low: { border: 'border-l-gray-600', dot: 'bg-gray-600', label: 'Low' },
 };
 
-const priorityDots: Record<string, string> = {
-  low: 'bg-gray-500',
-  medium: 'bg-blue-500',
-  high: 'bg-amber-500',
-  critical: 'bg-red-500',
+const AGENT_EMOJIS: Record<string, string> = {
+  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮', thor: '⚡',
+  frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️', volund: '🔧',
+  sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
 };
 
-function normalizeTask(t: Task): Task {
-  return {
-    ...t,
-    assignedTo: t.assignedTo || t.assigned_to,
-    storyId: t.storyId || t.story_id,
-    sprintId: t.sprintId || t.sprint_id,
-    createdAt: t.createdAt || t.created_at || new Date().toISOString(),
-    completedAt: t.completedAt || t.completed_at,
+function norm(t: Task): Task {
+  return { ...t, assignedTo: t.assignedTo || t.assigned_to, storyId: t.storyId || t.story_id,
+    sprintId: t.sprintId || t.sprint_id, createdAt: t.createdAt || t.created_at,
+    completedAt: t.completedAt || t.completed_at, estimatedHours: t.estimatedHours || t.estimated_hours,
+    tags: t.tags || '', notes: t.notes || '' };
+}
+
+function timeAgo(d?: string): string {
+  if (!d) return ''; const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
+  if (m < 1) return 'now'; if (m < 60) return `${m}m`; const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d`;
+}
+
+// ─── Task Detail Modal ──────────────────────────────────────────
+function TaskDetailModal({ task, onClose, onSave, onDelete }: {
+  task: Task; onClose: () => void;
+  onSave: (t: Task) => void; onDelete: (id: string) => void;
+}) {
+  const [form, setForm] = useState({ ...task });
+  const [tab, setTab] = useState<'details' | 'checklist' | 'notes'>('details');
+  const [checklist, setChecklist] = useState<{ text: string; done: boolean }[]>(() => {
+    try { const parsed = JSON.parse(task.notes || '[]'); return Array.isArray(parsed) ? parsed.filter((c: { text?: string }) => c && typeof c.text === 'string') as { text: string; done: boolean }[] : []; }
+    catch { return []; }
+  });
+  const [newCheckItem, setNewCheckItem] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleSave = () => {
+    const notes = checklist.length > 0 ? JSON.stringify(checklist) : form.notes;
+    onSave({ ...form, notes });
   };
+
+  const addCheckItem = () => { if (!newCheckItem.trim()) return; setChecklist([...checklist, { text: newCheckItem.trim(), done: false }]); setNewCheckItem(''); };
+  const toggleCheck = (i: number) => { setChecklist(checklist.map((c, idx) => idx === i ? { ...c, done: !c.done } : c)); };
+  const removeCheck = (i: number) => { setChecklist(checklist.filter((_, idx) => idx !== i)); };
+  const checkDone = checklist.filter(c => c.done).length;
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-12 px-4" onClick={onClose}>
+      <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-5 py-3 border-b border-[#1e1e21] flex items-start justify-between shrink-0">
+          <div className="flex-1">
+            <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
+              className="w-full text-base font-semibold text-gray-100 bg-transparent focus:outline-none" />
+            <div className="text-[10px] text-gray-600 mt-0.5">{form.id} • {timeAgo(form.createdAt)}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-lg ml-4">×</button>
+        </div>
+
+        {/* Toolbar */}
+        <div className="px-5 py-2 border-b border-[#1e1e21] flex flex-wrap gap-1.5 shrink-0">
+          <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
+            {columns.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
+            {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <input type="text" placeholder="@agent" value={form.assignedTo || ''} onChange={e => setForm({ ...form, assignedTo: e.target.value })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-24 focus:outline-none focus:border-amber-500" />
+          <input type="text" placeholder="Sprint" value={form.sprintId || ''} onChange={e => setForm({ ...form, sprintId: e.target.value })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-20 focus:outline-none focus:border-amber-500" />
+          <input type="text" placeholder="Story" value={form.storyId || ''} onChange={e => setForm({ ...form, storyId: e.target.value })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-20 focus:outline-none focus:border-amber-500" />
+          <input type="text" placeholder="Tags" value={form.tags || ''} onChange={e => setForm({ ...form, tags: e.target.value })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 flex-1 focus:outline-none focus:border-amber-500" />
+        </div>
+
+        {/* Tabs */}
+        <div className="px-5 pt-1 flex gap-0.5 border-b border-[#1e1e21] shrink-0">
+          {(['details', 'checklist', 'notes'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-[11px] rounded-t capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
+              {t}{t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 min-h-0">
+          {tab === 'details' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] text-gray-500 uppercase mb-1">Description</label>
+                <textarea rows={8} value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })}
+                  placeholder="Task description... (markdown supported)"
+                  className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 resize-none leading-relaxed" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] text-gray-500 uppercase mb-1">Est. Hours</label>
+                  <input type="number" value={form.estimatedHours || ''} onChange={e => setForm({ ...form, estimatedHours: parseInt(e.target.value) || undefined })}
+                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 uppercase mb-1">Completed</label>
+                  <div className="px-3 py-1.5 text-xs text-gray-500">{form.completedAt ? timeAgo(form.completedAt) + ' ago' : '—'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          {tab === 'checklist' && (
+            <div className="space-y-2">
+              {checklist.length > 0 && (
+                <div className="h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
+                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${(checkDone / checklist.length) * 100}%` }} />
+                </div>
+              )}
+              {checklist.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 group">
+                  <button onClick={() => toggleCheck(i)} className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${item.done ? 'bg-green-500 border-green-500' : 'border-[#333] hover:border-gray-400'}`}>
+                    {item.done && <span className="text-[9px] text-white">✓</span>}
+                  </button>
+                  <span className={`text-xs flex-1 ${item.done ? 'text-gray-600 line-through' : 'text-gray-300'}`}>{item.text}</span>
+                  <button onClick={() => removeCheck(i)} className="text-[10px] text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100">×</button>
+                </div>
+              ))}
+              <div className="flex gap-2 mt-3">
+                <input type="text" placeholder="Add item..." value={newCheckItem} onChange={e => setNewCheckItem(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addCheckItem()}
+                  className="flex-1 px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
+                <button onClick={addCheckItem} className="px-3 py-1.5 text-[11px] bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">Add</button>
+              </div>
+            </div>
+          )}
+          {tab === 'notes' && (
+            <textarea rows={14} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })}
+              placeholder="Notes, code snippets, links..."
+              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 resize-none leading-relaxed" />
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-2.5 border-t border-[#1e1e21] flex items-center justify-between shrink-0">
+          <div>{confirmDelete ? (
+            <div className="flex gap-2">
+              <button onClick={() => onDelete(form.id)} className="px-3 py-1 text-[11px] bg-red-500/20 text-red-400 rounded">Confirm</button>
+              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1 text-[11px] text-gray-500">Cancel</button>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} className="px-3 py-1 text-[11px] text-gray-600 hover:text-red-400">Delete</button>
+          )}</div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
+            <button onClick={handleSave} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function timeAgo(dateStr?: string): string {
-  if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
+// ─── Main Page ──────────────────────────────────────────────────
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [epicsData, setEpicsData] = useState<Epic[]>([]);
   const [storiesData, setStoriesData] = useState<Story[]>([]);
   const [sprintsData, setSprintsData] = useState<Sprint[]>([]);
   const [view, setView] = useState<BoardView>('kanban');
-  const [showModal, setShowModal] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
+  const [filter, setFilter] = useState({ search: '', assignee: '', priority: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '', sprintId: '', storyId: '', tags: '', estimatedHours: '' });
 
   const fetchTasks = useCallback(() => {
-    fetch('/api/board/sync?project=clawhalla')
-      .then(r => r.json())
-      .then(data => {
-        setTasks((data.tasks || []).map((t: Task) => normalizeTask(t)));
-        setEpicsData(data.epics || []);
-        setStoriesData(data.stories || []);
-        setSprintsData(data.sprints || []);
-      })
-      .catch(console.error);
+    fetch('/api/board/sync?project=clawhalla').then(r => r.json()).then(data => {
+      setTasks((data.tasks || []).map((t: Task) => norm(t)));
+      setEpicsData(data.epics || []); setStoriesData(data.stories || []); setSprintsData(data.sprints || []);
+    }).catch(console.error);
   }, []);
 
-  useEffect(() => {
-    fetchTasks();
-    const interval = setInterval(fetchTasks, 30000);
-    return () => clearInterval(interval);
-  }, [fetchTasks]);
+  useEffect(() => { fetchTasks(); const i = setInterval(fetchTasks, 30000); return () => clearInterval(i); }, [fetchTasks]);
+  useEffect(() => { let es: EventSource | null = null; try { es = new EventSource('/api/sse'); es.onmessage = (e) => { const d = JSON.parse(e.data); if (d.type === 'file_change') fetchTasks(); }; } catch {} return () => { if (es) es.close(); }; }, [fetchTasks]);
 
-  // SSE for real-time board updates
-  useEffect(() => {
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource('/api/sse');
-      es.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === 'file_change' && data.event?.path?.includes('board/')) {
-          fetchTasks();
-        }
-      };
-    } catch { /* SSE not available */ }
-    return () => { if (es) es.close(); };
-  }, [fetchTasks]);
+  const filtered = tasks.filter(t => {
+    if (filter.search && !t.title.toLowerCase().includes(filter.search.toLowerCase())) return false;
+    if (filter.assignee && t.assignedTo !== filter.assignee) return false;
+    if (filter.priority && t.priority !== filter.priority) return false;
+    return true;
+  });
 
-  // Drag and drop handlers
-  const handleDragStart = (e: DragEvent, taskId: string) => {
-    e.dataTransfer.setData('text/plain', taskId);
-    e.dataTransfer.effectAllowed = 'move';
+  const onDragStart = (e: DragEvent, id: string) => { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; };
+  const onDragOver = (e: DragEvent, col: string) => { e.preventDefault(); setDragOverColumn(col); };
+  const onDrop = (e: DragEvent, status: string) => { e.preventDefault(); setDragOverColumn(null); const id = e.dataTransfer.getData('text/plain'); if (id) updateStatus(id, status); };
+
+  const updateStatus = async (id: string, status: string) => {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
   };
 
-  const handleDragOver = (e: DragEvent, columnId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverColumn(columnId);
+  const handleSaveTask = async (task: Task) => {
+    await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: task.title, description: task.description, status: task.status, priority: task.priority,
+        assignedTo: task.assignedTo, sprintId: task.sprintId, storyId: task.storyId, tags: task.tags, notes: task.notes, estimatedHours: task.estimatedHours }) });
+    setSelectedTask(null); fetchTasks();
   };
 
-  const handleDragLeave = () => {
-    setDragOverColumn(null);
-  };
-
-  const handleDrop = (e: DragEvent, newStatus: string) => {
-    e.preventDefault();
-    setDragOverColumn(null);
-    const taskId = e.dataTransfer.getData('text/plain');
-    if (taskId) {
-      handleStatusChange(taskId, newStatus);
-    }
-  };
-
-  const handleStatusChange = async (taskId: string, newStatus: string) => {
-    // Optimistic update
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-
-    try {
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-    } catch {
-      fetchTasks(); // Revert on error
-    }
-  };
+  const handleDeleteTask = async (id: string) => { await fetch(`/api/tasks/${id}`, { method: 'DELETE' }); setSelectedTask(null); fetchTasks(); };
 
   const handleCreateTask = async () => {
-    try {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTask),
-      });
-      await res.json();
-      setShowModal(false);
-      setNewTask({ title: '', description: '', priority: 'medium', assignedTo: '' });
-      fetchTasks();
-    } catch (error) {
-      console.error('Failed to create task:', error);
-    }
+    await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...newTask, estimatedHours: newTask.estimatedHours ? parseInt(newTask.estimatedHours) : null }) });
+    setShowCreate(false); setNewTask({ title: '', description: '', priority: 'medium', assignedTo: '', sprintId: '', storyId: '', tags: '', estimatedHours: '' }); fetchTasks();
   };
 
-  // Stats
-  const backlogCount = tasks.filter(t => t.status === 'backlog').length;
-  const inProgressCount = tasks.filter(t => t.status === 'in_progress').length;
-  const reviewCount = tasks.filter(t => t.status === 'review').length;
-  const doneCount = tasks.filter(t => t.status === 'done').length;
+  const assignees = [...new Set(tasks.map(t => t.assignedTo).filter(Boolean))] as string[];
 
   return (
-    <div className="space-y-5">
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[11px] text-gray-500 uppercase tracking-wider">Backlog</div>
-          <div className="text-2xl font-bold text-gray-400 mt-1">{backlogCount}</div>
-        </div>
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[11px] text-blue-400 uppercase tracking-wider">In Progress</div>
-          <div className="text-2xl font-bold text-blue-400 mt-1">{inProgressCount}</div>
-        </div>
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[11px] text-amber-400 uppercase tracking-wider">Review</div>
-          <div className="text-2xl font-bold text-amber-400 mt-1">{reviewCount}</div>
-        </div>
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[11px] text-green-400 uppercase tracking-wider">Done</div>
-          <div className="text-2xl font-bold text-green-400 mt-1">{doneCount}</div>
-        </div>
-      </div>
-
-      {/* Board header + view tabs */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold text-gray-100">Board</h2>
-          <div className="flex gap-1 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
+    <div className="flex flex-col h-[calc(100vh-7rem)]">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-gray-200">Board</h2>
+          <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
             {(['kanban', 'sprints', 'epics'] as BoardView[]).map(v => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1 text-xs rounded-md capitalize ${
-                  view === v ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                {v}
-              </button>
+              <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 text-[11px] rounded capitalize ${view === v ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>{v}</button>
             ))}
           </div>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-3 py-1.5 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400"
-        >
-          + New Task
-        </button>
+        <div className="flex items-center gap-2">
+          <input type="text" placeholder="Search..." value={filter.search} onChange={e => setFilter({ ...filter, search: e.target.value })}
+            className="px-2 py-1 bg-[#111113] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-28 focus:outline-none focus:border-amber-500 placeholder-gray-600" />
+          <select value={filter.assignee} onChange={e => setFilter({ ...filter, assignee: e.target.value })}
+            className="px-2 py-1 bg-[#111113] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none">
+            <option value="">All</option>{assignees.map(a => <option key={a} value={a}>@{a}</option>)}
+          </select>
+          <select value={filter.priority} onChange={e => setFilter({ ...filter, priority: e.target.value })}
+            className="px-2 py-1 bg-[#111113] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none">
+            <option value="">Priority</option>{Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button onClick={() => setShowCreate(true)} className="px-3 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">+ New</button>
+        </div>
       </div>
 
-      {/* Sprints view */}
-      {view === 'sprints' && (
-        <div className="space-y-4">
-          {sprintsData.map(sprint => {
-            const sprintStoryIds = sprint.storyIds || sprint.story_ids;
-            const storyIds: string[] = sprintStoryIds ? (typeof sprintStoryIds === 'string' ? JSON.parse(sprintStoryIds) : sprintStoryIds) : [];
-            const sprintTasks = tasks.filter(t => t.sprintId === sprint.id || storyIds.includes(t.storyId || ''));
-            const doneCount = sprintTasks.filter(t => t.status === 'done').length;
-            const progress = sprintTasks.length > 0 ? Math.round((doneCount / sprintTasks.length) * 100) : 0;
-
+      {/* KANBAN */}
+      {view === 'kanban' && (
+        <div className="grid grid-cols-4 gap-3 flex-1 min-h-0">
+          {columns.map(col => {
+            const colTasks = filtered.filter(t => t.status === col.id);
             return (
-              <div key={sprint.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-200">{sprint.name}</h3>
-                    <div className="text-[11px] text-gray-600 mt-0.5">
-                      {sprint.startDate || sprint.start_date} → {sprint.endDate || sprint.end_date}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs px-2 py-0.5 rounded capitalize ${
-                      sprint.status === 'done' ? 'bg-green-500/20 text-green-400' :
-                      sprint.status === 'active' ? 'bg-blue-500/20 text-blue-400' :
-                      'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {sprint.status}
-                    </span>
-                    <span className="text-xs text-gray-500">{doneCount}/{sprintTasks.length}</span>
-                  </div>
+              <div key={col.id} className={`bg-[#111113] rounded-lg border border-[#1e1e21] border-t-2 ${col.borderColor} flex flex-col min-h-0 ${dragOverColumn === col.id ? 'ring-1 ring-amber-500/30' : ''}`}
+                onDragOver={e => onDragOver(e, col.id)} onDragLeave={() => setDragOverColumn(null)} onDrop={e => onDrop(e, col.id)}>
+                <div className="px-3 py-2 flex items-center justify-between shrink-0 border-b border-[#1e1e21]">
+                  <div className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${col.dotColor}`} /><span className="text-xs font-medium text-gray-300">{col.label}</span></div>
+                  <span className="text-[10px] text-gray-600">{colTasks.length}</span>
                 </div>
-                <div className="h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
-                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${progress}%` }} />
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {sprintTasks.map(task => (
-                    <div key={task.id} className={`px-3 py-2 rounded border-l-2 ${priorityColors[task.priority] || 'border-l-gray-600'} bg-[#0a0a0b]`}>
-                      <div className="text-xs text-gray-300 truncate">{task.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${task.status === 'done' ? 'bg-green-500' : task.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-600'}`} />
-                        <span className="text-[10px] text-gray-600">{task.assignedTo ? `@${task.assignedTo}` : ''}</span>
+                <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                  {colTasks.map(task => (
+                    <div key={task.id} draggable onDragStart={e => onDragStart(e, task.id)} onClick={() => setSelectedTask(task)}
+                      className={`bg-[#0a0a0b] rounded-lg p-2.5 border-l-2 ${priorityConfig[task.priority]?.border || 'border-l-gray-600'} cursor-pointer hover:bg-[#141416]`}>
+                      <div className="text-[12px] text-gray-200 font-medium leading-tight">{task.title}</div>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {task.assignedTo && <span className="flex items-center gap-1 text-[10px] text-amber-500">{AGENT_EMOJIS[task.assignedTo] && <span className="text-xs">{AGENT_EMOJIS[task.assignedTo]}</span>}@{task.assignedTo}</span>}
+                        {task.tags && task.tags.split(',').filter(Boolean).slice(0, 2).map(tag => <span key={tag} className="text-[9px] px-1 py-0.5 bg-[#1a1a1d] text-gray-500 rounded">{tag.trim()}</span>)}
                       </div>
                     </div>
                   ))}
-                  {sprintTasks.length === 0 && (
-                    <div className="col-span-4 text-xs text-gray-700 py-2">No tasks in this sprint</div>
-                  )}
+                  {colTasks.length === 0 && <div className="text-[10px] text-gray-700 text-center py-8">{dragOverColumn === col.id ? 'Drop here' : 'Empty'}</div>}
                 </div>
               </div>
             );
@@ -303,45 +322,33 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Epics view */}
-      {view === 'epics' && (
-        <div className="space-y-4">
-          {epicsData.map(epic => {
-            const epicStories = storiesData.filter(s => (s.epicId || s.epic_id) === epic.id);
-            const epicTasks = tasks.filter(t => epicStories.some(s => s.id === t.storyId));
-            const doneStories = epicStories.filter(s => s.status === 'done').length;
-            const progress = epicStories.length > 0 ? Math.round((doneStories / epicStories.length) * 100) : 0;
-
+      {/* SPRINTS */}
+      {view === 'sprints' && (
+        <div className="flex-1 overflow-y-auto space-y-3">
+          {sprintsData.map(sp => {
+            const ids = sp.storyIds || sp.story_ids; const stIds: string[] = ids ? (() => { try { return typeof ids === 'string' ? JSON.parse(ids) : ids; } catch { return []; } })() : [];
+            const st = filtered.filter(t => t.sprintId === sp.id || stIds.includes(t.storyId || ''));
+            const dn = st.filter(t => t.status === 'done').length; const pct = st.length > 0 ? Math.round((dn / st.length) * 100) : 0;
             return (
-              <div key={epic.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-gray-200">{epic.title}</h3>
-                  <span className={`text-xs px-2 py-0.5 rounded capitalize ${
-                    epic.status === 'done' ? 'bg-green-500/20 text-green-400' :
-                    epic.status === 'active' ? 'bg-amber-500/20 text-amber-400' :
-                    'bg-gray-500/20 text-gray-400'
-                  }`}>
-                    {epic.status}
-                  </span>
+              <div key={sp.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-semibold text-gray-200">{sp.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${sp.status === 'done' ? 'bg-green-500/20 text-green-400' : sp.status === 'active' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>{sp.status}</span>
+                    <span className="text-[10px] text-gray-500">{dn}/{st.length}</span>
+                  </div>
                 </div>
-                {epic.notes && <p className="text-xs text-gray-500 mb-3">{epic.notes}</p>}
-                <div className="h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
-                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${progress}%` }} />
-                </div>
-                <div className="text-[11px] text-gray-600 mb-3">{doneStories}/{epicStories.length} stories • {epicTasks.length} tasks</div>
-                <div className="space-y-1.5">
-                  {epicStories.map(story => {
-                    const storyTasks = tasks.filter(t => t.storyId === story.id);
-                    const storyDone = storyTasks.filter(t => t.status === 'done').length;
-                    return (
-                      <div key={story.id} className="flex items-center gap-3 px-3 py-2 bg-[#0a0a0b] rounded">
-                        <span className={`w-2 h-2 rounded-full ${story.status === 'done' ? 'bg-green-500' : 'bg-gray-600'}`} />
-                        <span className="text-xs text-gray-300 flex-1 truncate">{story.title}</span>
-                        {story.points && <span className="text-[10px] text-gray-600">{story.points}pt</span>}
-                        <span className="text-[10px] text-gray-600">{storyDone}/{storyTasks.length}</span>
+                <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-3"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
+                  {st.map(task => (
+                    <div key={task.id} onClick={() => setSelectedTask(task)} className={`px-2.5 py-1.5 rounded border-l-2 ${priorityConfig[task.priority]?.border || 'border-l-gray-600'} bg-[#0a0a0b] cursor-pointer hover:bg-[#141416]`}>
+                      <div className="text-[11px] text-gray-300 truncate">{task.title}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${task.status === 'done' ? 'bg-green-500' : task.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-600'}`} />
+                        {task.assignedTo && <span className="text-[9px] text-gray-600">@{task.assignedTo}</span>}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
             );
@@ -349,115 +356,67 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Kanban columns */}
-      {view === 'kanban' && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {columns.map(column => {
-          const columnTasks = tasks.filter(t => t.status === column.id);
-          const isDragOver = dragOverColumn === column.id;
-
-          return (
-            <div
-              key={column.id}
-              className={`bg-[#111113] rounded-lg border border-[#1e1e21] border-t-2 ${column.color} min-h-[300px] flex flex-col ${isDragOver ? column.bgHover : ''}`}
-              onDragOver={(e) => handleDragOver(e, column.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, column.id)}
-            >
-              {/* Column header */}
-              <div className="px-4 py-3 flex items-center justify-between border-b border-[#1e1e21]">
-                <span className="text-sm font-medium text-gray-300">{column.label}</span>
-                <span className="text-xs text-gray-600 bg-[#1a1a1d] px-2 py-0.5 rounded">{columnTasks.length}</span>
+      {/* EPICS */}
+      {view === 'epics' && (
+        <div className="flex-1 overflow-y-auto space-y-3">
+          {epicsData.map(epic => {
+            const eS = storiesData.filter(s => (s.epicId || s.epic_id) === epic.id);
+            const dS = eS.filter(s => s.status === 'done').length; const pct = eS.length > 0 ? Math.round((dS / eS.length) * 100) : 0;
+            return (
+              <div key={epic.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-200">{epic.title}</h3>
+                  <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${epic.status === 'done' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>{epic.status}</span>
+                </div>
+                <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-2"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
+                <div className="text-[10px] text-gray-600 mb-3">{dS}/{eS.length} stories</div>
+                <div className="space-y-1">
+                  {eS.map(story => (
+                    <div key={story.id} className="flex items-center gap-2 px-2.5 py-1.5 bg-[#0a0a0b] rounded">
+                      <span className={`w-1.5 h-1.5 rounded-full ${story.status === 'done' ? 'bg-green-500' : 'bg-gray-600'}`} />
+                      <span className="text-[11px] text-gray-300 flex-1 truncate">{story.title}</span>
+                      {story.points && <span className="text-[9px] text-gray-600">{story.points}pt</span>}
+                    </div>
+                  ))}
+                </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Cards */}
-              <div className="p-2 flex-1 space-y-2 overflow-y-auto">
-                {columnTasks.map(task => (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, task.id)}
-                    className={`bg-[#0a0a0b] rounded-lg p-3 border-l-2 ${priorityColors[task.priority] || 'border-l-gray-600'} cursor-grab active:cursor-grabbing hover:bg-[#141416] group`}
-                  >
-                    <div className="text-sm text-gray-200 font-medium leading-tight">{task.title}</div>
-                    {task.assignedTo && (
-                      <div className="flex items-center gap-1.5 mt-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${priorityDots[task.priority] || 'bg-gray-500'}`}></span>
-                        <span className="text-[11px] text-amber-500">@{task.assignedTo}</span>
-                      </div>
-                    )}
-                    {task.storyId && (
-                      <div className="text-[10px] text-gray-600 mt-1">{task.storyId}</div>
-                    )}
-                    {task.completedAt && (
-                      <div className="text-[10px] text-gray-600 mt-1">{timeAgo(task.completedAt)}</div>
-                    )}
-                    {/* Mobile: Move button */}
-                    {column.id !== 'done' && (
-                      <button
-                        onClick={() => {
-                          const next = column.id === 'backlog' ? 'in_progress' : column.id === 'in_progress' ? 'review' : 'done';
-                          handleStatusChange(task.id, next);
-                        }}
-                        className="mt-2 text-[10px] text-gray-600 hover:text-gray-300 md:opacity-0 md:group-hover:opacity-100"
-                      >
-                        Move →
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {columnTasks.length === 0 && (
-                  <div className="text-xs text-gray-700 text-center py-8">
-                    {isDragOver ? 'Drop here' : 'No tasks'}
-                  </div>
-                )}
-              </div>
+      {/* Modals */}
+      {selectedTask && <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} onSave={handleSaveTask} onDelete={handleDeleteTask} />}
+
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setShowCreate(false)}>
+          <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-gray-200">New Task</h3>
+            <input type="text" placeholder="Task title" value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500" />
+            <textarea placeholder="Description" rows={3} value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500 resize-none" />
+            <div className="grid grid-cols-2 gap-2">
+              <select value={newTask.priority} onChange={e => setNewTask({ ...newTask, priority: e.target.value })}
+                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none">
+                {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <input type="text" placeholder="@agent" value={newTask.assignedTo} onChange={e => setNewTask({ ...newTask, assignedTo: e.target.value })}
+                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
             </div>
-          );
-        })}
-      </div>}
-
-      {/* Create modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#111113] rounded-lg p-5 w-full max-w-md border border-[#1e1e21]">
-            <h3 className="text-sm font-semibold text-gray-200 mb-4">New Task</h3>
-            <div className="space-y-3">
-              <input
-                type="text" placeholder="Task title"
-                value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })}
-                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
-              />
-              <textarea
-                placeholder="Description (optional)" rows={3}
-                value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })}
-                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500 resize-none"
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <select
-                  value={newTask.priority} onChange={e => setNewTask({ ...newTask, priority: e.target.value })}
-                  className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-                <input
-                  type="text" placeholder="@agent"
-                  value={newTask.assignedTo} onChange={e => setNewTask({ ...newTask, assignedTo: e.target.value })}
-                  className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button onClick={handleCreateTask}
-                  className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
-                  Create
-                </button>
-                <button onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 text-xs font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">
-                  Cancel
-                </button>
-              </div>
+            <div className="grid grid-cols-3 gap-2">
+              <input type="text" placeholder="Sprint" value={newTask.sprintId} onChange={e => setNewTask({ ...newTask, sprintId: e.target.value })}
+                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+              <input type="text" placeholder="Story" value={newTask.storyId} onChange={e => setNewTask({ ...newTask, storyId: e.target.value })}
+                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+              <input type="text" placeholder="Hours" value={newTask.estimatedHours} onChange={e => setNewTask({ ...newTask, estimatedHours: e.target.value })}
+                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+            </div>
+            <input type="text" placeholder="Tags (comma sep)" value={newTask.tags} onChange={e => setNewTask({ ...newTask, tags: e.target.value })}
+              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleCreateTask} className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
+              <button onClick={() => setShowCreate(false)} className="flex-1 px-4 py-2 text-xs text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
             </div>
           </div>
         </div>
