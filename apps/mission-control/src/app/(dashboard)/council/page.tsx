@@ -29,6 +29,9 @@ export default function CouncilPage() {
   const [learnings, setLearnings] = useState<FeedbackEntry[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<string>('');
+  const [councilMemos, setCouncilMemos] = useState<{ name: string; preview: string; size: number }[]>([]);
+  const [startingSession, setStartingSession] = useState(false);
+  const [sessionResult, setSessionResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/search?q=research+report+analysis&limit=20').then(r => r.json()).then(d => { if (d.ok) setReports(d.results); });
@@ -37,6 +40,7 @@ export default function CouncilPage() {
     fetch('/api/search?q=transcription+video+podcast&limit=20').then(r => r.json()).then(d => { if (d.ok) setTranscriptions(d.results); });
     fetch('/api/usage').then(r => r.json()).then(d => { if (d.ok) setUsage(d); });
     fetch('/api/feedback').then(r => r.json()).then(d => { if (d.ok) setLearnings(d.entries?.slice(0, 10) || []); });
+    fetch('/api/council/session').then(r => r.json()).then(d => { if (d.ok) setCouncilMemos(d.memos); });
   }, []);
 
   const loadDoc = useCallback(async (path: string) => {
@@ -92,7 +96,42 @@ export default function CouncilPage() {
             ))}
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          {sessionResult && <span className="text-[10px] text-green-400">{sessionResult}</span>}
+          <button onClick={async () => {
+            setStartingSession(true); setSessionResult(null);
+            try {
+              const res = await fetch('/api/council/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+              const data = await res.json();
+              setSessionResult(data.ok ? '🔬 Session started' : data.error);
+              if (data.ok) setTimeout(() => fetch('/api/council/session').then(r => r.json()).then(d => { if (d.ok) setCouncilMemos(d.memos); }), 60000);
+            } catch { setSessionResult('Failed'); }
+            setStartingSession(false);
+          }} disabled={startingSession}
+            className="px-3 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-50">
+            {startingSession ? '🔬 Starting...' : '🔬 Start Session'}
+          </button>
+        </div>
       </div>
+
+      {/* Council Memos */}
+      {councilMemos.length > 0 && (
+        <div className="bg-[#111113] rounded-lg border border-purple-500/20 p-3 shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] text-purple-400 uppercase tracking-wider">Council Sessions</div>
+            <span className="text-[10px] text-gray-600">{councilMemos.length} memos</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto">
+            {councilMemos.slice(0, 5).map(memo => (
+              <button key={memo.name} onClick={() => loadDoc(`company/knowledge_base/council/${memo.name}`)}
+                className="shrink-0 px-3 py-2 bg-[#0a0a0b] rounded border border-[#1e1e21] hover:border-purple-500/30 text-left min-w-[200px]">
+                <div className="text-[11px] text-gray-200 font-medium">{memo.name.replace('.md', '')}</div>
+                <div className="text-[9px] text-gray-500 mt-0.5 line-clamp-2">{memo.preview.slice(0, 80)}...</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex gap-4 flex-1 min-h-0">
