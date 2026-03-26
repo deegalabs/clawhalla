@@ -330,12 +330,22 @@ export default function TasksPage() {
             const st = filtered.filter(t => t.sprintId === sp.id || stIds.includes(t.storyId || ''));
             const dn = st.filter(t => t.status === 'done').length; const pct = st.length > 0 ? Math.round((dn / st.length) * 100) : 0;
             return (
-              <div key={sp.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+              <div key={sp.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4 group">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-semibold text-gray-200">{sp.name}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-semibold text-gray-200">{sp.name}</div>
+                    <span className="text-[10px] text-gray-600">{sp.startDate || sp.start_date} → {sp.endDate || sp.end_date}</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${sp.status === 'done' ? 'bg-green-500/20 text-green-400' : sp.status === 'active' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>{sp.status}</span>
                     <span className="text-[10px] text-gray-500">{dn}/{st.length}</span>
+                    <select defaultValue={sp.status} onChange={async (e) => {
+                      await fetch('/api/sprints', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sp.id, status: e.target.value }) }); fetchTasks();
+                    }} className="opacity-0 group-hover:opacity-100 px-1 py-0.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[9px] text-gray-400 focus:outline-none">
+                      <option value="planning">Planning</option><option value="active">Active</option><option value="done">Done</option>
+                    </select>
+                    <button onClick={async () => { if (confirm(`Delete sprint "${sp.name}"?`)) { await fetch(`/api/sprints?id=${sp.id}`, { method: 'DELETE' }); fetchTasks(); }}}
+                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400">×</button>
                   </div>
                 </div>
                 <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-3"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
@@ -353,6 +363,15 @@ export default function TasksPage() {
               </div>
             );
           })}
+          {/* New Sprint inline */}
+          <button onClick={async () => {
+            const name = prompt('Sprint name:'); if (!name) return;
+            const start = prompt('Start date (YYYY-MM-DD):') || '';
+            const end = prompt('End date (YYYY-MM-DD):') || '';
+            await fetch('/api/sprints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, startDate: start, endDate: end }) }); fetchTasks();
+          }} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
+            + New Sprint
+          </button>
         </div>
       )}
 
@@ -363,11 +382,21 @@ export default function TasksPage() {
             const eS = storiesData.filter(s => (s.epicId || s.epic_id) === epic.id);
             const dS = eS.filter(s => s.status === 'done').length; const pct = eS.length > 0 ? Math.round((dS / eS.length) * 100) : 0;
             return (
-              <div key={epic.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+              <div key={epic.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4 group">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-semibold text-gray-200">{epic.title}</h3>
-                  <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${epic.status === 'done' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>{epic.status}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${epic.status === 'done' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>{epic.status}</span>
+                    <select defaultValue={epic.status} onChange={async (e) => {
+                      await fetch('/api/epics', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: epic.id, status: e.target.value }) }); fetchTasks();
+                    }} className="opacity-0 group-hover:opacity-100 px-1 py-0.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[9px] text-gray-400 focus:outline-none">
+                      <option value="active">Active</option><option value="done">Done</option><option value="backlog">Backlog</option>
+                    </select>
+                    <button onClick={async () => { if (confirm(`Delete epic "${epic.title}"?`)) { await fetch(`/api/epics?id=${epic.id}`, { method: 'DELETE' }); fetchTasks(); }}}
+                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400">×</button>
+                  </div>
                 </div>
+                {epic.notes && <p className="text-[10px] text-gray-500 mb-2">{epic.notes}</p>}
                 <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-2"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
                 <div className="text-[10px] text-gray-600 mb-3">{dS}/{eS.length} stories</div>
                 <div className="space-y-1">
@@ -382,6 +411,15 @@ export default function TasksPage() {
               </div>
             );
           })}
+          {/* New Epic inline */}
+          <button onClick={async () => {
+            const title = prompt('Epic title:'); if (!title) return;
+            const priority = prompt('Priority (low/medium/high/critical):') || 'medium';
+            const notes = prompt('Notes (optional):') || '';
+            await fetch('/api/epics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, priority, notes }) }); fetchTasks();
+          }} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
+            + New Epic
+          </button>
         </div>
       )}
 
