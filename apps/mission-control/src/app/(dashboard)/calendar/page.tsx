@@ -73,6 +73,7 @@ export default function CalendarPage() {
   const [newCron, setNewCron] = useState({ name: '', agentId: 'main', cron: '0 * * * *', message: '', model: '', timezone: '' });
   const [editForm, setEditForm] = useState({ name: '', cron: '', message: '' });
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
 
   const today = new Date();
   const currentDay = today.getDay();
@@ -116,6 +117,18 @@ export default function CalendarPage() {
     await fetch('/api/crons', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: editingCron.id, name: editForm.name, cron: editForm.cron, message: editForm.message }) });
     setEditingCron(null); fetchCrons();
+  };
+
+  const handleCalendarDrop = async (cronId: string, dayIdx: number, hour: number) => {
+    const job = crons.find(c => c.id === cronId);
+    if (!job) return;
+    const p = parseCron(job.schedule.expr);
+    // Build new cron: keep minute, update hour and weekday
+    const parts = job.schedule.expr.split(' ');
+    const newExpr = `${parts[0]} ${hour} ${parts[2]} ${parts[3]} ${dayIdx}`;
+    await fetch('/api/crons', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: cronId, cron: newExpr }) });
+    fetchCrons();
   };
 
   const alwaysRunning = crons.filter(c => c.enabled && c.schedule?.expr && isFrequent(c.schedule.expr));
@@ -185,6 +198,24 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {/* Next Up */}
+      {crons.filter(c => c.enabled && c.state?.nextRunAtMs).length > 0 && (
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Next Up</div>
+          <div className="space-y-1.5">
+            {crons.filter(c => c.enabled && c.state?.nextRunAtMs).sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0)).slice(0, 5).map(c => (
+              <div key={c.id} className="flex items-center justify-between px-3 py-1.5 bg-[#0a0a0b] rounded cursor-pointer hover:bg-[#141416]" onClick={() => openEdit(c)}>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs">{AGENT_EMOJIS[c.agentId] || '🤖'}</span>
+                  <span className="text-xs text-gray-300">{c.name}</span>
+                </div>
+                <span className="text-xs text-amber-400">in {timeUntil(c.state?.nextRunAtMs)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -199,25 +230,7 @@ export default function CalendarPage() {
         <button onClick={() => setShowCreate(true)} className="px-3 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">+ New Cron</button>
       </div>
 
-      {/* Next Up */}
-      {crons.filter(c => c.enabled && c.state?.nextRunAtMs).length > 0 && (
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Next Up</div>
-          <div className="space-y-1.5">
-            {crons.filter(c => c.enabled && c.state?.nextRunAtMs).sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0)).slice(0, 5).map(c => (
-              <div key={c.id} className="flex items-center justify-between px-3 py-1.5 bg-[#0a0a0b] rounded">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">{AGENT_EMOJIS[c.agentId] || '🤖'}</span>
-                  <span className="text-xs text-gray-300">{c.name}</span>
-                </div>
-                <span className="text-xs text-amber-400">in {timeUntil(c.state?.nextRunAtMs)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Week View */}
+      {/* Week View — drag-drop + click to edit */}
       {view === 'week' && !loading && (
         <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
           <div className="grid grid-cols-8 border-b border-[#1e1e21]">
@@ -231,13 +244,26 @@ export default function CalendarPage() {
               <div key={h} className="grid grid-cols-8 border-b border-[#1e1e21] last:border-b-0">
                 <div className="p-1.5 text-[10px] text-gray-600 border-r border-[#1e1e21]">{String(h).padStart(2, '0')}:00</div>
                 {days.map((_, di) => {
+                  const slotKey = `${di}-${h}`;
                   const slots = getForSlot(di, h);
+                  const isDragOver = dragOverSlot === slotKey;
                   return (
-                    <div key={`${di}-${h}`} className={`p-0.5 min-h-[40px] border-r border-[#1e1e21] last:border-r-0 ${di === currentDay ? 'bg-amber-500/5' : ''}`}>
-                      {slots.map((s, si) => {
+                    <div key={slotKey}
+                      className={`p-0.5 min-h-[40px] border-r border-[#1e1e21] last:border-r-0 ${di === currentDay ? 'bg-amber-500/5' : ''} ${isDragOver ? 'bg-amber-500/10 ring-1 ring-amber-500/30 ring-inset' : ''}`}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverSlot(slotKey); }}
+                      onDragLeave={() => setDragOverSlot(null)}
+                      onDrop={e => { e.preventDefault(); setDragOverSlot(null); const id = e.dataTransfer.getData('text/plain'); if (id) handleCalendarDrop(id, di, h); }}
+                    >
+                      {slots.map((s) => {
                         const c = agentColors[s.agentId] || defaultColor;
                         return (
-                          <div key={si} className={`px-1.5 py-1 rounded text-[9px] ${c.bg} border ${c.border} mb-0.5 truncate`}>
+                          <div key={s.id}
+                            draggable
+                            onDragStart={e => { e.dataTransfer.setData('text/plain', s.id); e.dataTransfer.effectAllowed = 'move'; }}
+                            onClick={() => openEdit(s)}
+                            className={`px-1.5 py-1 rounded text-[9px] ${c.bg} border ${c.border} mb-0.5 truncate cursor-grab active:cursor-grabbing hover:brightness-125`}
+                            title={`${s.name} — drag to reschedule, click to edit`}
+                          >
                             <span className="text-gray-300">{s.name}</span>
                           </div>
                         );
