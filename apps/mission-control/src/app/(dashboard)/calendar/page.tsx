@@ -148,7 +148,7 @@ export default function CalendarPage() {
             <div className="text-[10px] text-gray-500 uppercase tracking-wider">Next Up</div>
             <span className="text-[10px] text-gray-600">{crons.filter(c => c.enabled).length} active</span>
           </div>
-          <div className="divide-y divide-[#1e1e21]">
+          <div className="divide-y divide-[#1e1e21] max-h-[280px] overflow-y-auto">
             {crons.filter(c => c.enabled && c.state?.nextRunAtMs).sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0)).map(c => {
               const isHb = c.name.toLowerCase().includes('heartbeat');
               const isLoading = actionLoading === c.id;
