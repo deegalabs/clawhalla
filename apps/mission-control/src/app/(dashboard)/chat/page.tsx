@@ -105,7 +105,10 @@ export default function ChatPage() {
     }
     const SR = (window as unknown as Record<string, unknown>).webkitSpeechRecognition || (window as unknown as Record<string, unknown>).SpeechRecognition;
     const recognition = new (SR as new () => { lang: string; continuous: boolean; interimResults: boolean; onresult: (e: unknown) => void; onerror: () => void; onend: () => void; start: () => void })();
-    recognition.lang = 'pt-BR';
+    // Auto-detect: use browser language (pt-BR or en-US typically)
+    // Web Speech API works best when lang matches spoken language
+    // Setting to empty string lets Chrome auto-detect
+    recognition.lang = '';
     recognition.continuous = false;
     recognition.interimResults = false;
 
@@ -129,7 +132,9 @@ export default function ChatPage() {
     window.speechSynthesis.cancel();
     const clean = text.replace(/[#*`_\[\]()]/g, '').replace(/<[^>]+>/g, '');
     const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.lang = 'pt-BR';
+    // Auto-detect language: if text has Portuguese characters/words, use pt-BR
+    const hasPt = /[àáâãçéêíóôõúü]|oque|como|para|isso|mais|voce/i.test(clean);
+    utterance.lang = hasPt ? 'pt-BR' : 'en-US';
     utterance.rate = 1.1;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
