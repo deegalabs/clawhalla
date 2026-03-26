@@ -141,77 +141,49 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-5">
-      {/* Heartbeat Control */}
-      {(() => {
-        const hb = crons.find(c => c.name.toLowerCase().includes('heartbeat'));
-        if (!hb) return null;
-        return (
-          <div className={`bg-[#111113] rounded-lg p-4 border ${hb.enabled ? 'border-green-500/30' : 'border-red-500/30'}`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-lg">💓</span>
-                <div>
-                  <div className="text-sm font-medium text-gray-200">{hb.name}</div>
-                  <div className="text-[10px] text-gray-500 font-mono">{hb.schedule?.expr} • @{hb.agentId}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {hb.state?.lastStatus && (
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded ${hb.state.lastStatus === 'ok' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                    Last: {hb.state.lastStatus}
-                  </span>
-                )}
-                {hb.state?.nextRunAtMs && (
-                  <span className="text-[10px] text-amber-400">Next: {timeUntil(hb.state.nextRunAtMs)}</span>
-                )}
-                <button onClick={() => doAction(hb.id, 'run')} disabled={actionLoading === hb.id}
-                  className="px-2.5 py-1 text-[10px] bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 disabled:opacity-50">
-                  {actionLoading === hb.id ? '...' : 'Run Now'}
-                </button>
-                <button onClick={() => doAction(hb.id, hb.enabled ? 'disable' : 'enable')} disabled={actionLoading === hb.id}
-                  className={`px-2.5 py-1 text-[10px] rounded ${hb.enabled ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' : 'bg-green-500/10 text-green-400 hover:bg-green-500/20'}`}>
-                  {hb.enabled ? 'Pause' : 'Resume'}
-                </button>
-                <button onClick={() => openEdit(hb)} className="px-2.5 py-1 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-300">Edit</button>
-              </div>
-            </div>
+      {/* Next Up — unified view, no duplicates */}
+      {crons.filter(c => c.enabled && c.state?.nextRunAtMs).length > 0 && (
+        <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[#1e1e21] flex items-center justify-between">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Next Up</div>
+            <span className="text-[10px] text-gray-600">{crons.filter(c => c.enabled).length} active</span>
           </div>
-        );
-      })()}
-
-      {/* Always Running */}
-      {alwaysRunning.length > 0 && (
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Always Running</div>
-          <div className="flex flex-wrap gap-2">
-            {alwaysRunning.map(j => {
-              const c = agentColors[j.agentId] || defaultColor;
+          <div className="divide-y divide-[#1e1e21]">
+            {crons.filter(c => c.enabled && c.state?.nextRunAtMs).sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0)).map(c => {
+              const isHb = c.name.toLowerCase().includes('heartbeat');
+              const isLoading = actionLoading === c.id;
               return (
-                <div key={j.id} className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-2 border ${c.bg} ${c.border}`}>
-                  <span>{AGENT_EMOJIS[j.agentId] || '🤖'}</span>
-                  <span className="text-gray-300">{j.name}</span>
-                  <span className="text-gray-600 text-[10px]">{j.schedule?.expr}</span>
+                <div key={c.id} className="px-4 py-2.5 flex items-center justify-between hover:bg-[#0a0a0b] group">
+                  <div className="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0" onClick={() => openEdit(c)}>
+                    <span className="text-base shrink-0">{isHb ? '💓' : AGENT_EMOJIS[c.agentId] || '🤖'}</span>
+                    <div className="min-w-0">
+                      <div className="text-xs text-gray-200 truncate">{c.name}</div>
+                      <div className="text-[10px] text-gray-600 font-mono">{c.schedule?.expr}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {c.state?.lastStatus && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded ${c.state.lastStatus === 'ok' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {c.state.lastStatus}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-amber-400">Next: {timeUntil(c.state?.nextRunAtMs)}</span>
+                    <button onClick={() => doAction(c.id, 'run')} disabled={isLoading}
+                      className="px-2 py-0.5 text-[10px] bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 disabled:opacity-50">
+                      {isLoading ? '...' : 'Run Now'}
+                    </button>
+                    <button onClick={() => doAction(c.id, 'disable')} disabled={isLoading}
+                      className="px-2 py-0.5 text-[10px] bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 disabled:opacity-50">
+                      Pause
+                    </button>
+                    <button onClick={() => openEdit(c)}
+                      className="px-2 py-0.5 text-[10px] text-gray-500 bg-[#1a1a1d] rounded hover:text-gray-300">
+                      Edit
+                    </button>
+                  </div>
                 </div>
               );
             })}
-          </div>
-        </div>
-      )}
-
-      {/* Next Up */}
-      {crons.filter(c => c.enabled && c.state?.nextRunAtMs).length > 0 && (
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Next Up</div>
-          <div className="space-y-1.5">
-            {crons.filter(c => c.enabled && c.state?.nextRunAtMs).sort((a, b) => (a.state?.nextRunAtMs || 0) - (b.state?.nextRunAtMs || 0)).slice(0, 5).map(c => (
-              <div key={c.id} className="flex items-center justify-between px-3 py-1.5 bg-[#0a0a0b] rounded cursor-pointer hover:bg-[#141416]" onClick={() => openEdit(c)}>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs">{AGENT_EMOJIS[c.agentId] || '🤖'}</span>
-                  <span className="text-xs text-gray-300">{c.name}</span>
-                </div>
-                <span className="text-xs text-amber-400">in {timeUntil(c.state?.nextRunAtMs)}</span>
-              </div>
-            ))}
           </div>
         </div>
       )}
