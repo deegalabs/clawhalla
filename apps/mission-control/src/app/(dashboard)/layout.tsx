@@ -165,7 +165,7 @@ const navSections = [
       { href: '/tasks', label: 'Tasks', icon: TasksIcon },
       { href: '/projects', label: 'Projects', icon: ProjectsIcon },
       { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
-      { href: '/pipeline', label: 'Pipeline', icon: PipelineIcon },
+      { href: '/factory', label: 'Factory', icon: PipelineIcon },
       { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
     ],
   },
