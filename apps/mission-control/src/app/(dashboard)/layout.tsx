@@ -83,6 +83,14 @@ function ApprovalsIcon({ className }: { className?: string }) {
   );
 }
 
+function ChatIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h12v8H5l-3 3V3z" />
+    </svg>
+  );
+}
+
 function OfficeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -166,6 +174,7 @@ const navSections = [
       { href: '/projects', label: 'Projects', icon: ProjectsIcon },
       { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
       { href: '/factory', label: 'Factory', icon: PipelineIcon },
+      { href: '/chat', label: 'Chat', icon: ChatIcon },
       { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
     ],
   },
