@@ -141,3 +141,64 @@ export const settings = sqliteTable('settings', {
   value: text('value'),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Boards Engine — generic project management (Trello/Linear-style)
+// ---------------------------------------------------------------------------
+
+export const boards = sqliteTable('boards', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),
+  type: text('type').notNull().default('kanban'), // kanban | sprint | custom
+  columns: text('columns').notNull(), // JSON array of { id, name, color?, wipLimit? }
+  owner: text('owner').notNull().default('user'), // 'user' | agent_id
+  squad: text('squad'), // optional squad association
+  settings: text('settings'), // JSON — sprint dates, WIP limits, etc.
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  archivedAt: integer('archived_at', { mode: 'timestamp' }),
+});
+
+export const cards = sqliteTable('cards', {
+  id: text('id').primaryKey(),
+  boardId: text('board_id').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  column: text('column').notNull(), // matches column id from board.columns
+  position: integer('position').notNull().default(0), // order within column
+  assignee: text('assignee'), // agent_id | 'user'
+  labels: text('labels'), // JSON array of strings
+  priority: text('priority').default('medium'), // low | medium | high | urgent
+  dueDate: integer('due_date', { mode: 'timestamp' }),
+  checklist: text('checklist'), // JSON array of { text, checked }
+  attachments: text('attachments'), // JSON array of { name, url }
+  parentCardId: text('parent_card_id'), // for sub-tasks
+  storyId: text('story_id'), // link to stories table (optional)
+  epicId: text('epic_id'), // link to epics table (optional)
+  sprintId: text('sprint_id'), // link to sprints table (optional)
+  progress: integer('progress').default(0), // 0-100
+  createdBy: text('created_by').notNull().default('user'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  archivedAt: integer('archived_at', { mode: 'timestamp' }),
+});
+
+export const cardComments = sqliteTable('card_comments', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  author: text('author').notNull(), // agent_id | 'user'
+  content: text('content').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const cardHistory = sqliteTable('card_history', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  action: text('action').notNull(), // created | moved | assigned | commented | updated | archived
+  by: text('by').notNull(), // agent_id | 'user'
+  fromValue: text('from_value'),
+  toValue: text('to_value'),
+  timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
+});

@@ -1,4 +1,5 @@
 import { workspaceWatcher } from '@/lib/watcher';
+import { subscribeBoardEvents } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,41 +8,52 @@ export async function GET() {
   workspaceWatcher.init();
 
   const encoder = new TextEncoder();
-  let unsubscribe: (() => void) | null = null;
+  let unsubFile: (() => void) | null = null;
+  let unsubBoard: (() => void) | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
+      const send = (payload: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        } catch { /* stream closed */ }
+      };
+
       // Send initial ping
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'connected', timestamp: Date.now() })}\n\n`));
+      send({ type: 'connected', timestamp: Date.now() });
 
       // Subscribe to file events
-      unsubscribe = workspaceWatcher.subscribe((event) => {
-        try {
-          const data = JSON.stringify({
-            type: 'file_change',
-            event: {
-              type: event.type,
-              path: event.relativePath,
-              timestamp: event.timestamp,
-            },
-          });
-          controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-        } catch {
-          // Stream closed
-        }
+      unsubFile = workspaceWatcher.subscribe((event) => {
+        send({
+          type: 'file_change',
+          event: {
+            type: event.type,
+            path: event.relativePath,
+            timestamp: event.timestamp,
+          },
+        });
+      });
+
+      // Subscribe to board events (cards moved, created, commented, etc.)
+      unsubBoard = subscribeBoardEvents((event) => {
+        send({ type: 'board_event', event });
       });
 
       // Heartbeat every 30s to keep connection alive
       const heartbeat = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'ping', timestamp: Date.now() })}\n\n`));
-        } catch {
-          clearInterval(heartbeat);
-        }
+        send({ type: 'ping', timestamp: Date.now() });
       }, 30000);
+
+      // Cleanup heartbeat when stream closes
+      const origCancel = stream.cancel;
+      stream.cancel = (reason) => {
+        clearInterval(heartbeat);
+        return origCancel?.call(stream, reason);
+      };
     },
     cancel() {
-      if (unsubscribe) unsubscribe();
+      if (unsubFile) unsubFile();
+      if (unsubBoard) unsubBoard();
     },
   });
 

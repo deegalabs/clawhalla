@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "npx tsx tests/api-test-runner.ts",
+    "test:api": "npx tsx tests/api-test-runner.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.95.2",
@@ -28,6 +30,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "tsx": "^4.19.0",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",

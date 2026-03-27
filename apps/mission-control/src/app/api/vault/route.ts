@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { vault } from '@/lib/vault';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
 // GET /api/vault — list all secrets (values never exposed)
 export async function GET() {
@@ -12,8 +13,11 @@ export async function GET() {
   }
 }
 
-// POST /api/vault — create or update a secret
-export async function POST(req: Request) {
+// POST /api/vault — create or update a secret (auth required)
+export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+
   try {
     const body = await req.json();
     const { name, value, description, category } = body;
@@ -27,6 +31,7 @@ export async function POST(req: Request) {
     }
 
     const entry = await vault.set(name, value, { description, category });
+    console.log(`[vault] Secret ${name} saved by ${auth.type}${auth.agentId ? `:${auth.agentId}` : ''}`);
     return NextResponse.json({ ok: true, secret: entry });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to save secret';
@@ -34,8 +39,11 @@ export async function POST(req: Request) {
   }
 }
 
-// DELETE /api/vault — delete a secret by name
-export async function DELETE(req: Request) {
+// DELETE /api/vault — delete a secret by name (auth required)
+export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+
   try {
     const url = new URL(req.url);
     const name = url.searchParams.get('name');
@@ -49,6 +57,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ ok: false, error: 'Secret not found' }, { status: 404 });
     }
 
+    console.log(`[vault] Secret ${name} deleted by ${auth.type}${auth.agentId ? `:${auth.agentId}` : ''}`);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete secret';

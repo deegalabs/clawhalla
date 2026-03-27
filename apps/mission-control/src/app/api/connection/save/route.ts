@@ -23,13 +23,35 @@ export async function POST(req: NextRequest) {
   try {
     const config = await req.json();
 
-    // Persist gateway connection to DB (required for cloud/multi-tenant)
+    // ---- Settings (non-secret) ----
     if (config.gatewayUrl) setSetting('gateway_url', config.gatewayUrl);
-    if (typeof config.gatewayToken === 'string') setSetting('gateway_token', config.gatewayToken);
     if (config.ollamaUrl) setSetting('ollama_url', config.ollamaUrl);
+    if (config.provider) setSetting('llm_provider', config.provider);
+    if (config.channel) setSetting('primary_channel', config.channel);
+    if (config.squad) setSetting('active_squad', config.squad);
     setSetting('onboarding_complete', 'true');
 
-    // Save API key to encrypted vault
+    // ---- Secrets → Vault (encrypted) ----
+
+    // Gateway token
+    if (typeof config.gatewayToken === 'string' && config.gatewayToken) {
+      setSetting('gateway_token', config.gatewayToken);
+      await vault.set('GATEWAY_TOKEN', config.gatewayToken, {
+        description: 'OpenClaw gateway authentication token',
+        category: 'system',
+      });
+    }
+
+    // LLM API key (Anthropic or Google)
+    if (config.apiKey && config.provider) {
+      const keyName = config.provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'GOOGLE_API_KEY';
+      await vault.set(keyName, config.apiKey, {
+        description: `${config.provider} API key (configured during onboarding)`,
+        category: 'api_key',
+      });
+    }
+
+    // Backward compat: anthropicKey field
     if (config.anthropicKey) {
       await vault.set('ANTHROPIC_API_KEY', config.anthropicKey, {
         description: 'Anthropic API key (configured during onboarding)',
@@ -37,15 +59,28 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Write connection.json (mode + ssh config, no secrets)
+    // Telegram bot token
+    if (config.telegramToken) {
+      await vault.set('TELEGRAM_BOT_TOKEN', config.telegramToken, {
+        description: 'Telegram bot token (configured during onboarding)',
+        category: 'channel',
+      });
+    }
+
+    // Agent customizations (stored as JSON in settings for Claw to read)
+    if (config.agentCustomizations) {
+      setSetting('agent_customizations', JSON.stringify(config.agentCustomizations));
+    }
+
+    // ---- connection.json (non-secret metadata) ----
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(
       CONFIG_PATH,
       JSON.stringify(
         {
-          mode: config.mode,
-          gatewayUrl: config.gatewayUrl,
-          ...(config.mode === 'ssh' ? { ssh: config.ssh } : {}),
+          provider: config.provider,
+          channel: config.channel,
+          squad: config.squad,
           connectedAt: config.connectedAt || new Date().toISOString(),
         },
         null,

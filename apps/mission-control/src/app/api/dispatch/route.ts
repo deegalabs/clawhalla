@@ -3,9 +3,13 @@ import { execSync } from 'child_process';
 import { db } from '@/lib/db';
 import { tasks, activities, costEvents } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
-// POST /api/dispatch — execute a task by dispatching it to an agent
+// POST /api/dispatch — execute a task by dispatching it to an agent (auth required)
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+
   try {
     const { taskId } = await req.json();
 

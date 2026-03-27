@@ -1,9 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { vault } from '@/lib/vault';
+import { authenticateRequest, isAuthError } from '@/lib/auth';
 
 // POST /api/vault/reveal — decrypt and return a secret value
-// Separate endpoint to make it explicit that this is a sensitive operation
-export async function POST(req: Request) {
+// Requires authentication for agent/gateway requests
+export async function POST(req: NextRequest) {
+  const auth = authenticateRequest(req);
+  if (isAuthError(auth)) return auth;
+
   try {
     const body = await req.json();
     const { name } = body;
@@ -17,14 +21,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Secret not found' }, { status: 404 });
     }
 
-    // Return masked value by default, full value only with explicit flag
+    // Agents get masked by default, user/gateway can request full
+    const showFull = body.full === true || auth.type === 'gateway';
     const masked = secret.value.slice(0, 4) + '...' + secret.value.slice(-4);
+
+    console.log(`[vault-reveal] ${auth.type}${auth.agentId ? `:${auth.agentId}` : ''} revealed: ${name} (${showFull ? 'full' : 'masked'})`);
 
     return NextResponse.json({
       ok: true,
       name: secret.name,
-      value: body.full ? secret.value : masked,
-      masked: !body.full,
+      value: showFull ? secret.value : masked,
+      masked: !showFull,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to reveal secret';
