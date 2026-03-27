@@ -135,3 +135,9 @@ export const workspaceFiles = sqliteTable('workspace_files', {
   lastModified: integer('last_modified', { mode: 'timestamp' }).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull()
 });
+
+export const settings = sqliteTable('settings', {
+  key: text('key').primaryKey(),
+  value: text('value'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
