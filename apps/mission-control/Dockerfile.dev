@@ -11,8 +11,11 @@ COPY . .
 
 RUN mkdir -p data
 
-RUN pnpm drizzle-kit generate && pnpm drizzle-kit migrate
+# Migrations run at container start (not build) so the mounted volume is ready
+COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 3000
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3000"]

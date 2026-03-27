@@ -16,45 +16,39 @@ Y='\033[1;33m'   # yellow
 B='\033[0;34m'   # blue
 C='\033[0;36m'   # cyan
 D='\033[2m'      # dim
-W='\033[0m'      # reset
+NC='\033[0m'     # reset (NC = no color)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UI PRIMITIVES
 # ─────────────────────────────────────────────────────────────────────────────
-W=55  # box width
+BW=55  # box width
 
-_line() { printf "${C}  │${W}"; }
-
-box_top()    { echo -e "${C}  ┌$(printf '─%.0s' $(seq 1 $W))┐${W}"; }
-box_div()    { echo -e "${C}  ├$(printf '─%.0s' $(seq 1 $W))┤${W}"; }
-box_bot()    { echo -e "${C}  └$(printf '─%.0s' $(seq 1 $W))┘${W}"; }
-box_empty()  { printf "${C}  │${W}  %-${W}s${C}│${W}\n" ""; }
-box_title()  { printf "${C}  │${W}  ${Y}%-$((W-2))s${C}│${W}\n" "$1"; }
-box_text()   { printf "${C}  │${W}  %-$((W-2))s${C}│${W}\n" "$1"; }
+box_top()    { echo -e "${C}  ┌$(printf '─%.0s' $(seq 1 $BW))┐${NC}"; }
+box_div()    { echo -e "${C}  ├$(printf '─%.0s' $(seq 1 $BW))┤${NC}"; }
+box_bot()    { echo -e "${C}  └$(printf '─%.0s' $(seq 1 $BW))┘${NC}"; }
+box_empty()  { printf "${C}  │${NC}  %-${BW}s${C}│${NC}\n" ""; }
+box_title()  { printf "${C}  │${NC}  ${Y}%-$((BW-2))s${C}│${NC}\n" "$1"; }
+box_text()   { printf "${C}  │${NC}  %-$((BW-2))s${C}│${NC}\n" "$1"; }
 box_opt()    {
     local num="$1" label="$2" desc="$3"
-    printf "${C}  │${W}  ${Y}${num}${W} · ${label}$(printf ' %.0s' $(seq 1 $((W - 6 - ${#num} - ${#label} - ${#desc}))))${D}${desc}${W}  ${C}│${W}\n"
+    local pad=$(( BW - 6 - ${#num} - ${#label} - ${#desc} ))
+    [ $pad -lt 0 ] && pad=0
+    printf "${C}  │${NC}  ${Y}%s${NC} · %s%s${D}%s${NC}  ${C}│${NC}\n" \
+        "$num" "$label" "$(printf ' %.0s' $(seq 1 $pad))" "$desc"
 }
 
-ok()   { echo -e "  ${G}✓${W}  $1"; }
-info() { echo -e "  ${B}·${W}  $1"; }
-warn() { echo -e "  ${Y}⚠${W}  $1"; }
-err()  { echo -e "  ${R}✗${W}  $1"; }
+ok()   { echo -e "  ${G}✓${NC}  $1"; }
+info() { echo -e "  ${B}·${NC}  $1"; }
+warn() { echo -e "  ${Y}⚠${NC}  $1"; }
+err()  { echo -e "  ${R}✗${NC}  $1"; }
 
 ask() {
     local prompt="$1" default="$2" var_name="$3"
-    printf "  ${C}›${W}  ${prompt}"
-    [ -n "$default" ] && printf " ${D}[${default}]${W}"
+    printf "  ${C}›${NC}  %s" "$prompt"
+    [ -n "$default" ] && printf " ${D}[%s]${NC}" "$default"
     printf ": "
     read -r "$var_name"
     eval "$var_name=\${$var_name:-$default}"
-}
-
-ask_secret() {
-    local prompt="$1" var_name="$2"
-    printf "  ${C}›${W}  ${prompt}: "
-    read -rs "$var_name"
-    echo ""
 }
 
 cleanup() {
@@ -81,14 +75,14 @@ done
 # ─────────────────────────────────────────────────────────────────────────────
 clear
 echo ""
-echo -e "${C}   ██████╗██╗      █████╗ ██╗    ██╗██╗  ██╗ █████╗ ██╗     ██╗      █████╗ ${W}"
-echo -e "${C}  ██╔════╝██║     ██╔══██╗██║    ██║██║  ██║██╔══██╗██║     ██║     ██╔══██╗${W}"
-echo -e "${C}  ██║     ██║     ███████║██║ █╗ ██║███████║███████║██║     ██║     ███████║${W}"
-echo -e "${C}  ██║     ██║     ██╔══██║██║███╗██║██╔══██║██╔══██║██║     ██║     ██╔══██║${W}"
-echo -e "${C}  ╚██████╗███████╗██║  ██║╚███╔███╔╝██║  ██║██║  ██║███████╗███████╗██║  ██║${W}"
-echo -e "${C}   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝${W}"
+echo -e "${C}   ██████╗██╗      █████╗ ██╗    ██╗██╗  ██╗ █████╗ ██╗     ██╗      █████╗ ${NC}"
+echo -e "${C}  ██╔════╝██║     ██╔══██╗██║    ██║██║  ██║██╔══██╗██║     ██║     ██╔══██╗${NC}"
+echo -e "${C}  ██║     ██║     ███████║██║ █╗ ██║███████║███████║██║     ██║     ███████║${NC}"
+echo -e "${C}  ██║     ██║     ██╔══██║██║███╗██║██╔══██║██╔══██║██║     ██║     ██╔══██║${NC}"
+echo -e "${C}  ╚██████╗███████╗██║  ██║╚███╔███╔╝██║  ██║██║  ██║███████╗███████╗██║  ██║${NC}"
+echo -e "${C}   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝${NC}"
 echo ""
-echo -e "${D}  Squad-Based AI Agent Platform  ·  clawhalla.xyz${W}"
+echo -e "${D}  Squad-Based AI Agent Platform  ·  clawhalla.xyz${NC}"
 echo ""
 
 [ "$EUID" -eq 0 ] && { err "Do not run as root."; exit 1; }
@@ -207,25 +201,27 @@ fi
 INSTALL_MC=true
 INSTALL_OLLAMA=false
 
+box_top
+box_title "Services"
+box_div
+box_opt "✓" "OpenClaw Gateway " "always included"
+box_empty
+box_text "Mission Control — management dashboard"
 if [ "$INSTALL_MODE" = "docker" ]; then
-    box_top
-    box_title "Services"
-    box_div
-    box_opt "✓" "OpenClaw Gateway" "always included"
-    box_empty
-    box_text "Mission Control — management dashboard"
-    box_text "Ollama          — free local AI models (Llama, Mistral…)"
-    box_empty
-    box_bot
-    echo ""
+box_text "Ollama          — free local AI models (Llama, Mistral…)"
+fi
+box_empty
+box_bot
+echo ""
 
-    ask "Install Mission Control? (Y/n)" "Y" _MC
-    [[ "$_MC" =~ ^[Nn]$ ]] && INSTALL_MC=false
+ask "Install Mission Control? (Y/n)" "Y" _MC
+[[ "$_MC" =~ ^[Nn]$ ]] && INSTALL_MC=false
 
+if [ "$INSTALL_MODE" = "docker" ]; then
     ask "Install Ollama (local models)? (y/N)" "N" _OL
     [[ "$_OL" =~ ^[Yy]$ ]] && INSTALL_OLLAMA=true
-    echo ""
 fi
+echo ""
 
 # ── MC access mode (only if MC is being installed) ───────────────────────────
 MC_ACCESS="local"
@@ -276,7 +272,14 @@ git clone https://github.com/deegalabs/clawhalla.git "$INSTALL_DIR" --quiet
 ok "Cloned to ${INSTALL_DIR}"
 echo ""
 
-mkdir -p "$DATA_DIR/openclaw" "$DATA_DIR/mission-control"
+# Docker: data dir holds volume mounts for both services
+# Bare metal: openclaw always lives at ~/.openclaw (managed by openclaw CLI)
+#             data dir only holds MC database
+if [ "$INSTALL_MODE" = "docker" ]; then
+    mkdir -p "$DATA_DIR/openclaw" "$DATA_DIR/mission-control"
+else
+    mkdir -p "$DATA_DIR/mission-control"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. WRITE OPENCLAW CONFIG (no openclaw onboard needed)
@@ -668,31 +671,31 @@ EOF
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo ""
-echo -e "  ${G}┌────────────────────────────────────────────────────────┐${W}"
-echo -e "  ${G}│                                                        │${W}"
-echo -e "  ${G}│   ClawHalla is ready!                                  │${W}"
-echo -e "  ${G}│                                                        │${W}"
-printf  "  ${G}│${W}   Workspace   %-41s${G}│${W}\n" "${WORKSPACE_NAME}"
-printf  "  ${G}│${W}   Mode        %-41s${G}│${W}\n" "${INSTALL_MODE} · ${ENV_TYPE}"
-printf  "  ${G}│${W}   Gateway     %-41s${G}│${W}\n" "ws://127.0.0.1:18789"
+echo -e "  ${G}┌────────────────────────────────────────────────────────┐${NC}"
+echo -e "  ${G}│                                                        │${NC}"
+echo -e "  ${G}│   ClawHalla is ready!                                  │${NC}"
+echo -e "  ${G}│                                                        │${NC}"
+printf  "  ${G}│${NC}   Workspace   %-41s${G}│${NC}\n" "${WORKSPACE_NAME}"
+printf  "  ${G}│${NC}   Mode        %-41s${G}│${NC}\n" "${INSTALL_MODE} · ${ENV_TYPE}"
+printf  "  ${G}│${NC}   Gateway     %-41s${G}│${NC}\n" "ws://127.0.0.1:18789"
 
 if [ "$MC_ACCESS" = "cloud" ]; then
-    printf  "  ${G}│${W}   MC          %-41s${G}│${W}\n" "controls.clawhalla.xyz"
-    printf  "  ${G}│${W}              %-41s${G}│${W}\n" "→ connect gateway: ws://YOUR_IP:18789"
+    printf  "  ${G}│${NC}   MC          %-41s${G}│${NC}\n" "controls.clawhalla.xyz"
+    printf  "  ${G}│${NC}              %-41s${G}│${NC}\n" "→ connect gateway: ws://YOUR_IP:18789"
 elif [ -n "$MC_URL" ]; then
-    printf  "  ${G}│${W}   MC          %-41s${G}│${W}\n" "${MC_URL}"
+    printf  "  ${G}│${NC}   MC          %-41s${G}│${NC}\n" "${MC_URL}"
 fi
 
-echo -e "  ${G}│                                                        │${W}"
-echo -e "  ${G}│   Next: open the URL above and complete setup in MC.  │${W}"
-echo -e "  ${G}│                                                        │${W}"
-echo -e "  ${G}└────────────────────────────────────────────────────────┘${W}"
+echo -e "  ${G}│                                                        │${NC}"
+echo -e "  ${G}│   Next: open the URL above and complete setup in MC.  │${NC}"
+echo -e "  ${G}│                                                        │${NC}"
+echo -e "  ${G}└────────────────────────────────────────────────────────┘${NC}"
 echo ""
 
 if [ "$INSTALL_MODE" = "bare" ]; then
-    echo -e "  ${D}Manage:  pm2 list  ·  pm2 logs  ·  pm2 restart all${W}"
+    echo -e "  ${D}Manage:  pm2 list  ·  pm2 logs  ·  pm2 restart all${NC}"
 else
-    echo -e "  ${D}Manage:  cd ${INSTALL_DIR} && docker compose logs -f${W}"
+    echo -e "  ${D}Manage:  cd ${INSTALL_DIR} && docker compose logs -f${NC}"
 fi
 
 # ── Auto-open browser on local machine ────────────────────────────────────────
