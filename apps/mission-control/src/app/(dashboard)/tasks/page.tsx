@@ -168,36 +168,43 @@ function NewBoardModal({ onClose, onCreate }: {
   );
 }
 
-// ─── Card Detail Modal ──────────────────────────────────────────
+// ─── Card Detail Modal (Trello-style) ───────────────────────────
 function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }: {
   card: Card;
   boardId: string;
   columns: BoardColumn[];
   onClose: () => void;
   onUpdate: (card: Card) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, mode: 'archive' | 'delete') => void;
 }) {
   const [form, setForm] = useState({ ...card });
-  const [tab, setTab] = useState<'details' | 'checklist' | 'comments' | 'history' | 'dispatch'>('details');
   const [checklist, setChecklist] = useState<{ text: string; done: boolean }[]>(card.checklist || []);
   const [newCheckItem, setNewCheckItem] = useState('');
   const [comments, setComments] = useState<CardComment[]>([]);
   const [history, setHistory] = useState<CardHistoryEntry[]>([]);
   const [newComment, setNewComment] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [showChecklist, setShowChecklist] = useState((card.checklist || []).length > 0);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; output: string; duration?: number; agentId?: string } | null>(null);
+  const [showActivity, setShowActivity] = useState(true);
+  const [confirmAction, setConfirmAction] = useState<'archive' | 'delete' | null>(null);
+  const [labelInput, setLabelInput] = useState('');
+  const [dirty, setDirty] = useState(false);
 
   // Load comments and history on mount
   useEffect(() => {
     fetch(`/api/boards/${boardId}/cards/${card.id}`).then(r => r.json()).then(data => {
       if (data.history) setHistory(data.history);
     }).catch(console.error);
-
     fetch(`/api/boards/${boardId}/cards/${card.id}/comments`).then(r => r.json()).then(data => {
       if (Array.isArray(data)) setComments(data);
     }).catch(console.error);
   }, [boardId, card.id]);
+
+  // Track dirty state
+  const markDirty = () => { if (!dirty) setDirty(true); };
+  const updateForm = (patch: Partial<Card>) => { setForm(prev => ({ ...prev, ...patch })); markDirty(); };
 
   const handleSave = async () => {
     const updates: Record<string, unknown> = {};
@@ -217,6 +224,7 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
         body: JSON.stringify(updates),
       });
     }
+    setDirty(false);
     onUpdate({ ...form, checklist });
   };
 
@@ -235,12 +243,11 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
   const handleDispatch = async () => {
     setDispatching(true);
     setDispatchResult(null);
-    setTab('dispatch');
     try {
       const res = await fetch('/api/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId: card.id, taskId: card.id }),
+        body: JSON.stringify({ cardId: card.id }),
       });
       const data = await res.json();
       setDispatchResult({
@@ -251,7 +258,7 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
       });
       if (data.success) {
         const doneCol = columns.find(c => /^(done|deployed|resolved|published|closed)$/i.test(c.id));
-        if (doneCol) setForm(prev => ({ ...prev, column: doneCol.id }));
+        if (doneCol) updateForm({ column: doneCol.id });
       }
     } catch (err) {
       setDispatchResult({ ok: false, output: String(err) });
@@ -263,217 +270,367 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
     if (!newCheckItem.trim()) return;
     setChecklist([...checklist, { text: newCheckItem.trim(), done: false }]);
     setNewCheckItem('');
+    markDirty();
   };
-  const toggleCheck = (i: number) => setChecklist(checklist.map((c, idx) => idx === i ? { ...c, done: !c.done } : c));
-  const removeCheck = (i: number) => setChecklist(checklist.filter((_, idx) => idx !== i));
+  const toggleCheck = (i: number) => { setChecklist(checklist.map((c, idx) => idx === i ? { ...c, done: !c.done } : c)); markDirty(); };
+  const removeCheck = (i: number) => { setChecklist(checklist.filter((_, idx) => idx !== i)); markDirty(); };
   const checkDone = checklist.filter(c => c.done).length;
 
+  const addLabel = () => {
+    if (!labelInput.trim()) return;
+    const newLabels = [...(form.labels || []), labelInput.trim()];
+    updateForm({ labels: newLabels });
+    setLabelInput('');
+  };
+  const removeLabel = (label: string) => {
+    updateForm({ labels: (form.labels || []).filter(l => l !== label) });
+  };
+
+  // Merge comments + history into unified activity feed
+  const activityFeed = [
+    ...comments.map(c => ({ type: 'comment' as const, id: c.id, by: c.author, content: c.content, time: c.createdAt })),
+    ...history.map(h => ({ type: 'history' as const, id: h.id, by: h.by, action: h.action, from: h.fromValue, to: h.toValue, time: h.timestamp })),
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+  const currentCol = columns.find(c => c.id === form.column);
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-12 px-4" onClick={onClose}>
-      <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-5 py-3 border-b border-[#1e1e21] flex items-start justify-between shrink-0">
-          <div className="flex-1">
-            <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
-              className="w-full text-base font-semibold text-gray-100 bg-transparent focus:outline-none" />
-            <div className="text-[10px] text-gray-600 mt-0.5">{form.id} {timeAgo(form.createdAt)}</div>
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 pt-8 px-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-[#18181b] rounded-xl border border-[#27272a] w-full max-w-3xl mb-8 overflow-hidden" onClick={e => e.stopPropagation()}>
+
+        {/* Header — column indicator + title */}
+        <div className="h-2 rounded-t-xl" style={{ backgroundColor: currentCol?.color || '#6b7280' }} />
+        <div className="px-6 pt-4 pb-3 flex items-start justify-between">
+          <div className="flex-1 mr-4">
+            <input type="text" value={form.title} onChange={e => updateForm({ title: e.target.value })}
+              className="w-full text-lg font-semibold text-gray-100 bg-transparent focus:outline-none focus:bg-[#0a0a0b] focus:px-2 focus:py-1 focus:-mx-2 focus:-my-1 rounded" />
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-gray-600">in</span>
+              <span className="text-[10px] font-medium text-gray-400" style={{ color: currentCol?.color }}>{currentCol?.name || form.column}</span>
+              <span className="text-[10px] text-gray-700">•</span>
+              <span className="text-[10px] text-gray-600">{form.id}</span>
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-lg ml-4">×</button>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 p-1 hover:bg-[#27272a] rounded">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+          </button>
         </div>
 
-        {/* Toolbar */}
-        <div className="px-5 py-2 border-b border-[#1e1e21] flex flex-wrap gap-1.5 shrink-0">
-          <select value={form.column} onChange={e => setForm({ ...form, column: e.target.value })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
-            {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
-            {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <select value={form.assignee || ''} onChange={e => setForm({ ...form, assignee: e.target.value || null })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
-            <option value="">Unassigned</option>
-            {AGENT_ROSTER.map(a => <option key={a.id} value={a.id}>{a.emoji} {a.name}</option>)}
-          </select>
-          <input type="date" value={form.dueDate || ''} onChange={e => setForm({ ...form, dueDate: e.target.value || null })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500" />
-        </div>
+        {/* Two-column layout: Main + Sidebar */}
+        <div className="flex gap-0">
+          {/* ─── Main Content (left) ─── */}
+          <div className="flex-1 px-6 pb-6 min-w-0 space-y-5">
 
-        {/* Tabs */}
-        <div className="px-5 pt-1 flex gap-0.5 border-b border-[#1e1e21] shrink-0">
-          {(['details', 'checklist', 'comments', 'history', 'dispatch'] as const).map(t => (
-            <button key={t} data-tab={t} onClick={() => setTab(t)}
-              className={`px-3 py-1.5 text-[11px] rounded-t capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
-              {t === 'dispatch' ? '▶ Dispatch' : t}
-              {t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
-              {t === 'comments' && comments.length > 0 ? ` (${comments.length})` : ''}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 min-h-0">
-          {tab === 'details' && (
-            <div className="space-y-3">
+            {/* Labels */}
+            {(form.labels?.length > 0 || labelInput) && (
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase mb-1">Description</label>
-                <textarea rows={8} value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })}
-                  placeholder="Card description... (markdown supported)"
-                  className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 resize-none leading-relaxed" />
-              </div>
-              {form.description && (
-                <div className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
-                  <MarkdownView content={form.description} maxHeight="max-h-[30vh]" />
-                </div>
-              )}
-              <div className="grid grid-cols-3 gap-3 text-[11px]">
-                <div><span className="text-gray-600">Created:</span> <span className="text-gray-400">{timeAgo(form.createdAt)}</span></div>
-                <div><span className="text-gray-600">Updated:</span> <span className="text-gray-400">{timeAgo(form.updatedAt)}</span></div>
-                <div><span className="text-gray-600">Completed:</span> <span className="text-gray-400">{form.completedAt ? timeAgo(form.completedAt) : '—'}</span></div>
-              </div>
-            </div>
-          )}
-
-          {tab === 'checklist' && (
-            <div className="space-y-2">
-              {checklist.length > 0 && (
-                <div className="h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden mb-3">
-                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${(checkDone / checklist.length) * 100}%` }} />
-                </div>
-              )}
-              {checklist.map((item, i) => (
-                <div key={i} className="flex items-center gap-2 group">
-                  <button onClick={() => toggleCheck(i)} className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${item.done ? 'bg-green-500 border-green-500' : 'border-[#333] hover:border-gray-400'}`}>
-                    {item.done && <span className="text-[9px] text-white">✓</span>}
-                  </button>
-                  <span className={`text-xs flex-1 ${item.done ? 'text-gray-600 line-through' : 'text-gray-300'}`}>{item.text}</span>
-                  <button onClick={() => removeCheck(i)} className="text-[10px] text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100">×</button>
-                </div>
-              ))}
-              <div className="flex gap-2 mt-3">
-                <input type="text" placeholder="Add item..." value={newCheckItem} onChange={e => setNewCheckItem(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && addCheckItem()}
-                  className="flex-1 px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
-                <button onClick={addCheckItem} className="px-3 py-1.5 text-[11px] bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">Add</button>
-              </div>
-            </div>
-          )}
-
-          {tab === 'comments' && (
-            <div className="space-y-3">
-              {comments.length === 0 && <div className="text-xs text-gray-600 text-center py-4">No comments yet</div>}
-              {comments.map(c => (
-                <div key={c.id} className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-xs">{AGENT_EMOJIS[c.author] || '👤'}</span>
-                    <span className="text-[11px] text-gray-300 font-medium capitalize">{c.author}</span>
-                    <span className="text-[10px] text-gray-600">{timeAgo(c.createdAt)}</span>
-                  </div>
-                  <div className="text-xs text-gray-400">{c.content}</div>
-                </div>
-              ))}
-              <div className="flex gap-2 mt-2">
-                <input type="text" placeholder="Add comment..." value={newComment} onChange={e => setNewComment(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddComment()}
-                  className="flex-1 px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
-                <button onClick={handleAddComment} className="px-3 py-1.5 text-[11px] bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">Send</button>
-              </div>
-            </div>
-          )}
-
-          {tab === 'history' && (
-            <div className="space-y-1.5">
-              {history.length === 0 && <div className="text-xs text-gray-600 text-center py-4">No history</div>}
-              {history.map(h => (
-                <div key={h.id} className="flex items-center gap-2 text-[11px] px-2 py-1.5 bg-[#0a0a0b] rounded">
-                  <span>{AGENT_EMOJIS[h.by] || '👤'}</span>
-                  <span className="text-gray-400 capitalize">{h.by}</span>
-                  <span className="text-gray-600">{h.action}</span>
-                  {h.fromValue && <span className="text-gray-700">{h.fromValue}</span>}
-                  {h.fromValue && h.toValue && <span className="text-gray-700">→</span>}
-                  {h.toValue && <span className="text-gray-400">{h.toValue}</span>}
-                  <span className="text-gray-700 ml-auto">{timeAgo(h.timestamp)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab === 'dispatch' && (
-            <div className="space-y-3">
-              <div className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Dispatch Info</div>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div><span className="text-gray-600">Agent:</span> <span className="text-amber-400">@{form.assignee || 'main'}</span></div>
-                  <div><span className="text-gray-600">Priority:</span> <span className="text-gray-300">{form.priority}</span></div>
-                  <div><span className="text-gray-600">Column:</span> <span className="text-gray-300">{columns.find(c => c.id === form.column)?.name || form.column}</span></div>
-                  <div><span className="text-gray-600">Labels:</span> <span className="text-gray-300">{form.labels?.join(', ') || '—'}</span></div>
-                </div>
-              </div>
-
-              {!dispatching && !dispatchResult && (
-                <button onClick={handleDispatch}
-                  className="w-full py-3 text-sm font-medium bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-400 flex items-center justify-center gap-2">
-                  <span>▶</span> Run Task — Dispatch to @{form.assignee || 'main'}
-                </button>
-              )}
-
-              {dispatching && (
-                <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 text-center">
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <span className="flex gap-1">
-                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Labels</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {form.labels?.map(label => (
+                    <span key={label} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-amber-500/15 text-amber-400 rounded-full group">
+                      {label}
+                      <button onClick={() => removeLabel(label)} className="text-amber-600 hover:text-amber-300 opacity-0 group-hover:opacity-100">×</button>
                     </span>
-                  </div>
-                  <div className="text-sm text-amber-400">Agent @{form.assignee || 'main'} executing...</div>
-                  <div className="text-[10px] text-gray-600 mt-1">This may take up to 2 minutes</div>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {dispatchResult && (
-                <div className={`rounded-lg border p-4 ${dispatchResult.ok ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">{dispatchResult.ok ? '✅' : '❌'}</span>
-                    <div>
-                      <div className={`text-sm font-medium ${dispatchResult.ok ? 'text-green-400' : 'text-red-400'}`}>
-                        {dispatchResult.ok ? 'Task Completed' : 'Task Failed'}
-                      </div>
-                      <div className="text-[10px] text-gray-600">
-                        Agent: @{dispatchResult.agentId}
-                        {dispatchResult.duration && ` • ${Math.round(dispatchResult.duration / 1000)}s`}
-                      </div>
-                    </div>
+            {/* Description */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Description</div>
+              {editingDesc ? (
+                <div className="space-y-2">
+                  <textarea rows={6} value={form.description || ''} onChange={e => updateForm({ description: e.target.value })}
+                    placeholder="Add a detailed description... (markdown supported)"
+                    className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#27272a] rounded-lg text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 resize-y leading-relaxed"
+                    autoFocus />
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditingDesc(false)} className="px-3 py-1 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Done</button>
+                    <button onClick={() => { updateForm({ description: card.description }); setEditingDesc(false); }} className="px-3 py-1 text-[11px] text-gray-500">Cancel</button>
                   </div>
-                  <MarkdownView content={dispatchResult.output} maxHeight="max-h-60" />
-                  {!dispatchResult.ok && (
-                    <button onClick={() => { setDispatchResult(null); handleDispatch(); }}
-                      className="mt-3 px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
-                      Retry
-                    </button>
+                </div>
+              ) : (
+                <div onClick={() => setEditingDesc(true)} className="cursor-pointer rounded-lg hover:bg-[#0a0a0b] transition-colors">
+                  {form.description ? (
+                    <div className="px-3 py-2 border border-transparent hover:border-[#27272a] rounded-lg">
+                      <MarkdownView content={form.description} maxHeight="max-h-[30vh]" />
+                    </div>
+                  ) : (
+                    <div className="px-3 py-3 bg-[#0a0a0b] border border-[#27272a] rounded-lg text-xs text-gray-600">
+                      Click to add a description...
+                    </div>
                   )}
                 </div>
               )}
             </div>
-          )}
-        </div>
 
-        {/* Footer */}
-        <div className="px-5 py-2.5 border-t border-[#1e1e21] flex items-center justify-between shrink-0">
-          <div>
-            {confirmDelete ? (
-              <div className="flex gap-2">
-                <button onClick={() => onDelete(form.id)} className="px-3 py-1 text-[11px] bg-red-500/20 text-red-400 rounded">Confirm</button>
-                <button onClick={() => setConfirmDelete(false)} className="px-3 py-1 text-[11px] text-gray-500">Cancel</button>
+            {/* Checklist */}
+            {showChecklist && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                    Checklist {checklist.length > 0 && <span className="text-gray-600">({checkDone}/{checklist.length})</span>}
+                  </div>
+                  {checklist.length === 0 && (
+                    <button onClick={() => setShowChecklist(false)} className="text-[10px] text-gray-600 hover:text-gray-400">Hide</button>
+                  )}
+                </div>
+                {checklist.length > 0 && (
+                  <div className="h-1.5 bg-[#27272a] rounded-full overflow-hidden mb-3">
+                    <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${(checkDone / checklist.length) * 100}%` }} />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {checklist.map((item, i) => (
+                    <div key={i} className="flex items-center gap-2.5 py-1 px-1 rounded hover:bg-[#0a0a0b] group">
+                      <button onClick={() => toggleCheck(i)} className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${item.done ? 'bg-green-500 border-green-500' : 'border-[#444] hover:border-gray-400'}`}>
+                        {item.done && <span className="text-[9px] text-white font-bold">✓</span>}
+                      </button>
+                      <span className={`text-xs flex-1 ${item.done ? 'text-gray-600 line-through' : 'text-gray-300'}`}>{item.text}</span>
+                      <button onClick={() => removeCheck(i)} className="text-[10px] text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 px-1">×</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input type="text" placeholder="Add item..." value={newCheckItem} onChange={e => setNewCheckItem(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addCheckItem()}
+                    className="flex-1 px-3 py-1.5 bg-[#0a0a0b] border border-[#27272a] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
+                  <button onClick={addCheckItem} className="px-3 py-1.5 text-[11px] bg-[#27272a] text-gray-400 rounded hover:text-gray-200">Add</button>
+                </div>
               </div>
-            ) : (
-              <button onClick={() => setConfirmDelete(true)} className="px-3 py-1 text-[11px] text-gray-600 hover:text-red-400">Delete</button>
             )}
+
+            {/* Dispatch Result (if any) */}
+            {(dispatching || dispatchResult) && (
+              <div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Dispatch</div>
+                {dispatching && (
+                  <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 text-center">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <span className="flex gap-1">
+                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </span>
+                    </div>
+                    <div className="text-sm text-amber-400">Agent @{form.assignee || 'main'} executing...</div>
+                    <div className="text-[10px] text-gray-600 mt-1">This may take up to 2 minutes</div>
+                  </div>
+                )}
+                {dispatchResult && (
+                  <div className={`rounded-lg border p-4 ${dispatchResult.ok ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">{dispatchResult.ok ? '✅' : '❌'}</span>
+                      <div>
+                        <div className={`text-sm font-medium ${dispatchResult.ok ? 'text-green-400' : 'text-red-400'}`}>
+                          {dispatchResult.ok ? 'Task Completed' : 'Task Failed'}
+                        </div>
+                        <div className="text-[10px] text-gray-600">
+                          Agent: @{dispatchResult.agentId}
+                          {dispatchResult.duration && ` • ${Math.round(dispatchResult.duration / 1000)}s`}
+                        </div>
+                      </div>
+                    </div>
+                    <MarkdownView content={dispatchResult.output} maxHeight="max-h-60" />
+                    {!dispatchResult.ok && (
+                      <button onClick={() => { setDispatchResult(null); handleDispatch(); }}
+                        className="mt-3 px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Activity Feed (comments + history merged) */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Activity</div>
+                <button onClick={() => setShowActivity(!showActivity)}
+                  className="text-[10px] text-gray-600 hover:text-gray-400">{showActivity ? 'Hide' : 'Show'}</button>
+              </div>
+
+              {/* Comment input */}
+              <div className="flex gap-2 mb-3">
+                <span className="w-7 h-7 rounded-full bg-[#27272a] flex items-center justify-center text-xs shrink-0">👤</span>
+                <div className="flex-1">
+                  <input type="text" placeholder="Write a comment..." value={newComment} onChange={e => setNewComment(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddComment()}
+                    className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#27272a] rounded-lg text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
+                  {newComment.trim() && (
+                    <button onClick={handleAddComment} className="mt-1.5 px-3 py-1 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
+                      Save
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {showActivity && (
+                <div className="space-y-2">
+                  {activityFeed.length === 0 && <div className="text-xs text-gray-600 text-center py-3">No activity yet</div>}
+                  {activityFeed.map(item => (
+                    <div key={item.id} className="flex gap-2">
+                      <span className="w-7 h-7 rounded-full bg-[#27272a] flex items-center justify-center text-xs shrink-0 mt-0.5">
+                        {AGENT_EMOJIS[item.by] || '👤'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        {item.type === 'comment' ? (
+                          <div className="bg-[#0a0a0b] border border-[#27272a] rounded-lg p-2.5">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[11px] text-gray-300 font-medium capitalize">{item.by}</span>
+                              <span className="text-[10px] text-gray-600">{timeAgo(item.time)}</span>
+                            </div>
+                            <div className="text-xs text-gray-400 whitespace-pre-wrap">{item.content}</div>
+                          </div>
+                        ) : (
+                          <div className="py-1.5 flex items-center flex-wrap gap-1 text-[11px]">
+                            <span className="text-gray-300 font-medium capitalize">{item.by}</span>
+                            <span className="text-gray-500">{item.action}</span>
+                            {item.from && <span className="text-gray-600 bg-[#27272a] px-1.5 py-0.5 rounded">{item.from}</span>}
+                            {item.from && item.to && <span className="text-gray-600">→</span>}
+                            {item.to && <span className="text-gray-400 bg-[#27272a] px-1.5 py-0.5 rounded">{item.to}</span>}
+                            <span className="text-gray-700 ml-auto">{timeAgo(item.time)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
-            <button onClick={handleSave} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Save</button>
+
+          {/* ─── Sidebar (right) ─── */}
+          <div className="w-48 shrink-0 pr-6 pb-6 space-y-4">
+            {/* Move */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Move to</div>
+              <select value={form.column} onChange={e => updateForm({ column: e.target.value })}
+                className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#27272a] rounded-lg text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
+                {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+
+            {/* Assignee */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Assignee</div>
+              <select value={form.assignee || ''} onChange={e => updateForm({ assignee: e.target.value || null })}
+                className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#27272a] rounded-lg text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
+                <option value="">Unassigned</option>
+                {AGENT_ROSTER.map(a => <option key={a.id} value={a.id}>{a.emoji} {a.name}</option>)}
+              </select>
+            </div>
+
+            {/* Priority */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Priority</div>
+              <div className="grid grid-cols-2 gap-1">
+                {Object.entries(priorityConfig).map(([k, v]) => (
+                  <button key={k} onClick={() => updateForm({ priority: k })}
+                    className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                      form.priority === k
+                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+                        : 'border-[#27272a] bg-[#0a0a0b] text-gray-500 hover:text-gray-300'
+                    }`}>
+                    <span className={`inline-block w-1.5 h-1.5 rounded-full ${v.dot} mr-1`} />{v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Due Date */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Due Date</div>
+              <input type="date" value={form.dueDate || ''} onChange={e => updateForm({ dueDate: e.target.value || null })}
+                className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#27272a] rounded-lg text-[11px] text-gray-300 focus:outline-none focus:border-amber-500" />
+              {form.dueDate && (
+                <button onClick={() => updateForm({ dueDate: null })} className="text-[10px] text-gray-600 hover:text-gray-400 mt-1">Clear date</button>
+              )}
+            </div>
+
+            {/* Labels */}
+            <div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5 font-medium">Labels</div>
+              <div className="flex gap-1">
+                <input type="text" placeholder="Add label" value={labelInput} onChange={e => setLabelInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addLabel()}
+                  className="flex-1 px-2 py-1 bg-[#0a0a0b] border border-[#27272a] rounded text-[10px] text-gray-300 focus:outline-none focus:border-amber-500 min-w-0" />
+                <button onClick={addLabel} className="px-2 py-1 text-[10px] bg-[#27272a] text-gray-400 rounded hover:text-gray-200">+</button>
+              </div>
+            </div>
+
+            {/* Sidebar divider */}
+            <div className="border-t border-[#27272a]" />
+
+            {/* Actions */}
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Actions</div>
+
+            {/* Checklist toggle */}
+            {!showChecklist && (
+              <button onClick={() => setShowChecklist(true)}
+                className="w-full text-left px-3 py-2 text-[11px] bg-[#0a0a0b] border border-[#27272a] rounded-lg text-gray-300 hover:bg-[#1a1a1d] hover:border-[#333]">
+                ☑ Add Checklist
+              </button>
+            )}
+
+            {/* Dispatch */}
+            <button onClick={handleDispatch} disabled={dispatching}
+              className="w-full text-left px-3 py-2 text-[11px] bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-400 hover:bg-amber-500/20 disabled:opacity-50">
+              ▶ Dispatch to @{form.assignee || 'main'}
+            </button>
+
+            {/* Save */}
+            <button onClick={handleSave} disabled={!dirty}
+              className={`w-full px-3 py-2 text-[11px] font-medium rounded-lg transition-colors ${
+                dirty
+                  ? 'bg-amber-500 text-gray-900 hover:bg-amber-400'
+                  : 'bg-[#27272a] text-gray-600 cursor-not-allowed'
+              }`}>
+              {dirty ? 'Save Changes' : 'Saved'}
+            </button>
+
+            <div className="border-t border-[#27272a]" />
+
+            {/* Archive / Delete */}
+            {confirmAction === null && (
+              <>
+                <button onClick={() => setConfirmAction('archive')}
+                  className="w-full text-left px-3 py-2 text-[11px] bg-[#0a0a0b] border border-[#27272a] rounded-lg text-gray-400 hover:bg-[#1a1a1d]">
+                  📦 Archive Card
+                </button>
+                <button onClick={() => setConfirmAction('delete')}
+                  className="w-full text-left px-3 py-2 text-[11px] bg-[#0a0a0b] border border-red-500/10 rounded-lg text-red-400/60 hover:bg-red-500/5 hover:text-red-400">
+                  🗑 Delete Card
+                </button>
+              </>
+            )}
+            {confirmAction && (
+              <div className="bg-[#0a0a0b] border border-[#27272a] rounded-lg p-3 space-y-2">
+                <div className="text-[11px] text-gray-300">
+                  {confirmAction === 'archive'
+                    ? 'Archive this card? You can restore it later.'
+                    : 'Permanently delete this card? This cannot be undone.'}
+                </div>
+                <div className="flex gap-1.5">
+                  <button onClick={() => onDelete(form.id, confirmAction)}
+                    className={`flex-1 px-2 py-1.5 text-[11px] font-medium rounded ${
+                      confirmAction === 'delete' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
+                    }`}>
+                    {confirmAction === 'archive' ? 'Archive' : 'Delete'}
+                  </button>
+                  <button onClick={() => setConfirmAction(null)} className="flex-1 px-2 py-1.5 text-[11px] text-gray-500 bg-[#27272a] rounded">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* Metadata */}
+            <div className="space-y-1 text-[10px] text-gray-600 pt-1">
+              <div>Created {timeAgo(form.createdAt)} by <span className="text-gray-500">{form.createdBy}</span></div>
+              <div>Updated {timeAgo(form.updatedAt)}</div>
+              {form.completedAt && <div className="text-green-500/60">Completed {timeAgo(form.completedAt)}</div>}
+            </div>
           </div>
         </div>
       </div>
@@ -690,10 +847,13 @@ export default function BoardsPage() {
     if (activeBoardId) fetchActiveBoard(activeBoardId);
   };
 
-  // Card delete handler
-  const handleCardDelete = async (cardId: string) => {
+  // Card archive/delete handler
+  const handleCardDelete = async (cardId: string, mode: 'archive' | 'delete') => {
     if (!activeBoardId) return;
-    await fetch(`/api/boards/${activeBoardId}/cards/${cardId}`, { method: 'DELETE' });
+    const url = mode === 'delete'
+      ? `/api/boards/${activeBoardId}/cards/${cardId}?hard=true`
+      : `/api/boards/${activeBoardId}/cards/${cardId}`;
+    await fetch(url, { method: 'DELETE' });
     setSelectedCard(null);
     fetchActiveBoard(activeBoardId);
   };
