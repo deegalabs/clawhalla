@@ -1,4 +1,4 @@
-CREATE TABLE `activities` (
+CREATE TABLE IF NOT EXISTS `activities` (
 	`id` text PRIMARY KEY NOT NULL,
 	`agent_id` text NOT NULL,
 	`action` text NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE `activities` (
 	`timestamp` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `agents` (
+CREATE TABLE IF NOT EXISTS `agents` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`role` text NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE `agents` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `approvals` (
+CREATE TABLE IF NOT EXISTS `approvals` (
 	`id` text PRIMARY KEY NOT NULL,
 	`task_id` text NOT NULL,
 	`requested_by` text NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE `approvals` (
 	`resolved_at` integer
 );
 --> statement-breakpoint
-CREATE TABLE `cost_events` (
+CREATE TABLE IF NOT EXISTS `cost_events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`agent_id` text NOT NULL,
 	`model` text NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE `cost_events` (
 	`timestamp` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `epics` (
+CREATE TABLE IF NOT EXISTS `epics` (
 	`id` text PRIMARY KEY NOT NULL,
 	`title` text NOT NULL,
 	`status` text DEFAULT 'active' NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE `epics` (
 	`completed_at` integer
 );
 --> statement-breakpoint
-CREATE TABLE `projects` (
+CREATE TABLE IF NOT EXISTS `projects` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`description` text,
@@ -70,7 +70,7 @@ CREATE TABLE `projects` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `secrets` (
+CREATE TABLE IF NOT EXISTS `secrets` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`description` text,
@@ -83,8 +83,8 @@ CREATE TABLE `secrets` (
 	`last_accessed_at` integer
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `secrets_name_unique` ON `secrets` (`name`);--> statement-breakpoint
-CREATE TABLE `sprints` (
+CREATE UNIQUE INDEX IF NOT EXISTS `secrets_name_unique` ON `secrets` (`name`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `sprints` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`status` text DEFAULT 'planning' NOT NULL,
@@ -95,7 +95,7 @@ CREATE TABLE `sprints` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `stories` (
+CREATE TABLE IF NOT EXISTS `stories` (
 	`id` text PRIMARY KEY NOT NULL,
 	`epic_id` text,
 	`title` text NOT NULL,
@@ -107,7 +107,7 @@ CREATE TABLE `stories` (
 	`completed_at` integer
 );
 --> statement-breakpoint
-CREATE TABLE `tasks` (
+CREATE TABLE IF NOT EXISTS `tasks` (
 	`id` text PRIMARY KEY NOT NULL,
 	`title` text NOT NULL,
 	`description` text,
@@ -126,7 +126,7 @@ CREATE TABLE `tasks` (
 	`completed_at` integer
 );
 --> statement-breakpoint
-CREATE TABLE `workspace_files` (
+CREATE TABLE IF NOT EXISTS `workspace_files` (
 	`id` text PRIMARY KEY NOT NULL,
 	`path` text NOT NULL,
 	`type` text NOT NULL,

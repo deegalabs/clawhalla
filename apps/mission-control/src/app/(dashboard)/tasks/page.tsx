@@ -226,7 +226,7 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
                   <div><span className="text-gray-600">Agent:</span> <span className="text-amber-400">@{form.assignedTo || 'main'}</span></div>
                   <div><span className="text-gray-600">Priority:</span> <span className="text-gray-300">{form.priority || 'medium'}</span></div>
                   <div><span className="text-gray-600">Status:</span> <span className="text-gray-300">{form.status}</span></div>
-                  <div><span className="text-gray-600">Project:</span> <span className="text-gray-300">{form.projectId || '—'}</span></div>
+                  <div><span className="text-gray-600">Tags:</span> <span className="text-gray-300">{form.tags || '—'}</span></div>
                 </div>
               </div>
 

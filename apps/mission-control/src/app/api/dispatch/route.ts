@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Update task status to doing
     db.update(tasks)
-      .set({ status: 'doing', updatedAt: new Date().toISOString() })
+      .set({ status: 'doing', updatedAt: new Date() })
       .where(eq(tasks.id, taskId))
       .run();
 
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       action: 'task_started',
       target: task.title,
       details: `Dispatched to ${agentId}`,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(),
     }).run();
 
     // 4. Build context prompt for the agent
@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
       .set({
         status: success ? 'done' : 'blocked',
         notes: `${task.notes || ''}\n\n--- Dispatch Result (${new Date().toISOString()}) ---\nAgent: ${agentId}\nDuration: ${Math.round(duration / 1000)}s\nStatus: ${success ? 'SUCCESS' : 'FAILED'}\n\n${output}`.trim(),
-        updatedAt: new Date().toISOString(),
-        completedAt: success ? new Date().toISOString() : null,
+        updatedAt: new Date(),
+        completedAt: success ? new Date() : null,
       })
       .where(eq(tasks.id, taskId))
       .run();
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       action: success ? 'task_completed' : 'task_blocked',
       target: task.title,
       details: success ? `Completed in ${Math.round(duration / 1000)}s` : output.slice(0, 200),
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(),
     }).run();
 
     // 8. Log cost event (estimate)
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       outputTokens: Math.round(output.length / 4),
       estimatedCost: Math.round(estimatedTokens * 0.003), // rough estimate in cents
       taskId,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(),
     }).run();
 
     return NextResponse.json({

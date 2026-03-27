@@ -1,4 +1,4 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
@@ -6,11 +6,23 @@ import * as schema from './schema';
 
 const DB_PATH = process.env.DB_PATH || './data/mission-control.db';
 
-const sqlite = new Database(DB_PATH);
-sqlite.pragma('journal_mode = WAL');
+let _db: BetterSQLite3Database<typeof schema> | null = null;
 
-// Auto-migrate: run any pending .sql migration files
-function autoMigrate() {
+function getDb(): BetterSQLite3Database<typeof schema> {
+  if (_db) return _db;
+
+  const sqlite = new Database(DB_PATH);
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('busy_timeout = 5000');
+
+  // Auto-migrate: run any pending .sql migration files
+  autoMigrate(sqlite);
+
+  _db = drizzle(sqlite, { schema });
+  return _db;
+}
+
+function autoMigrate(sqlite: Database.Database) {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS _migrations (
     tag TEXT PRIMARY KEY,
     applied_at INTEGER NOT NULL
@@ -49,6 +61,9 @@ function autoMigrate() {
   }
 }
 
-autoMigrate();
-
-export const db = drizzle(sqlite, { schema });
+// Proxy that lazily initializes DB on first access
+export const db = new Proxy({} as BetterSQLite3Database<typeof schema>, {
+  get(_target, prop) {
+    return (getDb() as any)[prop];
+  },
+});

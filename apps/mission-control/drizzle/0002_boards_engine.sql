@@ -1,4 +1,4 @@
-CREATE TABLE `boards` (
+CREATE TABLE IF NOT EXISTS `boards` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`description` text,
@@ -12,7 +12,7 @@ CREATE TABLE `boards` (
 	`archived_at` integer
 );
 --> statement-breakpoint
-CREATE TABLE `cards` (
+CREATE TABLE IF NOT EXISTS `cards` (
 	`id` text PRIMARY KEY NOT NULL,
 	`board_id` text NOT NULL,
 	`title` text NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE `cards` (
 	`archived_at` integer
 );
 --> statement-breakpoint
-CREATE TABLE `card_comments` (
+CREATE TABLE IF NOT EXISTS `card_comments` (
 	`id` text PRIMARY KEY NOT NULL,
 	`card_id` text NOT NULL,
 	`author` text NOT NULL,
@@ -45,7 +45,7 @@ CREATE TABLE `card_comments` (
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `card_history` (
+CREATE TABLE IF NOT EXISTS `card_history` (
 	`id` text PRIMARY KEY NOT NULL,
 	`card_id` text NOT NULL,
 	`action` text NOT NULL,
@@ -55,10 +55,10 @@ CREATE TABLE `card_history` (
 	`timestamp` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `cards_board_id_idx` ON `cards` (`board_id`);
+CREATE INDEX IF NOT EXISTS `cards_board_id_idx` ON `cards` (`board_id`);
 --> statement-breakpoint
-CREATE INDEX `cards_assignee_idx` ON `cards` (`assignee`);
+CREATE INDEX IF NOT EXISTS `cards_assignee_idx` ON `cards` (`assignee`);
 --> statement-breakpoint
-CREATE INDEX `card_comments_card_id_idx` ON `card_comments` (`card_id`);
+CREATE INDEX IF NOT EXISTS `card_comments_card_id_idx` ON `card_comments` (`card_id`);
 --> statement-breakpoint
-CREATE INDEX `card_history_card_id_idx` ON `card_history` (`card_id`);
+CREATE INDEX IF NOT EXISTS `card_history_card_id_idx` ON `card_history` (`card_id`);
