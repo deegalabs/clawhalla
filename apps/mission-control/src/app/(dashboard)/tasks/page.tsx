@@ -702,6 +702,8 @@ export default function BoardsPage() {
   const [editingBoardName, setEditingBoardName] = useState(false);
   const [boardNameDraft, setBoardNameDraft] = useState('');
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedCards, setArchivedCards] = useState<Card[]>([]);
 
   // Fetch boards list
   const fetchBoards = useCallback(async () => {
@@ -810,6 +812,37 @@ export default function BoardsPage() {
     setActiveBoardId(remaining.length > 0 ? remaining[0].id : null);
     fetchBoards();
   };
+
+  // Archived cards
+  const fetchArchivedCards = useCallback(async () => {
+    if (!activeBoardId) return;
+    try {
+      const res = await fetch(`/api/boards/${activeBoardId}/cards?archived=true`);
+      const data = await res.json();
+      if (Array.isArray(data)) setArchivedCards(data);
+    } catch (err) { console.error('[boards] fetch archived error:', err); }
+  }, [activeBoardId]);
+
+  const handleRestoreCard = async (cardId: string) => {
+    if (!activeBoardId) return;
+    await fetch(`/api/boards/${activeBoardId}/cards/${cardId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archivedAt: null }),
+    });
+    fetchArchivedCards();
+    fetchActiveBoard(activeBoardId);
+  };
+
+  const handleHardDeleteCard = async (cardId: string) => {
+    if (!activeBoardId) return;
+    await fetch(`/api/boards/${activeBoardId}/cards/${cardId}?hard=true`, { method: 'DELETE' });
+    fetchArchivedCards();
+  };
+
+  useEffect(() => {
+    if (showArchived) fetchArchivedCards();
+  }, [showArchived, fetchArchivedCards]);
 
   // Drag and drop
   const onDragStart = (e: DragEvent, cardId: string) => {
@@ -966,6 +999,12 @@ export default function BoardsPage() {
             <option value="">Priority</option>
             {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
+          {activeBoard && (
+            <button onClick={() => setShowArchived(!showArchived)}
+              className={`px-3 py-1.5 text-[11px] rounded border border-[#1e1e21] ${showArchived ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'text-gray-400 bg-[#1a1a1d] hover:text-gray-200'}`}>
+              📦 {showArchived ? 'Hide Archived' : 'Archived'}
+            </button>
+          )}
           <button onClick={() => setShowNewBoard(true)}
             className="px-3 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded hover:text-gray-200 border border-[#1e1e21]">
             + Board
@@ -1077,6 +1116,44 @@ export default function BoardsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Archived Cards Panel */}
+      {showArchived && activeBoard && (
+        <div className="mt-3 bg-[#111113] rounded-lg border border-[#1e1e21] p-4 shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">📦</span>
+              <span className="text-xs font-medium text-gray-300">Archived Cards</span>
+              <span className="text-[10px] text-gray-600">({archivedCards.length})</span>
+            </div>
+            <button onClick={() => setShowArchived(false)} className="text-gray-500 hover:text-gray-300 text-sm">×</button>
+          </div>
+          {archivedCards.length === 0 ? (
+            <div className="text-xs text-gray-600 text-center py-4">No archived cards</div>
+          ) : (
+            <div className="space-y-1.5 max-h-60 overflow-y-auto">
+              {archivedCards.map(card => (
+                <div key={card.id} className="flex items-center gap-3 px-3 py-2 bg-[#0a0a0b] rounded-lg border border-[#1e1e21] group">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-gray-300 truncate">{card.title}</div>
+                    <div className="text-[10px] text-gray-600">
+                      {card.column} {card.assignee && <span>• @{card.assignee}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => handleRestoreCard(card.id)}
+                    className="px-2.5 py-1 text-[10px] bg-green-500/10 text-green-400 rounded hover:bg-green-500/20 shrink-0">
+                    Restore
+                  </button>
+                  <button onClick={() => handleHardDeleteCard(card.id)}
+                    className="px-2.5 py-1 text-[10px] bg-red-500/10 text-red-400 rounded hover:bg-red-500/20 shrink-0 opacity-0 group-hover:opacity-100">
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

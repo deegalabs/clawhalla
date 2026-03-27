@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { boards, cards, cardHistory } from '@/lib/schema';
-import { eq, and, asc, isNull } from 'drizzle-orm';
+import { eq, and, asc, isNull, isNotNull } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
 
 function nanoid(prefix = 'card') {
@@ -16,11 +16,15 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const url = new URL(req.url);
   const column = url.searchParams.get('column');
   const assignee = url.searchParams.get('assignee');
+  const archived = url.searchParams.get('archived') === 'true';
 
   let query = db
     .select()
     .from(cards)
-    .where(and(eq(cards.boardId, boardId), isNull(cards.archivedAt)))
+    .where(and(
+      eq(cards.boardId, boardId),
+      archived ? isNotNull(cards.archivedAt) : isNull(cards.archivedAt),
+    ))
     .orderBy(asc(cards.position));
 
   let result = await query;

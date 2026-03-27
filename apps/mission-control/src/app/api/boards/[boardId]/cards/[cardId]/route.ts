@@ -105,6 +105,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   if (body.epicId !== undefined) updates.epicId = body.epicId;
   if (body.sprintId !== undefined) updates.sprintId = body.sprintId;
 
+  // Restore from archive
+  if (body.archivedAt === null) updates.archivedAt = null;
+
   // Auto-set completedAt when moved to a "done"-like column
   if (body.column && /^(done|deployed|resolved|published|closed)$/i.test(body.column)) {
     updates.completedAt = now;
