@@ -42,6 +42,16 @@ info() { echo -e "  ${B}·${NC}  $1"; }
 warn() { echo -e "  ${Y}⚠${NC}  $1"; }
 err()  { echo -e "  ${R}✗${NC}  $1"; }
 
+# Find the lowest free port starting at $1
+find_free_port() {
+    local port="$1"
+    while ss -tlnp 2>/dev/null | grep -q ":${port} " || \
+          nc -z 127.0.0.1 "$port" 2>/dev/null; do
+        port=$((port + 1))
+    done
+    echo "$port"
+}
+
 ask() {
     local prompt="$1" default="$2" var_name="$3"
     printf "  ${C}›${NC}  %s" "$prompt"
@@ -195,6 +205,7 @@ if [ -d "$INSTALL_DIR" ]; then
     if [ -f "${INSTALL_DIR}/.install-info.json" ]; then
         EXISTING_VER=$(grep -o '"version": *"[^"]*"' "${INSTALL_DIR}/.install-info.json" | grep -o '"[^"]*"$' | tr -d '"')
         EXISTING_MODE_RAW=$(grep -o '"mode": *"[^"]*"' "${INSTALL_DIR}/.install-info.json" | grep -o '"[^"]*"$' | tr -d '"')
+        EXISTING_WORKSPACE=$(grep -o '"workspace": *"[^"]*"' "${INSTALL_DIR}/.install-info.json" | grep -o '"[^"]*"$' | tr -d '"')
 
         echo ""
         box_top
@@ -226,7 +237,7 @@ if [ -d "$INSTALL_DIR" ]; then
         if [ "${EXISTING_MODE_RAW:-}" = "docker" ]; then
             cd "$INSTALL_DIR" && docker compose down 2>/dev/null || true
         else
-            pm2 stop clawhalla-gateway clawhalla-mc 2>/dev/null || true
+            pm2 stop "${EXISTING_WORKSPACE}-gateway" "${EXISTING_WORKSPACE}-mc" 2>/dev/null || true
         fi
         ok "Services stopped"
 
@@ -239,8 +250,8 @@ if [ -d "$INSTALL_DIR" ]; then
             if [ "${EXISTING_MODE_RAW:-}" = "docker" ]; then
                 docker compose up -d --build
             else
-                pm2 restart clawhalla-gateway 2>/dev/null || true
-                pm2 restart clawhalla-mc 2>/dev/null || true
+                pm2 restart "${EXISTING_WORKSPACE}-gateway" 2>/dev/null || true
+                pm2 restart "${EXISTING_WORKSPACE}-mc" 2>/dev/null || true
             fi
             ok "Services restarted"
             echo ""
@@ -331,6 +342,23 @@ if [ "$INSTALL_MC" = "true" ]; then
     echo ""
 fi
 
+# ── Ports ────────────────────────────────────────────────────────────────────
+DEFAULT_GATEWAY_PORT=$(find_free_port 18789)
+DEFAULT_MC_PORT=$(find_free_port 3000)
+
+box_top
+box_title "Ports"
+box_div
+box_text "Each ClawHalla instance needs its own ports."
+box_text "Defaults are the lowest free ports found."
+box_empty
+box_bot
+echo ""
+
+ask "Gateway port" "$DEFAULT_GATEWAY_PORT" GATEWAY_PORT
+[ "$INSTALL_MC" = "true" ] && ask "Mission Control port" "$DEFAULT_MC_PORT" MC_PORT || MC_PORT="$DEFAULT_MC_PORT"
+echo ""
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. GENERATE GATEWAY TOKEN
 # ─────────────────────────────────────────────────────────────────────────────
@@ -394,7 +422,7 @@ write_openclaw_config() {
     "profiles": {}
   },
   "gateway": {
-    "port": 18789,
+    "port": ${GATEWAY_PORT},
     "mode": "local",
     "bind": "loopback",
     "auth": {
@@ -469,7 +497,6 @@ if [ "$INSTALL_MODE" = "docker" ]; then
     # ── Generate docker-compose.yml ──────────────────────────────────────────
     info "Generating docker-compose.yml…"
 
-    MC_PORT=3000
     [ "$MC_ACCESS" = "remote" ] && MC_BIND="0.0.0.0:" || MC_BIND="127.0.0.1:"
 
     cat > "${INSTALL_DIR}/docker-compose.yml" <<COMPOSE
@@ -483,7 +510,7 @@ services:
     stdin_open: true
     tty: true
     ports:
-      - "18789:18789"
+      - "127.0.0.1:${GATEWAY_PORT}:18789"
     volumes:
       - ${DATA_DIR}/openclaw:/home/clawdbot/.openclaw
     environment:
@@ -564,7 +591,7 @@ DFILE
     info "Waiting for gateway…"
     TRIES=0
     while [ $TRIES -lt 20 ]; do
-        if curl -sf -H "Authorization: Bearer ${GATEWAY_TOKEN}" http://127.0.0.1:18789/health &>/dev/null; then
+        if curl -sf -H "Authorization: Bearer ${GATEWAY_TOKEN}" http://127.0.0.1:${GATEWAY_PORT}/health &>/dev/null; then
             ok "Gateway is live"; break
         fi
         TRIES=$((TRIES+1)); sleep 3
@@ -646,7 +673,7 @@ else
         mkdir -p "$DATA_DIR/mission-control"
 
         cat > .env.local <<EOF
-GATEWAY_URL=http://127.0.0.1:18789
+GATEWAY_URL=http://127.0.0.1:${GATEWAY_PORT}
 GATEWAY_TOKEN=${GATEWAY_TOKEN}
 DB_PATH=${DATA_DIR}/mission-control/mission-control.db
 EOF
@@ -660,19 +687,19 @@ EOF
     # ── Start gateway via PM2 ─────────────────────────────────────────────────
     echo ""
     info "Starting gateway via PM2…"
-    pm2 delete clawhalla-gateway 2>/dev/null || true
-    pm2 start openclaw --name clawhalla-gateway -- gateway
+    pm2 delete "${WORKSPACE_NAME}-gateway" 2>/dev/null || true
+    pm2 start openclaw --name "${WORKSPACE_NAME}-gateway" -- gateway
     pm2 save --force &>/dev/null
 
     info "Waiting for gateway…"
     TRIES=0
     while [ $TRIES -lt 20 ]; do
-        if curl -sf -H "Authorization: Bearer ${GATEWAY_TOKEN}" http://127.0.0.1:18789/health &>/dev/null; then
+        if curl -sf -H "Authorization: Bearer ${GATEWAY_TOKEN}" http://127.0.0.1:${GATEWAY_PORT}/health &>/dev/null; then
             ok "Gateway is live"; break
         fi
         TRIES=$((TRIES+1)); sleep 3
     done
-    [ $TRIES -eq 20 ] && warn "Gateway health check timed out — check: pm2 logs clawhalla-gateway"
+    [ $TRIES -eq 20 ] && warn "Gateway health check timed out — check: pm2 logs ${WORKSPACE_NAME}-gateway"
 
     # ── Start MC via PM2 ──────────────────────────────────────────────────────
     MC_URL=""
@@ -680,23 +707,23 @@ EOF
         MC_BIND_HOST="127.0.0.1"
         [ "$MC_ACCESS" = "remote" ] && MC_BIND_HOST="0.0.0.0"
 
-        pm2 delete clawhalla-mc 2>/dev/null || true
-        pm2 start pnpm --name clawhalla-mc --cwd "${INSTALL_DIR}/apps/mission-control" \
-            -- dev --hostname "$MC_BIND_HOST" --port 3000
+        pm2 delete "${WORKSPACE_NAME}-mc" 2>/dev/null || true
+        pm2 start pnpm --name "${WORKSPACE_NAME}-mc" --cwd "${INSTALL_DIR}/apps/mission-control" \
+            -- dev --hostname "$MC_BIND_HOST" --port "$MC_PORT"
         pm2 save --force &>/dev/null
 
         info "Waiting for Mission Control…"
         TRIES=0
         while [ $TRIES -lt 30 ]; do
-            if curl -sf http://127.0.0.1:3000/api/health &>/dev/null; then
+            if curl -sf http://127.0.0.1:${MC_PORT}/api/health &>/dev/null; then
                 ok "Mission Control is live"; break
             fi
             TRIES=$((TRIES+1)); sleep 3
         done
-        [ $TRIES -eq 30 ] && warn "MC health check timed out — check: pm2 logs clawhalla-mc"
+        [ $TRIES -eq 30 ] && warn "MC health check timed out — check: pm2 logs ${WORKSPACE_NAME}-mc"
 
-        MC_URL="http://localhost:3000"
-        [ "$MC_ACCESS" = "remote" ] && MC_URL="http://$(curl -sf --max-time 3 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'):3000"
+        MC_URL="http://localhost:${MC_PORT}"
+        [ "$MC_ACCESS" = "remote" ] && MC_URL="http://$(curl -sf --max-time 3 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'):${MC_PORT}"
     fi
 
     # ── PM2 startup (auto-start on boot) ─────────────────────────────────────
@@ -762,11 +789,11 @@ echo -e "  ${G}│   ClawHalla is ready!                                  │${N
 echo -e "  ${G}│                                                        │${NC}"
 printf  "  ${G}│${NC}   Workspace   %-41s${G}│${NC}\n" "${WORKSPACE_NAME}"
 printf  "  ${G}│${NC}   Mode        %-41s${G}│${NC}\n" "${INSTALL_MODE} · ${ENV_TYPE}"
-printf  "  ${G}│${NC}   Gateway     %-41s${G}│${NC}\n" "ws://127.0.0.1:18789"
+printf  "  ${G}│${NC}   Gateway     %-41s${G}│${NC}\n" "http://127.0.0.1:${GATEWAY_PORT}"
 
 if [ "$MC_ACCESS" = "cloud" ]; then
     printf  "  ${G}│${NC}   MC          %-41s${G}│${NC}\n" "controls.clawhalla.xyz"
-    printf  "  ${G}│${NC}              %-41s${G}│${NC}\n" "→ connect gateway: ws://YOUR_IP:18789"
+    printf  "  ${G}│${NC}              %-41s${G}│${NC}\n" "→ connect gateway: http://YOUR_IP:${GATEWAY_PORT}"
 elif [ -n "$MC_URL" ]; then
     printf  "  ${G}│${NC}   MC          %-41s${G}│${NC}\n" "${MC_URL}"
 fi
