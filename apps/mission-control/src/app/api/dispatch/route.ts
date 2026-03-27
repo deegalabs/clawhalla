@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 import { db } from '@/lib/db';
 import { tasks, cards, cardHistory, activities, costEvents } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
@@ -87,27 +87,39 @@ export async function POST(req: NextRequest) {
     // Build context prompt
     const prompt = buildPrompt({ title, description, priority, tags, notes, labels });
 
-    // Execute via openclaw agent
-    let output = '';
-    let success = false;
+    // Execute via openclaw agent (async spawn)
     const startTime = Date.now();
+    const { output, success } = await new Promise<{ output: string; success: boolean }>((resolve) => {
+      const proc = spawn('openclaw', [
+        'agent', '--agent', agentId, '--json', '-m', prompt,
+      ], { timeout: 120000 });
 
-    try {
-      const result = execSync(
-        `openclaw agent --agent ${agentId} --json -m "${prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`,
-        { encoding: 'utf-8', timeout: 120000 }
-      );
-      try {
-        const parsed = JSON.parse(result);
-        output = parsed.result?.content?.[0]?.text || parsed.response || result;
-      } catch {
-        output = result;
-      }
-      success = true;
-    } catch (err) {
-      output = `Agent error: ${String(err).slice(0, 500)}`;
-      success = false;
-    }
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout?.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+      proc.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+      proc.on('close', (code) => {
+        let parsed = stdout;
+        try {
+          const json = JSON.parse(stdout);
+          parsed = json.result?.content?.[0]?.text || json.response || stdout;
+        } catch { /* raw text */ }
+
+        resolve({
+          output: parsed || stderr || `Process exited with code ${code}`,
+          success: code === 0 && !!parsed,
+        });
+      });
+
+      proc.on('error', (err) => {
+        resolve({
+          output: `Agent error: ${String(err).slice(0, 500)}`,
+          success: false,
+        });
+      });
+    });
 
     const duration = Date.now() - startTime;
 

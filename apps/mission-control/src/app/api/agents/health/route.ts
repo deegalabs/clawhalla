@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { agents as agentsTable } from '@/lib/schema';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'http://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
@@ -16,6 +18,10 @@ type HealthState = 'active' | 'idle' | 'stalled' | 'stuck' | 'offline';
 
 interface AgentHealth {
   id: string;
+  name: string;
+  role: string;
+  emoji: string;
+  squad: string | null;
   state: HealthState;
   lastActivityMs: number | null;
   idleMinutes: number | null;
@@ -34,15 +40,16 @@ function getHealthState(lastActivityMs: number | null, gatewayOk: boolean): { st
   if (mins < 5) return { state: 'idle', idleMinutes: mins };
   if (mins < 15) return { state: 'stalled', idleMinutes: mins };
   if (mins < 30) return { state: 'stuck', idleMinutes: mins };
-  return { state: 'idle', idleMinutes: mins }; // >30min = just idle, not zombie in our context
+  return { state: 'idle', idleMinutes: mins };
 }
 
-// GET /api/agents/health — health status of all agents
+// GET /api/agents/health — health status of all agents (DB + gateway sessions)
 export async function GET() {
   try {
     let gatewayOk = false;
     let sessions: SessionInfo[] = [];
 
+    // 1. Query gateway for active sessions
     try {
       const res = await fetch(`${GATEWAY_URL}/tools/invoke`, {
         method: 'POST',
@@ -63,8 +70,11 @@ export async function GET() {
       // Gateway down
     }
 
-    // Aggregate by agent (latest session wins)
-    const agentMap = new Map<string, { lastActivityMs: number; model: string; count: number }>();
+    // 2. Get all registered agents from DB
+    const dbAgents = await db.select().from(agentsTable);
+
+    // 3. Build session map (latest session per agent)
+    const sessionMap = new Map<string, { lastActivityMs: number; model: string; count: number }>();
 
     for (const s of sessions) {
       const rawId = s.agentId || s.key || s.id || '';
@@ -72,10 +82,10 @@ export async function GET() {
       if (!id) continue;
 
       const lastMs = s.lastActivityMs || s.lastActivity || 0;
-      const existing = agentMap.get(id);
+      const existing = sessionMap.get(id);
 
       if (!existing || lastMs > existing.lastActivityMs) {
-        agentMap.set(id, {
+        sessionMap.set(id, {
           lastActivityMs: lastMs,
           model: s.model || existing?.model || 'unknown',
           count: (existing?.count || 0) + 1,
@@ -85,14 +95,47 @@ export async function GET() {
       }
     }
 
+    // 4. Merge DB agents with session data
     const agents: AgentHealth[] = [];
     const stateCount: Record<HealthState, number> = { active: 0, idle: 0, stalled: 0, stuck: 0, offline: 0 };
+    const seenIds = new Set<string>();
 
-    for (const [id, data] of agentMap) {
+    // First: all DB-registered agents
+    for (const dbAgent of dbAgents) {
+      const session = sessionMap.get(dbAgent.id);
+      const { state, idleMinutes } = session
+        ? getHealthState(session.lastActivityMs, gatewayOk)
+        : { state: (gatewayOk ? 'idle' : 'offline') as HealthState, idleMinutes: null };
+
+      stateCount[state]++;
+      seenIds.add(dbAgent.id);
+
+      agents.push({
+        id: dbAgent.id,
+        name: dbAgent.name,
+        role: dbAgent.role,
+        emoji: dbAgent.emoji || '🤖',
+        squad: dbAgent.squad,
+        state,
+        lastActivityMs: session?.lastActivityMs || null,
+        idleMinutes,
+        model: session?.model || dbAgent.model,
+        sessionCount: session?.count || 0,
+      });
+    }
+
+    // Second: any gateway sessions for agents not in DB (legacy/unknown)
+    for (const [id, data] of sessionMap) {
+      if (seenIds.has(id)) continue;
       const { state, idleMinutes } = getHealthState(data.lastActivityMs, gatewayOk);
       stateCount[state]++;
+
       agents.push({
         id,
+        name: id.charAt(0).toUpperCase() + id.slice(1),
+        role: 'Unknown',
+        emoji: '🤖',
+        squad: null,
         state,
         lastActivityMs: data.lastActivityMs || null,
         idleMinutes,

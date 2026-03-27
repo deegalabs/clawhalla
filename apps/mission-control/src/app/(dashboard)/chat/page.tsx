@@ -435,38 +435,88 @@ function ChatPageInner() {
         ? { mode: 'party', agents: partyAgents, topic: fullMessage, model: modelTier }
         : { agentId: selectedAgent, message: fullMessage, model: modelTier };
 
+      // Create a placeholder message for streaming
+      const streamMsgId = `msg_${Date.now()}_resp`;
+      setMessages(prev => [...prev, {
+        id: streamMsgId, role: 'agent',
+        agentId: mode === 'party' ? partyAgents[0] : selectedAgent,
+        content: '',
+        timestamp: new Date().toISOString(), mode: mode as 'single' | 'party',
+      }]);
+
+      // Try streaming first
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
 
-      const agentMsg: Message = {
-        id: `msg_${Date.now()}_resp`, role: data.ok ? 'agent' : 'system',
-        agentId: data.ok ? (data.moderator || data.agentId) : undefined,
-        content: data.ok ? data.response : `Error: ${data.error}`,
-        timestamp: new Date().toISOString(), mode: data.mode, participants: data.participants,
-      };
-      setMessages(prev => [...prev, agentMsg]);
+      if (res.headers.get('content-type')?.includes('text/event-stream') && res.body) {
+        // Streaming response
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullResponse = '';
 
-      // Auto-task for agent interaction
-      if (data.ok) {
-        autoTask.agentChat(mode === 'party' ? 'party' : selectedAgent, msg);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === 'chunk') {
+                fullResponse += data.text;
+                setMessages(prev => prev.map(m =>
+                  m.id === streamMsgId ? { ...m, content: fullResponse } : m
+                ));
+              } else if (data.type === 'done') {
+                // Replace with final parsed response
+                const finalContent = data.response || fullResponse;
+                setMessages(prev => prev.map(m =>
+                  m.id === streamMsgId ? {
+                    ...m,
+                    content: finalContent,
+                    role: data.ok ? 'agent' : 'system',
+                    agentId: data.ok ? (data.moderator || data.agent) : undefined,
+                    participants: data.participants,
+                  } : m
+                ));
+                if (data.ok) {
+                  autoTask.agentChat(mode === 'party' ? 'party' : selectedAgent, msg);
+                }
+              } else if (data.type === 'error') {
+                setMessages(prev => prev.map(m =>
+                  m.id === streamMsgId ? { ...m, content: (m.content || '') + `\n\n_Error: ${data.text}_` } : m
+                ));
+              }
+            } catch { /* skip malformed SSE */ }
+          }
+        }
+      } else {
+        // Non-streaming fallback
+        const data = await res.json();
+        setMessages(prev => prev.map(m =>
+          m.id === streamMsgId ? {
+            ...m,
+            role: data.ok ? 'agent' : 'system',
+            agentId: data.ok ? (data.moderator || data.agentId) : undefined,
+            content: data.ok ? data.response : `Error: ${data.error}`,
+            participants: data.participants,
+          } : m
+        ));
+        if (data.ok) {
+          autoTask.agentChat(mode === 'party' ? 'party' : selectedAgent, msg);
+        }
       }
-
-      // Save session
-      const updated = [...messages, userMsg, agentMsg];
-      const session: ChatSession = {
-        id: `chat_${Date.now().toString(36)}`,
-        title: msg.slice(0, 50),
-        agentId: mode === 'party' ? 'party' : selectedAgent,
-        mode, messages: updated,
-        createdAt: new Date().toISOString(),
-      };
-      const newSessions = [session, ...sessions.filter(s => s.id !== session.id)].slice(0, 20);
-      setSessions(newSessions);
-      saveSessions(newSessions);
     } catch (e) {
       setMessages(prev => [...prev, {
         id: `msg_${Date.now()}_err`, role: 'system',

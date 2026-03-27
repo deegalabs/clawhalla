@@ -7,8 +7,14 @@ import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface AgentHealth {
   id: string;
+  name: string;
+  role: string;
+  emoji: string;
+  squad: string | null;
   state: 'active' | 'idle' | 'stalled' | 'stuck' | 'offline';
   idleMinutes: number | null;
+  model: string | null;
+  sessionCount: number;
 }
 
 interface Activity {
@@ -23,6 +29,10 @@ interface Activity {
 interface BoardData {
   tasks: { status: string }[];
   sprints: { id: string; name: string; status: string }[];
+  // Boards Engine data
+  boardCount?: number;
+  cardsByColumn?: Record<string, number>;
+  totalCards?: number;
 }
 
 interface UsageData {
@@ -78,17 +88,17 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [healthRes, actRes, boardRes, usageRes, approvalRes] = await Promise.all([
+      const [healthRes, actRes, boardsRes, usageRes, approvalRes] = await Promise.all([
         fetch('/api/agents/health'),
         fetch('/api/activities?limit=12'),
-        fetch('/api/board/sync?project=clawhalla'),
+        fetch('/api/boards'),
         fetch('/api/usage'),
         fetch('/api/approvals'),
       ]);
 
       const healthData = await healthRes.json();
       const actData = await actRes.json();
-      const boardData = await boardRes.json();
+      const boardsData = await boardsRes.json();
       const usageData = await usageRes.json();
       const approvalData = await approvalRes.json();
 
@@ -97,7 +107,43 @@ export default function DashboardPage() {
         setGatewayOk(healthData.gatewayOk);
       }
       if (Array.isArray(actData)) setActivities(actData);
-      if (boardData.tasks) setBoard(boardData);
+
+      // Aggregate board data from Boards Engine
+      if (Array.isArray(boardsData)) {
+        // Fetch cards from first board for sprint progress display
+        const firstBoard = boardsData.find((b: { archivedAt: unknown }) => !b.archivedAt);
+        if (firstBoard) {
+          try {
+            const cardsRes = await fetch(`/api/boards/${firstBoard.id}/cards`);
+            const cardsData = await cardsRes.json();
+            if (Array.isArray(cardsData)) {
+              const columnMap: Record<string, number> = {};
+              for (const card of cardsData) {
+                columnMap[card.column] = (columnMap[card.column] || 0) + 1;
+              }
+              // Map board columns to legacy task statuses for dashboard widgets
+              const doing = (columnMap['doing'] || 0) + (columnMap['fixing'] || 0) + (columnMap['writing'] || 0) + (columnMap['researching'] || 0);
+              const review = (columnMap['review'] || 0) + (columnMap['testing'] || 0) + (columnMap['triaged'] || 0);
+              const done = (columnMap['done'] || 0) + (columnMap['deployed'] || 0) + (columnMap['resolved'] || 0) + (columnMap['published'] || 0);
+              const backlog = (columnMap['backlog'] || 0) + (columnMap['todo'] || 0) + (columnMap['ideas'] || 0) + (columnMap['reported'] || 0);
+
+              setBoard({
+                tasks: [
+                  ...Array(doing).fill({ status: 'in_progress' }),
+                  ...Array(review).fill({ status: 'review' }),
+                  ...Array(done).fill({ status: 'done' }),
+                  ...Array(backlog).fill({ status: 'backlog' }),
+                ],
+                sprints: [{ id: firstBoard.id, name: firstBoard.name, status: 'active' }],
+                boardCount: boardsData.length,
+                cardsByColumn: columnMap,
+                totalCards: cardsData.length,
+              });
+            }
+          } catch { /* board cards fetch failed */ }
+        }
+      }
+
       if (usageData.ok) setUsage(usageData);
       setApprovals(approvalData);
     } catch (err) { console.error('[dashboard] fetch error:', err); }
@@ -226,12 +272,18 @@ export default function DashboardPage() {
           <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Agent Health</div>
           <div className="flex flex-wrap gap-2">
             {agents.map(a => (
-              <div key={a.id} className="flex items-center gap-1.5 px-2 py-1 bg-[#0a0a0b] rounded">
+              <div key={a.id} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#0a0a0b] rounded group relative" title={`${a.name} — ${a.role}${a.idleMinutes != null ? ` (${a.idleMinutes}m)` : ''}`}>
                 <span className={`w-2 h-2 rounded-full ${healthDots[a.state]}`} />
-                <span className="text-xs">{AGENT_EMOJIS[a.id] || '🤖'}</span>
-                <span className="text-[10px] text-gray-400 capitalize">{a.id === 'main' ? 'claw' : a.id}</span>
+                <span className="text-xs">{a.emoji || AGENT_EMOJIS[a.id] || '🤖'}</span>
+                <span className="text-[10px] text-gray-400">{a.name || a.id}</span>
+                {a.state === 'active' && a.sessionCount > 0 && (
+                  <span className="text-[8px] text-green-400/60">{a.sessionCount}</span>
+                )}
               </div>
             ))}
+            {agents.length === 0 && (
+              <div className="text-[10px] text-gray-600">No agents registered — complete onboarding to create your squad</div>
+            )}
           </div>
         </div>
       </div>
