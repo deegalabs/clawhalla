@@ -541,6 +541,10 @@ export default function BoardsPage() {
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [filter, setFilter] = useState({ search: '', assignee: '', priority: '' });
   const [loading, setLoading] = useState(true);
+  const [showBoardMenu, setShowBoardMenu] = useState(false);
+  const [editingBoardName, setEditingBoardName] = useState(false);
+  const [boardNameDraft, setBoardNameDraft] = useState('');
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   // Fetch boards list
   const fetchBoards = useCallback(async () => {
@@ -627,6 +631,29 @@ export default function BoardsPage() {
     } catch (err) { console.error('[boards] create error:', err); }
   };
 
+  // Board management
+  const handleRenameBoard = async () => {
+    if (!activeBoardId || !boardNameDraft.trim()) return;
+    await fetch(`/api/boards/${activeBoardId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: boardNameDraft.trim() }),
+    });
+    setEditingBoardName(false);
+    fetchBoards();
+    fetchActiveBoard(activeBoardId);
+  };
+
+  const handleArchiveBoard = async () => {
+    if (!activeBoardId) return;
+    await fetch(`/api/boards/${activeBoardId}`, { method: 'DELETE' });
+    setConfirmArchive(false);
+    setShowBoardMenu(false);
+    const remaining = boardsList.filter(b => b.id !== activeBoardId);
+    setActiveBoardId(remaining.length > 0 ? remaining[0].id : null);
+    fetchBoards();
+  };
+
   // Drag and drop
   const onDragStart = (e: DragEvent, cardId: string) => {
     e.dataTransfer.setData('text/plain', cardId);
@@ -709,6 +736,47 @@ export default function BoardsPage() {
             </select>
             {activeBoard && (
               <span className="text-[10px] text-gray-600 capitalize">{activeBoard.type}</span>
+            )}
+            {/* Board menu */}
+            {activeBoard && (
+              <div className="relative">
+                <button onClick={() => setShowBoardMenu(!showBoardMenu)}
+                  className="px-1.5 py-0.5 text-gray-500 hover:text-gray-300 text-sm">⋯</button>
+                {showBoardMenu && (
+                  <div className="absolute top-7 left-0 bg-[#111113] border border-[#1e1e21] rounded-lg shadow-xl z-40 w-44 py-1"
+                    onMouseLeave={() => { setShowBoardMenu(false); setConfirmArchive(false); }}>
+                    {editingBoardName ? (
+                      <div className="px-3 py-2">
+                        <input type="text" value={boardNameDraft} onChange={e => setBoardNameDraft(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleRenameBoard(); if (e.key === 'Escape') setEditingBoardName(false); }}
+                          className="w-full px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+                          autoFocus />
+                        <div className="flex gap-1 mt-1">
+                          <button onClick={handleRenameBoard} className="px-2 py-0.5 text-[10px] bg-amber-500 text-gray-900 rounded">Save</button>
+                          <button onClick={() => setEditingBoardName(false)} className="px-2 py-0.5 text-[10px] text-gray-500">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <button onClick={() => { setEditingBoardName(true); setBoardNameDraft(activeBoard.name); }}
+                          className="w-full text-left px-3 py-1.5 text-[11px] text-gray-300 hover:bg-[#1a1a1d]">Rename board</button>
+                        {confirmArchive ? (
+                          <div className="px-3 py-1.5">
+                            <div className="text-[10px] text-red-400 mb-1">Archive this board?</div>
+                            <div className="flex gap-1">
+                              <button onClick={handleArchiveBoard} className="px-2 py-0.5 text-[10px] bg-red-500/20 text-red-400 rounded">Yes, archive</button>
+                              <button onClick={() => setConfirmArchive(false)} className="px-2 py-0.5 text-[10px] text-gray-500">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirmArchive(true)}
+                            className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-[#1a1a1d]">Archive board</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
