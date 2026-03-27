@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { boards, cards } from '@/lib/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, isNull, and } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
 
 type Ctx = { params: Promise<{ boardId: string }> };
@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const boardCards = await db
     .select()
     .from(cards)
-    .where(eq(cards.boardId, boardId))
+    .where(and(eq(cards.boardId, boardId), isNull(cards.archivedAt)))
     .orderBy(asc(cards.position));
 
   return NextResponse.json({
