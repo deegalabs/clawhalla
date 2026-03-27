@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { MarkdownView } from '@/components/ui/markdown-view';
 import { autoTask } from '@/lib/tasks';
+import { AGENT_ROSTER } from '@/lib/agents';
 
 interface Message {
   id: string;
@@ -24,23 +25,6 @@ interface ChatSession {
   createdAt: string;
 }
 
-const AGENTS = [
-  { id: 'main', name: 'Claw', emoji: '🦞', role: 'System Controller', color: 'bg-red-500/10' },
-  { id: 'odin', name: 'Odin', emoji: '👁️', role: 'CTO', color: 'bg-blue-500/10' },
-  { id: 'vidar', name: 'Vidar', emoji: '⚔️', role: 'Blockchain', color: 'bg-purple-500/10' },
-  { id: 'saga', name: 'Saga', emoji: '🔮', role: 'CPO', color: 'bg-amber-500/10' },
-  { id: 'thor', name: 'Thor', emoji: '⚡', role: 'Tech Lead', color: 'bg-yellow-500/10' },
-  { id: 'frigg', name: 'Frigg', emoji: '👑', role: 'PA', color: 'bg-green-500/10' },
-  { id: 'tyr', name: 'Tyr', emoji: '⚖️', role: 'Auditor', color: 'bg-red-500/10' },
-  { id: 'freya', name: 'Freya', emoji: '✨', role: 'Developer', color: 'bg-pink-500/10' },
-  { id: 'heimdall', name: 'Heimdall', emoji: '👁️‍🗨️', role: 'QA', color: 'bg-cyan-500/10' },
-  { id: 'volund', name: 'Volund', emoji: '🔧', role: 'DevOps', color: 'bg-gray-500/10' },
-  { id: 'sindri', name: 'Sindri', emoji: '🔥', role: 'Solidity', color: 'bg-orange-500/10' },
-  { id: 'skadi', name: 'Skadi', emoji: '❄️', role: 'Cairo', color: 'bg-sky-500/10' },
-  { id: 'mimir', name: 'Mimir', emoji: '🧠', role: 'Research', color: 'bg-teal-500/10' },
-  { id: 'bragi', name: 'Bragi', emoji: '🎭', role: 'Content', color: 'bg-violet-500/10' },
-  { id: 'loki', name: 'Loki', emoji: '🦊', role: 'Analytics', color: 'bg-amber-500/10' },
-];
 
 const QUICK_PROMPTS: Record<string, string[]> = {
   default: ['What are you working on?', 'Summarize recent activity', 'What needs my attention?'],
@@ -499,7 +483,7 @@ function ChatPageInner() {
     setShowHistory(false);
   };
 
-  const agent = AGENTS.find(a => a.id === selectedAgent);
+  const agent = AGENT_ROSTER.find(a => a.id === selectedAgent);
   const prompts = mode === 'party' ? QUICK_PROMPTS.party : (QUICK_PROMPTS[selectedAgent] || QUICK_PROMPTS.default);
 
   return (
@@ -519,7 +503,7 @@ function ChatPageInner() {
         {/* Agent list */}
         <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
           <button onClick={() => { setMessages([]); }} className="w-full text-left px-2.5 py-1.5 text-[10px] text-gray-500 hover:text-amber-400 mb-1">+ New Chat</button>
-          {AGENTS.map(a => {
+          {AGENT_ROSTER.map(a => {
             const isSelected = mode === 'single' ? selectedAgent === a.id : partyAgents.includes(a.id);
             return (
               <button key={a.id}
@@ -553,7 +537,7 @@ function ChatPageInner() {
                 <button key={s.id} onClick={() => loadSession(s)}
                   className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-[#1a1a1d] border-b border-[#1e1e21] last:border-0">
                   <div className="text-gray-300 truncate">{s.title}</div>
-                  <div className="text-gray-600">{s.mode === 'party' ? '🎉' : AGENTS.find(a => a.id === s.agentId)?.emoji} • {s.messages.length} msgs</div>
+                  <div className="text-gray-600">{s.mode === 'party' ? '🎉' : AGENT_ROSTER.find(a => a.id === s.agentId)?.emoji} • {s.messages.length} msgs</div>
                 </button>
               ))}
             </div>
@@ -613,7 +597,7 @@ function ChatPageInner() {
           )}
 
           {messages.map(msg => {
-            const msgAgent = AGENTS.find(a => a.id === msg.agentId);
+            const msgAgent = AGENT_ROSTER.find(a => a.id === msg.agentId);
             return (
               <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                 {msg.role !== 'user' && (
@@ -913,7 +897,7 @@ function ChatPageInner() {
                 {showMentionMenu && (
                   <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1d] border border-[#2a2a2d] rounded-lg shadow-xl py-1 min-w-[180px] max-h-[200px] overflow-y-auto z-50">
                     <div className="px-3 py-1 text-[9px] text-gray-600 uppercase tracking-wider">Mention an agent</div>
-                    {AGENTS.filter(a => {
+                    {AGENT_ROSTER.filter(a => {
                       const lastAt = input.lastIndexOf('@');
                       const query = input.slice(lastAt + 1).toLowerCase();
                       return !query || a.name.toLowerCase().startsWith(query) || a.id.startsWith(query);

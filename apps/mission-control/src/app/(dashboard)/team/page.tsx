@@ -339,7 +339,7 @@ function TeamPageInner() {
         setAgents(agentList);
         setSquads(orgData.org.squads);
       }
-    } catch { /* silent */ }
+    } catch (err) { console.error('[team] fetch error:', err); }
     setLoading(false);
   }, []);
 

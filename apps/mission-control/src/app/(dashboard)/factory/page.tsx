@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { PageLoading } from '@/components/ui/loading';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface AgentHealth {
   id: string;
@@ -36,12 +37,6 @@ interface UsageData {
   today: { totalCostUsd: string; events: number; inputTokens: number; outputTokens: number };
   byAgent: Record<string, { input: number; output: number; cost: number; count: number }>;
 }
-
-const EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮', thor: '⚡',
-  frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️', volund: '🔧',
-  sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 const healthColors: Record<string, { dot: string; text: string; bg: string }> = {
   active: { dot: 'bg-green-500', text: 'text-green-400', bg: 'bg-green-500/5' },
@@ -90,7 +85,7 @@ export default function FactoryPage() {
       if (boardData.tasks) setTasks(boardData.tasks.map((t: Task) => ({ ...t, assignedTo: t.assignedTo || t.assigned_to, completedAt: t.completedAt || t.completed_at, createdAt: t.createdAt || t.created_at })));
       if (Array.isArray(actData)) setActivities(actData);
       if (usageData.ok) setUsage(usageData);
-    } catch {}
+    } catch (err) { console.error('[factory] fetch error:', err); }
     setLoading(false);
   }, []);
 
@@ -115,9 +110,10 @@ export default function FactoryPage() {
   const queueTasks = tasks.filter(t => t.status === 'backlog' && t.assignedTo);
   const completedToday = tasks.filter(t => t.status === 'done');
 
-  // Avg session time for active agents
-  const avgMinutes = activeAgents.length > 0
-    ? Math.round(activeAgents.reduce((s, a) => s + (a.idleMinutes || 0), 0) / activeAgents.length)
+  // Avg idle time across agents with activity
+  const agentsWithActivity = agents.filter(a => a.idleMinutes !== null);
+  const avgMinutes = agentsWithActivity.length > 0
+    ? Math.round(agentsWithActivity.reduce((s, a) => s + (a.idleMinutes || 0), 0) / agentsWithActivity.length)
     : 0;
 
   // Agent utilization (agents with cost data)
@@ -144,7 +140,7 @@ export default function FactoryPage() {
           )}
         </div>
         <div className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase">Avg Session</div>
+          <div className="text-[10px] text-gray-500 uppercase">Avg Idle</div>
           <div className="text-xl font-bold text-gray-300">{avgMinutes > 0 ? `${avgMinutes}m` : '—'}</div>
         </div>
         <div className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
@@ -183,7 +179,7 @@ export default function FactoryPage() {
                   const cost = agentUsage[agent.id];
                   return (
                     <div key={agent.id} className={`px-4 py-3 flex items-center gap-3 ${h.bg}`}>
-                      <span className="text-xl">{EMOJIS[agent.id] || '🤖'}</span>
+                      <span className="text-xl">{AGENT_EMOJIS[agent.id] || '🤖'}</span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-gray-200 capitalize">{agent.id}</span>
@@ -219,7 +215,7 @@ export default function FactoryPage() {
               <div className="divide-y divide-[#1e1e21]">
                 {queueTasks.slice(0, 5).map(task => (
                   <div key={task.id} className="px-4 py-2 flex items-center gap-3">
-                    <span className="text-sm">{task.assignedTo ? EMOJIS[task.assignedTo] || '🤖' : '📋'}</span>
+                    <span className="text-sm">{task.assignedTo ? AGENT_EMOJIS[task.assignedTo] || '🤖' : '📋'}</span>
                     <span className="text-xs text-gray-300 flex-1 truncate">{task.title}</span>
                     <span className="text-[9px] text-gray-600">@{task.assignedTo}</span>
                     <span className={`text-[9px] px-1.5 py-0.5 rounded ${task.priority === 'critical' ? 'bg-red-500/20 text-red-400' : task.priority === 'high' ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>{task.priority}</span>
@@ -241,7 +237,7 @@ export default function FactoryPage() {
                 return (
                   <div key={task.id} className="px-4 py-2 flex items-center gap-2">
                     <span className="text-green-500 text-xs">✓</span>
-                    <span className="text-sm">{task.assignedTo ? EMOJIS[task.assignedTo] || '🤖' : ''}</span>
+                    <span className="text-sm">{task.assignedTo ? AGENT_EMOJIS[task.assignedTo] || '🤖' : ''}</span>
                     <span className="text-xs text-gray-400 flex-1 truncate">{task.title}</span>
                     {task.completedAt && <span className="text-[10px] text-gray-600">{timeAgo(task.completedAt)}</span>}
                     {cost && <span className="text-[10px] text-gray-700">${(cost.cost / 100).toFixed(2)}</span>}
@@ -267,7 +263,7 @@ export default function FactoryPage() {
                 const h = healthColors[agent.state];
                 return (
                   <div key={agent.id} className="flex items-center gap-2">
-                    <span className="text-xs w-5">{EMOJIS[agent.id] || '🤖'}</span>
+                    <span className="text-xs w-5">{AGENT_EMOJIS[agent.id] || '🤖'}</span>
                     <span className="text-[10px] text-gray-400 w-14 truncate capitalize">{agent.id}</span>
                     <div className="flex-1 h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden">
                       <div className={`h-full rounded-full ${h.dot.replace('animate-pulse', '')}`} style={{ width: `${utilPct}%` }} />
@@ -288,7 +284,7 @@ export default function FactoryPage() {
             <div className="flex-1 overflow-y-auto divide-y divide-[#1e1e21]">
               {activities.map(act => (
                 <div key={act.id} className="px-3 py-2 flex gap-2">
-                  <span className="text-xs mt-0.5">{EMOJIS[act.agentId] || '🤖'}</span>
+                  <span className="text-xs mt-0.5">{AGENT_EMOJIS[act.agentId] || '🤖'}</span>
                   <div className="min-w-0">
                     <div className="text-[11px]">
                       <span className="text-gray-300 capitalize">{act.agentId}</span>

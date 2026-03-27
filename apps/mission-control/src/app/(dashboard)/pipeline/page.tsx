@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface Task {
   id: string;
@@ -30,11 +31,6 @@ interface Activity {
   timestamp: string;
 }
 
-const AGENT_EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮',
-  thor: '⚡', frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️',
-  volund: '🔧', sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 const healthDots: Record<string, string> = {
   active: 'bg-green-500', idle: 'bg-gray-500', stalled: 'bg-amber-500 animate-pulse',
@@ -81,7 +77,7 @@ export default function PipelinePage() {
       }
       if (healthData.ok) setAgents(healthData.agents);
       if (Array.isArray(actData)) setActivities(actData);
-    } catch { /* silent */ }
+    } catch (err) { console.error('[pipeline] fetch error:', err); }
   }, []);
 
   useEffect(() => {
@@ -208,7 +204,7 @@ export default function PipelinePage() {
                     </div>
                   )}
                   <div className="mt-2 h-1 bg-[#1a1a1d] rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${priorityBars[task.priority] || 'bg-blue-500'} animate-pulse`} style={{ width: '60%' }} />
+                    <div className={`h-full rounded-full ${priorityBars[task.priority] || 'bg-blue-500'} ${avgPipelineMs === 0 ? 'animate-pulse' : ''}`} style={{ width: `${avgPipelineMs > 0 && task.createdAt ? Math.min(95, Math.round(((Date.now() - new Date(task.createdAt).getTime()) / avgPipelineMs) * 100)) : 50}%` }} />
                   </div>
                   <div className="text-[9px] text-gray-600 mt-1">{timeAgo(task.createdAt)}</div>
                 </div>

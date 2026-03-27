@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, DragEvent } from 'react';
 import { MarkdownView } from '@/components/ui/markdown-view';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 // Types
 interface Task {
@@ -49,11 +50,6 @@ const priorityConfig: Record<string, { border: string; dot: string; label: strin
   low: { border: 'border-l-gray-600', dot: 'bg-gray-600', label: 'Low' },
 };
 
-const AGENT_EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮', thor: '⚡',
-  frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️', volund: '🔧',
-  sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 function norm(t: Task): Task {
   return { ...t, assignedTo: t.assignedTo || t.assigned_to, storyId: t.storyId || t.story_id,
@@ -155,7 +151,7 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
         {/* Tabs */}
         <div className="px-5 pt-1 flex gap-0.5 border-b border-[#1e1e21] shrink-0">
           {(['details', 'checklist', 'notes', 'dispatch'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
+            <button key={t} data-tab={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 text-[11px] rounded-t capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
               {t === 'dispatch' ? '▶ Dispatch' : t}{t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
             </button>

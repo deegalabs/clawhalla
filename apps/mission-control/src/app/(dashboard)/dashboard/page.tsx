@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { PageLoading } from '@/components/ui/loading';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface AgentHealth {
   id: string;
@@ -31,12 +32,6 @@ interface UsageData {
 interface ApprovalData {
   pending: unknown[];
 }
-
-const AGENT_EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮',
-  thor: '⚡', frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️',
-  volund: '🔧', sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 const actionLabels: Record<string, string> = {
   task_started: 'started task', task_completed: 'completed task',
@@ -105,7 +100,7 @@ export default function DashboardPage() {
       if (boardData.tasks) setBoard(boardData);
       if (usageData.ok) setUsage(usageData);
       setApprovals(approvalData);
-    } catch { /* silent */ }
+    } catch (err) { console.error('[dashboard] fetch error:', err); }
     setLoading(false);
   }, []);
 
@@ -120,7 +115,8 @@ export default function DashboardPage() {
     try {
       es = new EventSource('/api/sse');
       es.onmessage = () => fetchData();
-    } catch { /* */ }
+      es.onerror = () => { es?.close(); };
+    } catch { /* SSE not available */ }
     return () => { if (es) es.close(); };
   }, [fetchData]);
 

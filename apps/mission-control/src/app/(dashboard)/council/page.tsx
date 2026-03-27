@@ -4,17 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { PageLoading } from '@/components/ui/loading';
 import { MarkdownView } from '@/components/ui/markdown-view';
 import { autoTask } from '@/lib/tasks';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface SearchResult { path: string; title: string; category: string; snippet: string; word_count: number; last_modified: number; }
 interface UsageData { today: { totalCostUsd: string; inputTokens: number; outputTokens: number; events: number }; byAgent: Record<string, { input: number; output: number; cost: number; count: number }>; byModel: Record<string, { input: number; output: number; cost: number }>; }
 interface FeedbackEntry { id: string; agentId: string; type: string; content: string; createdAt: string; }
 
 type Tab = 'radar' | 'memos' | 'opportunities' | 'decisions' | 'usage';
-
-const EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮', thor: '⚡',
-  frigg: '👑', tyr: '⚖️', freya: '✨', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 function timeAgo(ms: number): string {
   const diff = Date.now() - ms;
@@ -252,7 +248,7 @@ export default function CouncilPage() {
                   {Object.entries(usage.byAgent).sort(([, a], [, b]) => b.cost - a.cost).map(([agent, data]) => (
                     <div key={agent} className="flex items-center justify-between px-2 py-1.5 bg-[#0a0a0b] rounded">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs">{EMOJIS[agent] || '🤖'}</span>
+                        <span className="text-xs">{AGENT_EMOJIS[agent] || '🤖'}</span>
                         <span className="text-xs text-gray-300 capitalize">{agent}</span>
                       </div>
                       <div className="text-[10px] text-gray-500">{data.count} calls • ${(data.cost / 100).toFixed(2)}</div>
@@ -281,7 +277,7 @@ export default function CouncilPage() {
                     {learnings.map(l => (
                       <div key={l.id} className="px-2 py-1.5 bg-[#0a0a0b] rounded">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs">{EMOJIS[l.agentId] || '🤖'}</span>
+                          <span className="text-xs">{AGENT_EMOJIS[l.agentId] || '🤖'}</span>
                           <span className="text-[10px] text-gray-300">{l.content.slice(0, 60)}</span>
                         </div>
                         <div className="text-[9px] text-gray-600 mt-0.5">{l.type} • {l.agentId}</div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface AgentHealth {
   id: string; state: 'active' | 'idle' | 'stalled' | 'stuck' | 'offline';
@@ -14,12 +15,6 @@ interface Activity {
 interface OrgAgent {
   id: string; name: string; emoji: string; role: string; squad: string | null;
 }
-
-const EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮',
-  thor: '⚡', frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️',
-  volund: '🔧', sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 const stateStyles: Record<string, { border: string; dot: string; label: string; glow: string }> = {
   active: { border: 'border-green-500/50', dot: 'bg-green-500', label: 'Working', glow: 'shadow-green-500/20 shadow-lg' },
@@ -66,7 +61,7 @@ function OfficePageInner() {
       if (healthData.ok) setAgents(healthData.agents);
       if (orgData.ok) setOrgAgents(orgData.org.agents);
       if (Array.isArray(actData)) setActivities(actData);
-    } catch { /* silent */ }
+    } catch (err) { console.error('[office] fetch error:', err); }
   }, []);
 
   useEffect(() => { fetchData(); const i = setInterval(fetchData, 10000); return () => clearInterval(i); }, [fetchData]);
@@ -131,7 +126,7 @@ function OfficePageInner() {
                 return (
                   <button key={agent.id} onClick={e => handleClickAgent(agent.id, e)}
                     className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 ${style.border} ${style.glow} bg-[#111113] min-w-[80px] transition-transform hover:scale-105 ${selectedAgent === agent.id ? 'ring-1 ring-amber-500/50' : ''}`}>
-                    <div className="text-2xl">{EMOJIS[agent.id] || org?.emoji || '🤖'}</div>
+                    <div className="text-2xl">{AGENT_EMOJIS[agent.id] || org?.emoji || '🤖'}</div>
                     <div className="text-[10px] text-gray-200 font-medium">{org?.name || agent.id}</div>
                     <div className="flex items-center gap-1">
                       <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
@@ -165,7 +160,7 @@ function OfficePageInner() {
                       return (
                         <button key={agent.id} onClick={e => handleClickAgent(agent.id, e)}
                           className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border ${style.border} bg-[#111113] transition-transform hover:scale-105 ${selectedAgent === agent.id ? 'ring-1 ring-amber-500/50' : ''}`}>
-                          <div className="text-lg">{EMOJIS[agent.id] || org?.emoji || '🤖'}</div>
+                          <div className="text-lg">{AGENT_EMOJIS[agent.id] || org?.emoji || '🤖'}</div>
                           <div className="text-[9px] text-gray-300">{org?.name || agent.id}</div>
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                         </button>
@@ -195,7 +190,7 @@ function OfficePageInner() {
                 const org = getOrg(act.agentId);
                 return (
                   <div key={act.id} className="flex gap-2">
-                    <span className="text-sm mt-0.5 shrink-0">{EMOJIS[act.agentId] || '🤖'}</span>
+                    <span className="text-sm mt-0.5 shrink-0">{AGENT_EMOJIS[act.agentId] || '🤖'}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[10px]">
                         <span className="text-gray-300 font-medium">{org?.name || act.agentId}</span>
@@ -223,7 +218,7 @@ function OfficePageInner() {
               <div className="bg-[#111113] rounded-xl border border-[#1e1e21] overflow-hidden">
                 <div className="p-3 border-b border-[#1e1e21] flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-[#1a1a1d] flex items-center justify-center text-xl">
-                    {EMOJIS[selAgent.id] || selOrg?.emoji || '🤖'}
+                    {AGENT_EMOJIS[selAgent.id] || selOrg?.emoji || '🤖'}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-1.5">

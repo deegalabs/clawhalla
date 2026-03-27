@@ -88,7 +88,8 @@ function MarketplacePageInner() {
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
               {packs.filter(pack => {
-                if (search && !pack.name.toLowerCase().includes(search.toLowerCase())) return false;
+                if (search && !pack.name.toLowerCase().includes(search.toLowerCase()) && !pack.description.toLowerCase().includes(search.toLowerCase())) return false;
+                if (category !== 'All' && !pack.squad.domain.toLowerCase().includes(category.toLowerCase())) return false;
                 return true;
               }).map(pack => (
                 <div key={pack.squad.id} className={`bg-[#111113] rounded-xl border border-[#1e1e21] overflow-hidden hover:border-[#333] transition-colors`}>

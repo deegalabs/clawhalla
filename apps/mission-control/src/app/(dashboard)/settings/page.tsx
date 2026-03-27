@@ -71,7 +71,7 @@ function SettingsPageInner() {
   });
 
   const fetchSecrets = useCallback(async () => {
-    try { const r = await fetch('/api/vault'); const d = await r.json(); if (d.ok) setSecrets(d.secrets); } catch { /**/ }
+    try { const r = await fetch('/api/vault'); const d = await r.json(); if (d.ok) setSecrets(d.secrets); } catch (err) { console.error('[settings] vault fetch error:', err); }
     setLoadingVault(false);
   }, []);
 
@@ -113,6 +113,81 @@ function SettingsPageInner() {
     try { const r = await fetch(`/api/vault?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
       const d = await r.json(); if (d.ok) { setDeletingName(null); fetchSecrets(); }
     } catch { /**/ }
+  };
+
+  // Connection settings save
+  const [connSaving, setConnSaving] = useState(false);
+  const [connMsg, setConnMsg] = useState('');
+  const handleSaveConnection = async () => {
+    setConnSaving(true); setConnMsg('');
+    try {
+      await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'connection_mode', value: conn.mode }) });
+      await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'gateway_url', value: conn.gatewayUrl }) });
+      if (conn.mode === 'ssh') {
+        await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'ssh_config', value: JSON.stringify({ host: conn.sshHost, port: conn.sshPort, user: conn.sshUser, key: conn.sshKey }) }) });
+      }
+      setConnMsg('Saved!');
+      setTimeout(() => setConnMsg(''), 2000);
+    } catch { setConnMsg('Failed to save'); }
+    setConnSaving(false);
+  };
+
+  // Database settings save
+  const [dbSaving, setDbSaving] = useState(false);
+  const [dbMsg, setDbMsg] = useState('');
+  const handleSaveDatabase = async () => {
+    setDbSaving(true); setDbMsg('');
+    try {
+      await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'db_config', value: JSON.stringify(dbConfig) }) });
+      setDbMsg('Saved!');
+      setTimeout(() => setDbMsg(''), 2000);
+    } catch { setDbMsg('Failed to save'); }
+    setDbSaving(false);
+  };
+
+  // Maintenance handlers
+  const [maintMsg, setMaintMsg] = useState('');
+  const handleReindex = async () => {
+    setMaintMsg('Reindexing...');
+    try {
+      await fetch('/api/search', { method: 'POST' });
+      setMaintMsg('Search index rebuilt!');
+    } catch { setMaintMsg('Reindex failed'); }
+    setTimeout(() => setMaintMsg(''), 3000);
+  };
+
+  const handleExportDb = async () => {
+    setMaintMsg('Exporting...');
+    try {
+      const res = await fetch('/api/terminal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: `cp ./data/mission-control.db /tmp/mc-export-${Date.now()}.db && echo "Exported to /tmp/"` }) });
+      const d = await res.json();
+      setMaintMsg(d.ok ? `Exported: ${d.output?.trim()}` : 'Export failed');
+    } catch { setMaintMsg('Export failed'); }
+    setTimeout(() => setMaintMsg(''), 5000);
+  };
+
+  // Gateway handlers
+  const [gwMsg, setGwMsg] = useState('');
+  const handleRestartGateway = async () => {
+    setGwMsg('Restarting...');
+    try {
+      const res = await fetch('/api/terminal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: 'kill $(ps aux | grep openclaw-gateway | grep -v grep | awk \'{print $2}\') 2>/dev/null; nohup openclaw gateway > /tmp/openclaw-gateway.log 2>&1 & echo "Gateway restarted"' }) });
+      const d = await res.json();
+      setGwMsg(d.ok ? 'Gateway restarted' : 'Restart failed');
+      setTimeout(() => fetchGateway(), 2000);
+    } catch { setGwMsg('Restart failed'); }
+    setTimeout(() => setGwMsg(''), 3000);
+  };
+
+  const handleViewLogs = async () => {
+    setGwMsg('Loading logs...');
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await fetch('/api/terminal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: `tail -50 /tmp/openclaw/openclaw-${today}.log 2>/dev/null || tail -50 /tmp/openclaw-gateway.log 2>/dev/null || echo "No log files found"` }) });
+      const d = await res.json();
+      setGwMsg(d.ok && d.output ? d.output.slice(0, 500) : 'No logs available');
+    } catch { setGwMsg('Failed to load logs'); }
+    setTimeout(() => setGwMsg(''), 10000);
   };
 
   return (
@@ -340,9 +415,13 @@ function SettingsPageInner() {
             </div>
 
             {/* Save */}
-            <button className="px-4 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
-              Save Connection Settings
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={handleSaveConnection} disabled={connSaving}
+                className="px-4 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">
+                {connSaving ? 'Saving...' : 'Save Connection Settings'}
+              </button>
+              {connMsg && <span className={`text-[10px] ${connMsg === 'Saved!' ? 'text-green-400' : 'text-red-400'}`}>{connMsg}</span>}
+            </div>
           </div>
         )}
 
@@ -461,25 +540,32 @@ function SettingsPageInner() {
             {/* Backup & Maintenance */}
             <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
               <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3 font-medium">Maintenance</div>
-              <div className="flex gap-2">
-                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200">
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={handleExportDb}
+                  className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200">
                   📥 Export Database
                 </button>
-                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200">
+                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] opacity-40 cursor-not-allowed" title="Coming soon">
                   📤 Import Database
                 </button>
-                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200">
+                <button onClick={handleReindex}
+                  className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200">
                   🔄 Reindex Search
                 </button>
-                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-red-400">
+                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] opacity-40 cursor-not-allowed" title="Dangerous — use terminal">
                   🗑 Reset Database
                 </button>
               </div>
+              {maintMsg && <div className="text-[10px] text-amber-400 mt-2 font-mono whitespace-pre-wrap">{maintMsg}</div>}
             </div>
 
-            <button className="px-4 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
-              Save Database Settings
-            </button>
+            <div className="flex items-center gap-3">
+              <button onClick={handleSaveDatabase} disabled={dbSaving}
+                className="px-4 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">
+                {dbSaving ? 'Saving...' : 'Save Database Settings'}
+              </button>
+              {dbMsg && <span className={`text-[10px] ${dbMsg === 'Saved!' ? 'text-green-400' : 'text-red-400'}`}>{dbMsg}</span>}
+            </div>
           </div>
         )}
 
@@ -662,15 +748,18 @@ function SettingsPageInner() {
                   className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200">
                   🔄 Refresh Status
                 </button>
-                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200 opacity-60"
+                <button onClick={handleRestartGateway}
+                  className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200"
                   title="Restart gateway process">
                   ⚡ Restart Gateway
                 </button>
-                <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200 opacity-60"
+                <button onClick={handleViewLogs}
+                  className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded border border-[#1e1e21] hover:text-gray-200"
                   title="View logs">
                   📋 View Logs
                 </button>
               </div>
+              {gwMsg && <div className="text-[10px] text-amber-400 mt-2 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{gwMsg}</div>}
             </div>
           </div>
         )}

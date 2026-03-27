@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { MarkdownView } from '@/components/ui/markdown-view';
 import { autoTask } from '@/lib/tasks';
+import { AGENT_ROSTER } from '@/lib/agents';
 
 interface Goal {
   id: string;
@@ -35,17 +36,6 @@ interface CronJob {
   nextRun?: string;
 }
 
-const AGENTS = [
-  { id: 'main', name: 'Claw', emoji: '🦞' },
-  { id: 'odin', name: 'Odin', emoji: '👁️' },
-  { id: 'saga', name: 'Saga', emoji: '🔮' },
-  { id: 'thor', name: 'Thor', emoji: '⚡' },
-  { id: 'frigg', name: 'Frigg', emoji: '👑' },
-  { id: 'freya', name: 'Freya', emoji: '✨' },
-  { id: 'mimir', name: 'Mimir', emoji: '🧠' },
-  { id: 'bragi', name: 'Bragi', emoji: '🎭' },
-  { id: 'loki', name: 'Loki', emoji: '🦊' },
-];
 
 const priorityColors = {
   critical: 'bg-red-500/20 text-red-400 border-red-500/20',
@@ -99,8 +89,8 @@ function AutopilotPageInner() {
     try {
       const res = await fetch('/api/crons');
       const data = await res.json();
-      if (data.ok && data.crons) setCrons(data.crons);
-    } catch { /* silent */ }
+      if (data.ok && data.jobs) setCrons(data.jobs);
+    } catch (err) { console.error('[autopilot] fetch error:', err); }
   }, []);
   useEffect(() => { fetchCrons(); }, [fetchCrons]);
 
@@ -276,7 +266,7 @@ DETAILS: [what was accomplished, what changed, what's next]`;
                 <label className="block text-[8px] text-gray-600 mb-0.5">Agent</label>
                 <select value={autopilotAgent} onChange={e => setAutopilotAgent(e.target.value)}
                   className="w-full px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none">
-                  {AGENTS.map(a => <option key={a.id} value={a.id}>{a.emoji} {a.name}</option>)}
+                  {AGENT_ROSTER.map(a => <option key={a.id} value={a.id}>{a.emoji} {a.name}</option>)}
                 </select>
               </div>
               <div>
@@ -384,7 +374,7 @@ DETAILS: [what was accomplished, what changed, what's next]`;
           ) : (
             <div className="space-y-2">
               {runs.map(run => {
-                const agent = AGENTS.find(a => a.id === run.agentId);
+                const agent = AGENT_ROSTER.find(a => a.id === run.agentId);
                 const goal = goals.find(g => g.id === run.goalId);
                 return (
                   <div key={run.id} className={`bg-[#111113] rounded-lg border p-4 transition-colors ${

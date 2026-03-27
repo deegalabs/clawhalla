@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PageLoading } from '@/components/ui/loading';
 import { autoTask } from '@/lib/tasks';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface CronJob {
   id: string;
@@ -23,11 +24,6 @@ const agentColors: Record<string, { bg: string; border: string }> = {
 };
 const defaultColor = { bg: 'bg-gray-500/10', border: 'border-gray-500/30' };
 
-const AGENT_EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮', thor: '⚡',
-  frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️', volund: '🔧',
-  sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const hours = Array.from({ length: 18 }, (_, i) => i + 6);
@@ -85,7 +81,7 @@ export default function CalendarPage() {
       const res = await fetch('/api/crons');
       const data = await res.json();
       if (data.ok) setCrons(data.jobs || []);
-    } catch {}
+    } catch (err) { console.error('[calendar] fetch error:', err); }
     setLoading(false);
   }, []);
 

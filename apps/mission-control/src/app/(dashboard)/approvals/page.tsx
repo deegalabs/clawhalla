@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { autoTask } from '@/lib/tasks';
+import { AGENT_EMOJIS } from '@/lib/agents';
 
 interface Approval {
   id: string;
@@ -14,12 +15,6 @@ interface Approval {
   createdAt: string;
   resolvedAt: string | null;
 }
-
-const EMOJIS: Record<string, string> = {
-  main: '🦞', claw: '🦞', odin: '👁️', vidar: '⚔️', saga: '🔮', thor: '⚡',
-  frigg: '👑', tyr: '⚖️', freya: '✨', heimdall: '👁️‍🗨️', volund: '🔧',
-  sindri: '🔥', skadi: '❄️', mimir: '🧠', bragi: '🎭', loki: '🦊',
-};
 
 const typeConfig: Record<string, { bg: string; text: string; label: string }> = {
   deploy: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'Deploy' },
@@ -59,7 +54,7 @@ export default function ApprovalsPage() {
       const data = await res.json();
       setPending(data.pending || []);
       setHistory(data.history || []);
-    } catch {}
+    } catch (err) { console.error('[approvals] fetch error:', err); }
     setLoading(false);
   }, []);
 
@@ -77,7 +72,7 @@ export default function ApprovalsPage() {
     await fetch(`/api/approvals/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision, decidedBy: 'daniel', reason }),
+      body: JSON.stringify({ decision, decidedBy: 'user', reason }),
     });
     autoTask.approvalAction(
       decision === 'approved' ? 'Approved' : 'Rejected',
@@ -93,7 +88,7 @@ export default function ApprovalsPage() {
       await fetch(`/api/approvals/${a.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: 'approved', decidedBy: 'daniel' }),
+        body: JSON.stringify({ decision: 'approved', decidedBy: 'user' }),
       });
     }
     autoTask.approvalAction('Approved all', `${pending.length} pending approvals`);
@@ -170,7 +165,7 @@ export default function ApprovalsPage() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-base">{EMOJIS[a.requestedBy] || '🤖'}</span>
+                        <span className="text-base">{AGENT_EMOJIS[a.requestedBy] || '🤖'}</span>
                         <span className="text-sm font-medium text-gray-200">{a.taskId}</span>
                         <span className={`text-[9px] px-1.5 py-0.5 rounded ${type.bg} ${type.text}`}>{type.label}</span>
                       </div>
@@ -242,7 +237,7 @@ export default function ApprovalsPage() {
                       <span className={`text-[9px] px-1.5 py-0.5 rounded ${type.bg} ${type.text}`}>{type.label}</span>
                     </div>
                     <div className="col-span-2 text-gray-500 flex items-center gap-1">
-                      <span className="text-xs">{EMOJIS[a.requestedBy] || ''}</span>
+                      <span className="text-xs">{AGENT_EMOJIS[a.requestedBy] || ''}</span>
                       @{a.requestedBy}
                     </div>
                     <div className="col-span-1 text-gray-500">{a.approver}</div>
