@@ -1,527 +1,309 @@
 #!/bin/bash
 set -e
 
-# ClawHalla Installation Script
-# Docker:      curl -fsSL https://clawhalla.xyz/install.sh | bash
-# Bare metal:  curl -fsSL https://clawhalla.xyz/install.sh | bash -s -- --bare
+# ClawHalla Install
+# Usage:
+#   curl -fsSL https://clawhalla.xyz/install.sh | bash
+#   curl -fsSL https://clawhalla.xyz/install.sh | bash -s -- --bare
+#   curl -fsSL https://clawhalla.xyz/install.sh | bash -s -- --docker
 
-# ============================================================================
-# COLORS & LOGGING
-# ============================================================================
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# ─────────────────────────────────────────────────────────────────────────────
+# COLORS
+# ─────────────────────────────────────────────────────────────────────────────
+R='\033[0;31m'   # red
+G='\033[0;32m'   # green
+Y='\033[1;33m'   # yellow
+B='\033[0;34m'   # blue
+C='\033[0;36m'   # cyan
+D='\033[2m'      # dim
+W='\033[0m'      # reset
 
-log_info()    { echo -e "${BLUE}ℹ${NC} $1"; }
-log_success() { echo -e "${GREEN}✓${NC} $1"; }
-log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
-log_error()   { echo -e "${RED}✗${NC} $1"; }
-log_header()  {
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}$1${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# ─────────────────────────────────────────────────────────────────────────────
+# UI PRIMITIVES
+# ─────────────────────────────────────────────────────────────────────────────
+W=55  # box width
+
+_line() { printf "${C}  │${W}"; }
+
+box_top()    { echo -e "${C}  ┌$(printf '─%.0s' $(seq 1 $W))┐${W}"; }
+box_div()    { echo -e "${C}  ├$(printf '─%.0s' $(seq 1 $W))┤${W}"; }
+box_bot()    { echo -e "${C}  └$(printf '─%.0s' $(seq 1 $W))┘${W}"; }
+box_empty()  { printf "${C}  │${W}  %-${W}s${C}│${W}\n" ""; }
+box_title()  { printf "${C}  │${W}  ${Y}%-$((W-2))s${C}│${W}\n" "$1"; }
+box_text()   { printf "${C}  │${W}  %-$((W-2))s${C}│${W}\n" "$1"; }
+box_opt()    {
+    local num="$1" label="$2" desc="$3"
+    printf "${C}  │${W}  ${Y}${num}${W} · ${label}$(printf ' %.0s' $(seq 1 $((W - 6 - ${#num} - ${#label} - ${#desc}))))${D}${desc}${W}  ${C}│${W}\n"
+}
+
+ok()   { echo -e "  ${G}✓${W}  $1"; }
+info() { echo -e "  ${B}·${W}  $1"; }
+warn() { echo -e "  ${Y}⚠${W}  $1"; }
+err()  { echo -e "  ${R}✗${W}  $1"; }
+
+ask() {
+    local prompt="$1" default="$2" var_name="$3"
+    printf "  ${C}›${W}  ${prompt}"
+    [ -n "$default" ] && printf " ${D}[${default}]${W}"
+    printf ": "
+    read -r "$var_name"
+    eval "$var_name=\${$var_name:-$default}"
+}
+
+ask_secret() {
+    local prompt="$1" var_name="$2"
+    printf "  ${C}›${W}  ${prompt}: "
+    read -rs "$var_name"
     echo ""
 }
 
 cleanup() {
-    if [ $? -ne 0 ]; then
-        log_error "Installation failed. Check the output above for details."
-    fi
+    [ $? -ne 0 ] && err "Installation failed. Check the output above."
 }
 trap cleanup EXIT
 
-# ============================================================================
-# PARSE ARGS
-# ============================================================================
-INSTALL_MODE=""
+# Ensure stdin is a tty when piped via curl | bash
+[ ! -t 0 ] && exec < /dev/tty
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PARSE FLAGS
+# ─────────────────────────────────────────────────────────────────────────────
+FORCE_MODE=""
 for arg in "$@"; do
     case $arg in
-        --bare|--no-docker) INSTALL_MODE="bare" ;;
-        --docker)           INSTALL_MODE="docker" ;;
+        --bare|--no-docker) FORCE_MODE="bare"   ;;
+        --docker)           FORCE_MODE="docker" ;;
     esac
 done
 
-# ============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # BANNER
-# ============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 clear
-cat << "EOF"
-   ____  _                __  __       _ _
-  / __ \| |              |  \/  |     | | |
- | |  | | | __ ___      _| \  / | __ _| | | __ _
- | |  | | |/ _` \ \ /\ / / |\/| |/ _` | | |/ _` |
- | |__| | | (_| |\ V  V /| |  | | (_| | | | (_| |
-  \____/|_|\__,_| \_/\_/ |_|  |_|\__,_|_|_|\__,_|
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Squad-Based AI Agent Platform for OpenClaw
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
+echo ""
+echo -e "${C}   ██████╗██╗      █████╗ ██╗    ██╗██╗  ██╗ █████╗ ██╗     ██╗      █████╗ ${W}"
+echo -e "${C}  ██╔════╝██║     ██╔══██╗██║    ██║██║  ██║██╔══██╗██║     ██║     ██╔══██╗${W}"
+echo -e "${C}  ██║     ██║     ███████║██║ █╗ ██║███████║███████║██║     ██║     ███████║${W}"
+echo -e "${C}  ██║     ██║     ██╔══██║██║███╗██║██╔══██║██╔══██║██║     ██║     ██╔══██║${W}"
+echo -e "${C}  ╚██████╗███████╗██║  ██║╚███╔███╔╝██║  ██║██║  ██║███████╗███████╗██║  ██║${W}"
+echo -e "${C}   ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝${W}"
+echo ""
+echo -e "${D}  Squad-Based AI Agent Platform  ·  clawhalla.xyz${W}"
 echo ""
 
-# Do not run as root
-if [ "$EUID" -eq 0 ]; then
-    log_error "Please do not run this script as root or with sudo"
-    exit 1
-fi
+[ "$EUID" -eq 0 ] && { err "Do not run as root."; exit 1; }
 
-# Ensure stdin is a tty (needed when piping via curl | bash)
-if [ ! -t 0 ]; then
-    exec < /dev/tty
-fi
-
-# ============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # 1. OS DETECTION
-# ============================================================================
-log_header "🔍 System Detection"
+# ─────────────────────────────────────────────────────────────────────────────
+OS=""; OS_VERSION=""; ENV_TYPE="local"
 
 detect_os() {
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+        ENV_TYPE="wsl2"
+    fi
+
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        if [ -f /etc/os-release ]; then
-            . /etc/os-release
-            OS=$ID
-            OS_VERSION=$VERSION_ID
-            case $OS in
-                ubuntu|debian)
-                    log_success "Detected: $NAME $VERSION"
-                    PACKAGE_MANAGER="apt"
-                    ;;
-                *)
-                    log_warning "Detected Linux: $NAME"
-                    log_warning "Only Ubuntu/Debian are officially supported"
-                    PACKAGE_MANAGER="apt"
-                    ;;
-            esac
-        else
-            log_error "Cannot detect Linux distribution"
-            exit 1
+        [ -f /etc/os-release ] && . /etc/os-release && OS=$ID && OS_VERSION=$VERSION_ID || { err "Cannot detect Linux distro."; exit 1; }
+        # Detect VPS (no desktop, public IP different from private)
+        if [ "$ENV_TYPE" != "wsl2" ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+            PUBLIC_IP=$(curl -sf --max-time 3 https://api.ipify.org 2>/dev/null || echo "")
+            PRIVATE_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
+            [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "$PRIVATE_IP" ] && ENV_TYPE="vps"
         fi
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        OS="macos"
-        OS_VERSION=$(sw_vers -productVersion)
-        log_success "Detected: macOS $OS_VERSION"
-        PACKAGE_MANAGER="brew"
+        OS="macos"; OS_VERSION=$(sw_vers -productVersion)
     else
-        log_error "Unsupported operating system: $OSTYPE"
-        exit 1
+        err "Unsupported OS: $OSTYPE"; exit 1
     fi
 }
 
 detect_os
 
-# ============================================================================
-# 2. INSTALL MODE SELECTION
-# ============================================================================
-log_header "🚀 Install Mode"
+ENV_LABEL="Local machine"
+[ "$ENV_TYPE" = "vps"  ] && ENV_LABEL="VPS / remote server"
+[ "$ENV_TYPE" = "wsl2" ] && ENV_LABEL="Windows (WSL2)"
+
+ok "OS: ${OS} ${OS_VERSION}  ·  Environment: ${ENV_LABEL}"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. WIZARD
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Company / workspace name ─────────────────────────────────────────────────
+box_top
+box_title "Workspace"
+box_div
+box_text "Name of your company or project."
+box_text "Used to identify your agent workspace."
+box_empty
+box_bot
+echo ""
+
+while true; do
+    ask "Workspace name" "my-company" WORKSPACE_NAME
+    [[ "$WORKSPACE_NAME" =~ ^[a-zA-Z0-9_-]+$ ]] && break
+    err "Letters, numbers, hyphens and underscores only."
+done
+echo ""
+
+# ── Install mode ─────────────────────────────────────────────────────────────
+INSTALL_MODE="$FORCE_MODE"
 
 if [ -z "$INSTALL_MODE" ]; then
-    DOCKER_AVAILABLE=false
-    if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
-        DOCKER_AVAILABLE=true
-    fi
+    DOCKER_OK=false
+    command -v docker &>/dev/null && docker info &>/dev/null 2>&1 && DOCKER_OK=true
 
-    if [ "$DOCKER_AVAILABLE" = "true" ]; then
-        echo "  1) Docker       — isolated container (recommended for production)"
-        echo "  2) Bare metal   — direct install on this machine (faster, good for VPS/hackathons)"
-        echo ""
-        while true; do
-            read -p "$(echo -e ${CYAN}📦 Install mode ${NC}[1]: )" MODE_CHOICE
-            MODE_CHOICE=${MODE_CHOICE:-1}
-            case $MODE_CHOICE in
-                1) INSTALL_MODE="docker"  ; break ;;
-                2) INSTALL_MODE="bare"    ; break ;;
-                *) log_error "Enter 1 or 2" ;;
-            esac
-        done
-    else
-        log_info "Docker not found — switching to bare metal install"
-        INSTALL_MODE="bare"
-    fi
+    box_top
+    box_title "Install Mode"
+    box_div
+    box_opt "1" "Docker      " "Isolated containers — recommended for Mac/Windows"
+    box_empty
+    box_opt "2" "Bare Metal  " "Direct install on this OS — best for VPS/hackathons"
+    box_bot
+    echo ""
+
+    [ "$DOCKER_OK" = "false" ] && warn "Docker not found — bare metal will be selected if you choose 1 and it cannot be installed."
+    echo ""
+
+    while true; do
+        ask "Install mode" "1" _MODE
+        case $_MODE in
+            1) INSTALL_MODE="docker" ; break ;;
+            2) INSTALL_MODE="bare"   ; break ;;
+            *) err "Enter 1 or 2." ;;
+        esac
+    done
+    echo ""
 fi
 
-log_success "Mode: $INSTALL_MODE"
+# ── Install directory + data directory ───────────────────────────────────────
+DEFAULT_INSTALL="$HOME/clawhalla"
+DEFAULT_DATA="$HOME/clawhalla/data"
 
-# ============================================================================
-# 3. INTERACTIVE WIZARD (shared)
-# ============================================================================
-log_header "⚙️  Configuration Wizard"
+box_top
+box_title "Directories"
+box_div
+box_text "Where to install ClawHalla."
+box_text "Data dir holds volumes (workspace, DB, sessions)."
+box_text "You can access data without entering the container."
+box_empty
+box_bot
+echo ""
 
-# Project / install directory
-while true; do
-    read -p "$(echo -e ${CYAN}📦 Project name ${NC}[clawhalla]: )" PROJECT_NAME
-    PROJECT_NAME=${PROJECT_NAME:-clawhalla}
-    if [[ "$PROJECT_NAME" =~ ^[a-z0-9_-]+$ ]]; then
-        break
-    else
-        log_error "Use only lowercase letters, numbers, hyphens, and underscores."
-    fi
-done
-
-INSTALL_DIR="$HOME/$PROJECT_NAME"
+ask "Install directory" "$DEFAULT_INSTALL" INSTALL_DIR
+ask "Data directory   " "${INSTALL_DIR}/data" DATA_DIR
+echo ""
 
 if [ -d "$INSTALL_DIR" ]; then
-    log_warning "Directory $INSTALL_DIR already exists"
-    read -p "$(echo -e ${YELLOW}⚠ Overwrite? ${NC}[y/N]: )" -r OVERWRITE
-    if [[ ! $OVERWRITE =~ ^[Yy]$ ]]; then
-        log_error "Installation cancelled"
-        exit 1
-    fi
+    warn "Directory $INSTALL_DIR already exists."
+    ask "Overwrite? (y/N)" "N" _OVR
+    [[ "$_OVR" =~ ^[Yy]$ ]] || { err "Aborted."; exit 1; }
     rm -rf "$INSTALL_DIR"
 fi
 
-# Model choice
-echo ""
-log_info "Select default Claude model:"
-echo "  1) claude-sonnet-4-6  (Balanced, recommended — best value)"
-echo "  2) claude-opus-4-6    (Most capable, higher cost)"
-echo "  3) claude-haiku-4-5   (Fast, lowest cost)"
-echo ""
-while true; do
-    read -p "$(echo -e ${CYAN}🤖 Model ${NC}[1]: )" MODEL_CHOICE
-    MODEL_CHOICE=${MODEL_CHOICE:-1}
-    case $MODEL_CHOICE in
-        1) CLAUDE_MODEL="anthropic/claude-sonnet-4-6"  ; MODEL_ID="claude-sonnet-4-6" ; break ;;
-        2) CLAUDE_MODEL="anthropic/claude-opus-4-6"    ; MODEL_ID="claude-opus-4-6"   ; break ;;
-        3) CLAUDE_MODEL="anthropic/claude-haiku-4-5"   ; MODEL_ID="claude-haiku-4-5"  ; break ;;
-        *) log_error "Enter 1, 2, or 3." ;;
-    esac
-done
+# ── Services ─────────────────────────────────────────────────────────────────
+INSTALL_MC=true
+INSTALL_OLLAMA=false
 
-# Auth method
-echo ""
-log_info "Select authentication method:"
-echo "  1) API Key       — Anthropic API key (simple, pay-per-use)"
-echo "  2) Claude Max    — OAuth token from Claude Max subscription"
-echo ""
-while true; do
-    read -p "$(echo -e ${CYAN}🔐 Auth method ${NC}[1]: )" AUTH_CHOICE
-    AUTH_CHOICE=${AUTH_CHOICE:-1}
-    case $AUTH_CHOICE in
-        1)
-            AUTH_METHOD="apikey"
-            read -sp "$(echo -e ${CYAN}🔑 Anthropic API key: ${NC})" ANTHROPIC_API_KEY
-            echo ""
-            if [ -z "$ANTHROPIC_API_KEY" ]; then
-                log_error "API key cannot be empty"
-                continue
-            fi
-            break
-            ;;
-        2)
-            AUTH_METHOD="oauth"
-            log_info "You will need your Claude Max OAuth token."
-            log_info "Get it from: https://claude.ai → Settings → API → OAuth Token"
-            read -sp "$(echo -e ${CYAN}🔑 OAuth token: ${NC})" ANTHROPIC_API_KEY
-            echo ""
-            if [ -z "$ANTHROPIC_API_KEY" ]; then
-                log_error "Token cannot be empty"
-                continue
-            fi
-            break
-            ;;
-        *) log_error "Enter 1 or 2." ;;
-    esac
-done
+if [ "$INSTALL_MODE" = "docker" ]; then
+    box_top
+    box_title "Services"
+    box_div
+    box_opt "✓" "OpenClaw Gateway" "always included"
+    box_empty
+    box_text "Mission Control — management dashboard"
+    box_text "Ollama          — free local AI models (Llama, Mistral…)"
+    box_empty
+    box_bot
+    echo ""
 
-log_success "Configuration collected"
+    ask "Install Mission Control? (Y/n)" "Y" _MC
+    [[ "$_MC" =~ ^[Nn]$ ]] && INSTALL_MC=false
 
-# ============================================================================
-# 4. GENERATE SECURE TOKENS
-# ============================================================================
-log_header "🔐 Generating Secure Tokens"
-
-if command -v openssl &>/dev/null; then
-    GATEWAY_TOKEN=$(openssl rand -hex 32)
-    VAULT_KEY=$(openssl rand -hex 32)
-    log_success "Tokens generated via OpenSSL"
-else
-    GATEWAY_TOKEN=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
-    VAULT_KEY=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
-    log_success "Tokens generated via /dev/urandom"
+    ask "Install Ollama (local models)? (y/N)" "N" _OL
+    [[ "$_OL" =~ ^[Yy]$ ]] && INSTALL_OLLAMA=true
+    echo ""
 fi
 
-# ============================================================================
-# 5. CLONE REPOSITORY
-# ============================================================================
-log_header "📥 Cloning Repository"
+# ── MC access mode (only if MC is being installed) ───────────────────────────
+MC_ACCESS="local"
 
-git clone https://github.com/deegalabs/clawhalla.git "$INSTALL_DIR"
-cd "$INSTALL_DIR"
-log_success "Repository cloned to $INSTALL_DIR"
+if [ "$INSTALL_MC" = "true" ]; then
+    box_top
+    box_title "Mission Control Access"
+    box_div
+    box_opt "1" "Local           " "http://localhost:3000 — this machine only"
+    box_empty
+    box_opt "2" "Remote (VPS/LAN)" "http://YOUR_IP:3000 — accessible from network"
+    box_empty
+    box_opt "3" "controls.clawhalla.xyz" "Use the hosted web version (gateway only)"
+    box_empty
+    box_bot
+    echo ""
 
-# ============================================================================
-# DOCKER PATH
-# ============================================================================
-if [ "$INSTALL_MODE" = "docker" ]; then
+    DEFAULT_MC_MODE="1"
+    [ "$ENV_TYPE" = "vps" ] && DEFAULT_MC_MODE="2"
 
-    log_header "🐋 Docker Setup"
+    while true; do
+        ask "Access mode" "$DEFAULT_MC_MODE" _MCMODE
+        case $_MCMODE in
+            1) MC_ACCESS="local"  ; break ;;
+            2) MC_ACCESS="remote" ; break ;;
+            3) MC_ACCESS="cloud"  ; INSTALL_MC=false ; break ;;
+            *) err "Enter 1, 2, or 3." ;;
+        esac
+    done
+    echo ""
+fi
 
-    check_docker() {
-        command -v docker &>/dev/null && docker info &>/dev/null 2>&1
-    }
-
-    install_docker_linux() {
-        log_info "Installing Docker on $OS..."
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq ca-certificates curl gnupg lsb-release
-        sudo install -m 0755 -d /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/$OS/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        sudo chmod a+r /etc/apt/keyrings/docker.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$OS \
-          $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-        sudo usermod -aG docker $USER
-        log_success "Docker installed"
-        log_warning "You may need to log out and back in for group changes to take effect"
-    }
-
-    if ! check_docker; then
-        if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
-            install_docker_linux
-        elif [[ "$OS" == "macos" ]]; then
-            log_error "Please install Docker Desktop from https://docker.com and re-run"
-            exit 1
-        fi
-        if ! check_docker; then
-            log_error "Docker installation failed"
-            exit 1
-        fi
-    fi
-
-    DOCKER_VERSION=$(docker --version | cut -d ' ' -f3 | cut -d ',' -f1)
-    log_success "Docker: v$DOCKER_VERSION"
-
-    if ! docker compose version &>/dev/null; then
-        log_error "Docker Compose not found"
-        exit 1
-    fi
-    log_success "Docker Compose: $(docker compose version --short)"
-
-    # Create .env
-    log_header "📝 Creating Environment"
-
-    cat > .env << EOF
-# ClawHalla Environment — generated $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-PROJECT_NAME=$PROJECT_NAME
-GATEWAY_TOKEN=$GATEWAY_TOKEN
-VAULT_KEY=$VAULT_KEY
-CLAUDE_MODEL=$CLAUDE_MODEL
-ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
-MC_PORT=3000
-MC_ENABLED=true
-WORKSPACE_PATH=/workspace
-WORKSPACE_TEMPLATE=workspace-template
-COMPOSE_PROJECT_NAME=$PROJECT_NAME
-EOF
-    log_success ".env created"
-
-    # Build
-    log_header "🔨 Building Docker Image"
-    log_info "This may take a few minutes on first run..."
-    docker compose build --quiet
-    log_success "Image built"
-
-    # Start
-    log_header "🚀 Starting Container"
-    docker compose up -d
-    log_success "Container started"
-    sleep 5
-
-    # Configure openclaw inside container (replaces interactive onboard)
-    log_header "🎯 Configuring OpenClaw"
-    log_info "Writing configuration (skipping interactive onboard)..."
-
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-    if [ "$AUTH_METHOD" = "apikey" ]; then
-        AUTH_PROFILE_TYPE="api_key"
-        AUTH_PROFILE_FIELD="\"key\": \"$ANTHROPIC_API_KEY\""
-        MODELS_API_KEY="\"apiKey\": \"$ANTHROPIC_API_KEY\","
-    else
-        AUTH_PROFILE_TYPE="token"
-        AUTH_PROFILE_FIELD="\"token\": \"$ANTHROPIC_API_KEY\""
-        MODELS_API_KEY=""
-    fi
-
-    docker compose exec -T clawhalla bash -c "
-mkdir -p /home/clawdbot/.openclaw/agents/main/agent /home/clawdbot/.openclaw/agents/main/sessions
-
-cat > /home/clawdbot/.openclaw/openclaw.json << 'JSONEOF'
-{
-  \"meta\": { \"lastTouchedVersion\": \"2026.3.13\", \"lastTouchedAt\": \"$TIMESTAMP\" },
-  \"wizard\": { \"lastRunAt\": \"$TIMESTAMP\", \"lastRunVersion\": \"2026.3.13\", \"lastRunCommand\": \"onboard\", \"lastRunMode\": \"local\" },
-  \"auth\": { \"profiles\": { \"anthropic:manual\": { \"provider\": \"anthropic\", \"mode\": \"$AUTH_METHOD\" } } },
-  \"gateway\": {
-    \"port\": 18789, \"mode\": \"local\", \"bind\": \"loopback\",
-    \"auth\": { \"mode\": \"token\", \"token\": \"$GATEWAY_TOKEN\" }
-  }
-}
-JSONEOF
-
-cat > /home/clawdbot/.openclaw/agents/main/agent/auth-profiles.json << 'APEOF'
-{
-  \"version\": 1,
-  \"profiles\": {
-    \"anthropic:manual\": { \"type\": \"$AUTH_PROFILE_TYPE\", \"provider\": \"anthropic\", $AUTH_PROFILE_FIELD }
-  },
-  \"lastGood\": { \"anthropic\": \"anthropic:manual\" }
-}
-APEOF
-
-cat > /home/clawdbot/.openclaw/agents/main/agent/models.json << 'MJEOF'
-{
-  \"providers\": {
-    \"anthropic\": {
-      \"baseUrl\": \"https://api.anthropic.com\",
-      \"api\": \"anthropic-messages\",
-      $MODELS_API_KEY
-      \"models\": [
-        { \"id\": \"claude-sonnet-4-6\", \"name\": \"Claude Sonnet 4.6\", \"api\": \"anthropic-messages\", \"contextWindow\": 200000, \"maxTokens\": 64000 },
-        { \"id\": \"claude-opus-4-6\",   \"name\": \"Claude Opus 4.6\",   \"api\": \"anthropic-messages\", \"contextWindow\": 200000, \"maxTokens\": 128000 },
-        { \"id\": \"claude-haiku-4-5\",  \"name\": \"Claude Haiku 4.5\",  \"api\": \"anthropic-messages\", \"contextWindow\": 200000, \"maxTokens\": 8096 }
-      ]
-    }
-  }
-}
-MJEOF
-echo 'Configuration written'
-"
-    log_success "OpenClaw configured (no interactive onboard needed)"
-
-    # Copy workspace template
-    log_header "📋 Setting Up Workspace"
-    docker compose exec -T clawhalla bash -c "
-        if [ -d /app/workspace-template ]; then
-            cp -r /app/workspace-template/* /home/clawdbot/.openclaw/workspace/ 2>/dev/null || true
-            echo 'Workspace template copied'
-        fi
-    "
-    log_success "15 pre-trained agents installed"
-
-    # Start gateway inside container
-    log_header "🌐 Starting OpenClaw Gateway"
-    docker compose exec -T clawhalla bash -c "
-        nohup openclaw gateway > /tmp/openclaw-gateway.log 2>&1 &
-        sleep 6
-        curl -sf http://127.0.0.1:18789/health && echo 'Gateway: OK' || echo 'Gateway: starting...'
-    "
-
-    # Start Mission Control inside container
-    log_header "🎮 Starting Mission Control"
-    docker compose exec -T clawhalla bash -c "
-        cd /home/clawdbot/mission-control
-        cat > .env.local << 'ENVEOF'
-GATEWAY_URL=http://127.0.0.1:18789
-GATEWAY_TOKEN=$GATEWAY_TOKEN
-DB_PATH=./data/mission-control.db
-ENVEOF
-        mkdir -p data
-        pnpm install --silent 2>/dev/null || true
-        pnpm drizzle-kit generate --silent 2>/dev/null || true
-        pnpm drizzle-kit migrate --silent 2>/dev/null || true
-        nohup pnpm dev --hostname 0.0.0.0 --port 3000 > /tmp/mission-control.log 2>&1 &
-        echo 'Mission Control started'
-    " 2>/dev/null || log_warning "Mission Control will need to be started manually inside the container"
-
-    MC_URL="http://localhost:3333"
-    GATEWAY_DISPLAY="ws://localhost:18789 (Docker: port forwarded)"
-
-# ============================================================================
-# BARE METAL PATH
-# ============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. GENERATE GATEWAY TOKEN
+# ─────────────────────────────────────────────────────────────────────────────
+if command -v openssl &>/dev/null; then
+    GATEWAY_TOKEN=$(openssl rand -hex 32)
 else
+    GATEWAY_TOKEN=$(cat /dev/urandom | LC_ALL=C tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
+fi
 
-    log_header "🖥️  Bare Metal Setup"
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. CLONE REPO
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+info "Cloning repository…"
+git clone https://github.com/deegalabs/clawhalla.git "$INSTALL_DIR" --quiet
+ok "Cloned to ${INSTALL_DIR}"
+echo ""
 
-    # ── Node 24 via nvm ──────────────────────────────────────────────────────
-    log_info "Checking Node.js..."
+mkdir -p "$DATA_DIR/openclaw" "$DATA_DIR/mission-control"
 
-    export NVM_DIR="$HOME/.nvm"
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. WRITE OPENCLAW CONFIG (no openclaw onboard needed)
+# ─────────────────────────────────────────────────────────────────────────────
+write_openclaw_config() {
+    local base="$1"
+    local ts; ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-        log_info "Installing nvm..."
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-        log_success "nvm installed"
-    else
-        \. "$NVM_DIR/nvm.sh"
-    fi
+    mkdir -p "${base}/agents/main/agent" \
+             "${base}/agents/main/sessions" \
+             "${base}/workspace" \
+             "${base}/logs"
 
-    NODE_MAJOR=$(node --version 2>/dev/null | cut -d. -f1 | tr -d 'v' || echo "0")
-    if [ "$NODE_MAJOR" -lt 22 ]; then
-        log_info "Installing Node 24..."
-        nvm install 24
-        nvm alias default 24
-        nvm use 24
-        log_success "Node $(node --version) installed"
-    else
-        log_success "Node $(node --version) — OK"
-    fi
-
-    # ── pnpm ─────────────────────────────────────────────────────────────────
-    if ! command -v pnpm &>/dev/null; then
-        log_info "Enabling pnpm via corepack..."
-        corepack enable pnpm
-        log_success "pnpm $(pnpm --version) enabled"
-    else
-        log_success "pnpm $(pnpm --version) — OK"
-    fi
-
-    # ── OpenClaw CLI ──────────────────────────────────────────────────────────
-    if ! command -v openclaw &>/dev/null; then
-        log_info "Installing OpenClaw CLI..."
-        pnpm add -g openclaw@latest
-        log_success "OpenClaw $(openclaw --version 2>/dev/null | head -1) installed"
-    else
-        log_success "OpenClaw $(openclaw --version 2>/dev/null | head -1) — OK"
-    fi
-
-    # ── Configure OpenClaw (bypass interactive onboard) ───────────────────────
-    log_header "🎯 Configuring OpenClaw"
-
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    OPENCLAW_DIR="$HOME/.openclaw"
-
-    mkdir -p "$OPENCLAW_DIR/agents/main/agent" \
-             "$OPENCLAW_DIR/agents/main/sessions" \
-             "$OPENCLAW_DIR/workspace" \
-             "$OPENCLAW_DIR/logs"
-
-    if [ "$AUTH_METHOD" = "apikey" ]; then
-        AUTH_PROFILE_JSON="{\"type\": \"api_key\", \"provider\": \"anthropic\", \"key\": \"$ANTHROPIC_API_KEY\"}"
-        MODELS_APIKEY_FIELD="\"apiKey\": \"$ANTHROPIC_API_KEY\","
-        OPENCLAW_AUTH_MODE="api_key"
-    else
-        AUTH_PROFILE_JSON="{\"type\": \"token\", \"provider\": \"anthropic\", \"token\": \"$ANTHROPIC_API_KEY\"}"
-        MODELS_APIKEY_FIELD=""
-        OPENCLAW_AUTH_MODE="token"
-    fi
-
-    # openclaw.json
-    cat > "$OPENCLAW_DIR/openclaw.json" << EOF
+    cat > "${base}/openclaw.json" <<EOF
 {
   "meta": {
     "lastTouchedVersion": "2026.3.13",
-    "lastTouchedAt": "$TIMESTAMP"
+    "lastTouchedAt": "${ts}"
   },
   "wizard": {
-    "lastRunAt": "$TIMESTAMP",
+    "lastRunAt": "${ts}",
     "lastRunVersion": "2026.3.13",
     "lastRunCommand": "onboard",
     "lastRunMode": "local"
   },
   "auth": {
-    "profiles": {
-      "anthropic:manual": {
-        "provider": "anthropic",
-        "mode": "$OPENCLAW_AUTH_MODE"
-      }
-    }
+    "profiles": {}
   },
   "gateway": {
     "port": 18789,
@@ -529,7 +311,7 @@ else
     "bind": "loopback",
     "auth": {
       "mode": "token",
-      "token": "$GATEWAY_TOKEN"
+      "token": "${GATEWAY_TOKEN}"
     },
     "tailscale": {
       "mode": "off",
@@ -539,212 +321,389 @@ else
 }
 EOF
 
-    # auth-profiles.json
-    cat > "$OPENCLAW_DIR/agents/main/agent/auth-profiles.json" << EOF
+    # Empty auth-profiles — MC wizard will populate
+    cat > "${base}/agents/main/agent/auth-profiles.json" <<EOF
 {
   "version": 1,
-  "profiles": {
-    "anthropic:manual": $AUTH_PROFILE_JSON
-  },
-  "lastGood": {
-    "anthropic": "anthropic:manual"
-  }
+  "profiles": {},
+  "lastGood": {}
 }
 EOF
 
-    # models.json
-    cat > "$OPENCLAW_DIR/agents/main/agent/models.json" << EOF
-{
-  "providers": {
-    "anthropic": {
-      "baseUrl": "https://api.anthropic.com",
-      "api": "anthropic-messages",
-      $MODELS_APIKEY_FIELD
-      "models": [
-        {
-          "id": "claude-sonnet-4-6",
-          "name": "Claude Sonnet 4.6",
-          "api": "anthropic-messages",
-          "reasoning": true,
-          "input": ["text", "image"],
-          "cost": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 },
-          "contextWindow": 200000,
-          "maxTokens": 64000
-        },
-        {
-          "id": "claude-opus-4-6",
-          "name": "Claude Opus 4.6",
-          "api": "anthropic-messages",
-          "reasoning": true,
-          "input": ["text", "image"],
-          "cost": { "input": 5, "output": 25, "cacheRead": 0.5, "cacheWrite": 6.25 },
-          "contextWindow": 200000,
-          "maxTokens": 128000
-        },
-        {
-          "id": "claude-haiku-4-5",
-          "name": "Claude Haiku 4.5",
-          "api": "anthropic-messages",
-          "reasoning": false,
-          "input": ["text", "image"],
-          "cost": { "input": 0.8, "output": 4, "cacheRead": 0.08, "cacheWrite": 1 },
-          "contextWindow": 200000,
-          "maxTokens": 8096
-        }
-      ]
-    }
-  }
-}
+    # Workspace identity
+    cat > "${base}/workspace/IDENTITY.md" <<EOF
+# Workspace: ${WORKSPACE_NAME}
+Created: ${ts}
 EOF
 
-    log_success "OpenClaw configured"
-
-    # ── Copy workspace template ───────────────────────────────────────────────
-    log_header "📋 Setting Up Workspace"
-
-    if [ -d "$INSTALL_DIR/workspace-template" ]; then
-        cp -r "$INSTALL_DIR/workspace-template/." "$OPENCLAW_DIR/workspace/"
-        log_success "15 pre-trained agents installed from workspace template"
-    else
-        log_warning "workspace-template not found in repo — workspace will be empty"
+    # Copy workspace template
+    if [ -d "${INSTALL_DIR}/workspace-template" ]; then
+        cp -r "${INSTALL_DIR}/workspace-template/." "${base}/workspace/"
+        ok "15 pre-trained agents installed"
     fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. DOCKER PATH
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "$INSTALL_MODE" = "docker" ]; then
+
+    # ── Ensure Docker ────────────────────────────────────────────────────────
+    if ! command -v docker &>/dev/null || ! docker info &>/dev/null 2>&1; then
+        info "Installing Docker…"
+        if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ca-certificates curl gnupg lsb-release
+            sudo install -m 0755 -d /etc/apt/keyrings
+            curl -fsSL "https://download.docker.com/linux/${OS}/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            sudo chmod a+r /etc/apt/keyrings/docker.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${OS} $(lsb_release -cs) stable" \
+                | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            sudo usermod -aG docker "$USER"
+            ok "Docker installed"
+            warn "You may need to log out and back in for docker group changes to take effect."
+        elif [[ "$OS" == "macos" ]]; then
+            err "Install Docker Desktop from https://docker.com then re-run this script."
+            exit 1
+        fi
+    fi
+
+    DOCKER_VER=$(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)
+    ok "Docker ${DOCKER_VER}"
+
+    if ! docker compose version &>/dev/null; then
+        err "Docker Compose plugin not found."; exit 1
+    fi
+    ok "Docker Compose $(docker compose version --short)"
+
+    # ── Generate docker-compose.yml ──────────────────────────────────────────
+    info "Generating docker-compose.yml…"
+
+    MC_PORT=3000
+    [ "$MC_ACCESS" = "remote" ] && MC_BIND="0.0.0.0:" || MC_BIND="127.0.0.1:"
+
+    cat > "${INSTALL_DIR}/docker-compose.yml" <<COMPOSE
+services:
+
+  openclaw:
+    build: .
+    container_name: ${WORKSPACE_NAME}-openclaw
+    hostname: openclaw
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - "18789:18789"
+    volumes:
+      - ${DATA_DIR}/openclaw:/home/clawdbot/.openclaw
+    environment:
+      - WORKSPACE_NAME=${WORKSPACE_NAME}
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+COMPOSE
+
+    if [ "$INSTALL_MC" = "true" ]; then
+        cat >> "${INSTALL_DIR}/docker-compose.yml" <<COMPOSE
+
+  mission-control:
+    build:
+      context: ./apps/mission-control
+      dockerfile: Dockerfile.dev
+    container_name: ${WORKSPACE_NAME}-mc
+    restart: unless-stopped
+    ports:
+      - "${MC_BIND}${MC_PORT}:3000"
+    volumes:
+      - ${DATA_DIR}/mission-control:/app/data
+    environment:
+      - GATEWAY_URL=http://openclaw:18789
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+      - DB_PATH=/app/data/mission-control.db
+    depends_on:
+      - openclaw
+COMPOSE
+    fi
+
+    if [ "$INSTALL_OLLAMA" = "true" ]; then
+        cat >> "${INSTALL_DIR}/docker-compose.yml" <<COMPOSE
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ${WORKSPACE_NAME}-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ${DATA_DIR}/ollama:/root/.ollama
+COMPOSE
+    fi
+
+    ok "docker-compose.yml generated"
+
+    # ── Write openclaw config into data dir ──────────────────────────────────
+    write_openclaw_config "${DATA_DIR}/openclaw"
+
+    # ── Create MC Dockerfile.dev if not present ──────────────────────────────
+    MC_DIR="${INSTALL_DIR}/apps/mission-control"
+    if [ ! -f "${MC_DIR}/Dockerfile.dev" ]; then
+        cat > "${MC_DIR}/Dockerfile.dev" <<'DFILE'
+FROM node:24-slim
+WORKDIR /app
+RUN npm install -g pnpm
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install
+COPY . .
+RUN mkdir -p data && pnpm drizzle-kit generate && pnpm drizzle-kit migrate
+EXPOSE 3000
+CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+DFILE
+    fi
+
+    # ── Build & start ────────────────────────────────────────────────────────
+    echo ""
+    info "Building containers (this may take a few minutes)…"
+    cd "$INSTALL_DIR"
+    docker compose build --quiet
+    ok "Build complete"
+
+    info "Starting containers…"
+    docker compose up -d
+    ok "Containers started"
+
+    # ── Wait for gateway ─────────────────────────────────────────────────────
+    echo ""
+    info "Waiting for gateway…"
+    TRIES=0
+    while [ $TRIES -lt 20 ]; do
+        if curl -sf -H "Authorization: Bearer ${GATEWAY_TOKEN}" http://127.0.0.1:18789/health &>/dev/null; then
+            ok "Gateway is live"; break
+        fi
+        TRIES=$((TRIES+1)); sleep 3
+    done
+    [ $TRIES -eq 20 ] && warn "Gateway health check timed out — check: docker compose logs openclaw"
+
+    # ── Wait for MC ──────────────────────────────────────────────────────────
+    if [ "$INSTALL_MC" = "true" ]; then
+        info "Waiting for Mission Control…"
+        TRIES=0
+        while [ $TRIES -lt 30 ]; do
+            if curl -sf "http://127.0.0.1:${MC_PORT}/api/health" &>/dev/null; then
+                ok "Mission Control is live"; break
+            fi
+            TRIES=$((TRIES+1)); sleep 3
+        done
+        [ $TRIES -eq 30 ] && warn "MC health check timed out — check: docker compose logs mission-control"
+    fi
+
+    MC_URL="http://localhost:${MC_PORT}"
+    [ "$MC_ACCESS" = "remote" ] && MC_URL="http://$(curl -sf --max-time 3 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'):${MC_PORT}"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. BARE METAL PATH
+# ─────────────────────────────────────────────────────────────────────────────
+else
+
+    export NVM_DIR="$HOME/.nvm"
+
+    # ── Node 24 ──────────────────────────────────────────────────────────────
+    info "Checking Node.js…"
+    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+        info "Installing nvm…"
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+        ok "nvm installed"
+    fi
+    \. "$NVM_DIR/nvm.sh"
+
+    NODE_MAJOR=$(node --version 2>/dev/null | cut -d. -f1 | tr -d 'v' || echo "0")
+    if [ "$NODE_MAJOR" -lt 22 ]; then
+        info "Installing Node 24…"
+        nvm install 24 --silent
+        nvm alias default 24
+        nvm use 24
+    fi
+    ok "Node $(node --version)"
+
+    # ── pnpm ─────────────────────────────────────────────────────────────────
+    if ! command -v pnpm &>/dev/null; then
+        info "Enabling pnpm…"
+        corepack enable pnpm
+    fi
+    ok "pnpm $(pnpm --version)"
+
+    # ── OpenClaw ─────────────────────────────────────────────────────────────
+    if ! command -v openclaw &>/dev/null; then
+        info "Installing OpenClaw CLI…"
+        pnpm add -g openclaw@latest --silent
+    fi
+    ok "OpenClaw $(openclaw --version 2>/dev/null | head -1)"
+
+    # ── PM2 ──────────────────────────────────────────────────────────────────
+    if ! command -v pm2 &>/dev/null; then
+        info "Installing PM2 (process manager)…"
+        pnpm add -g pm2 --silent
+    fi
+    ok "PM2 $(pm2 --version 2>/dev/null)"
+
+    # ── OpenClaw config ───────────────────────────────────────────────────────
+    write_openclaw_config "$HOME/.openclaw"
 
     # ── Mission Control ───────────────────────────────────────────────────────
-    log_header "🎮 Setting Up Mission Control"
+    if [ "$INSTALL_MC" = "true" ]; then
+        MC_DIR="${INSTALL_DIR}/apps/mission-control"
+        info "Installing Mission Control dependencies…"
+        cd "$MC_DIR"
+        pnpm install --silent
 
-    MC_DIR="$INSTALL_DIR/apps/mission-control"
-    cd "$MC_DIR"
+        mkdir -p "$DATA_DIR/mission-control"
 
-    log_info "Installing dependencies..."
-    pnpm install --silent
-
-    mkdir -p data
-
-    log_info "Setting up database..."
-    pnpm drizzle-kit generate --silent 2>/dev/null || true
-    pnpm drizzle-kit migrate --silent 2>/dev/null || true
-
-    # .env.local for Mission Control
-    cat > .env.local << EOF
+        cat > .env.local <<EOF
 GATEWAY_URL=http://127.0.0.1:18789
-GATEWAY_TOKEN=$GATEWAY_TOKEN
-DB_PATH=./data/mission-control.db
+GATEWAY_TOKEN=${GATEWAY_TOKEN}
+DB_PATH=${DATA_DIR}/mission-control/mission-control.db
 EOF
 
-    log_success "Mission Control ready"
-
-    # ── Start gateway ─────────────────────────────────────────────────────────
-    log_header "🌐 Starting OpenClaw Gateway"
-
-    mkdir -p /tmp/openclaw
-    nohup openclaw gateway > /tmp/openclaw-gateway.log 2>&1 &
-    GATEWAY_PID=$!
-
-    log_info "Waiting for gateway (PID: $GATEWAY_PID)..."
-
-    RETRIES=0
-    while [ $RETRIES -lt 20 ]; do
-        if curl -sf -H "Authorization: Bearer $GATEWAY_TOKEN" http://127.0.0.1:18789/health &>/dev/null; then
-            log_success "Gateway is live"
-            break
-        fi
-        RETRIES=$((RETRIES + 1))
-        sleep 2
-    done
-
-    if [ $RETRIES -eq 20 ]; then
-        log_warning "Gateway health check timed out — it may still be starting"
+        info "Running database migrations…"
+        pnpm drizzle-kit generate --silent 2>/dev/null || true
+        DB_PATH="${DATA_DIR}/mission-control/mission-control.db" pnpm drizzle-kit migrate --silent 2>/dev/null || true
+        ok "Mission Control ready"
     fi
 
-    # ── Start Mission Control ─────────────────────────────────────────────────
-    log_header "🖥️  Starting Mission Control"
+    # ── Start gateway via PM2 ─────────────────────────────────────────────────
+    echo ""
+    info "Starting gateway via PM2…"
+    pm2 delete clawhalla-gateway 2>/dev/null || true
+    pm2 start openclaw --name clawhalla-gateway -- gateway
+    pm2 save --force &>/dev/null
 
-    nohup pnpm dev --hostname 0.0.0.0 --port 3000 > /tmp/mission-control.log 2>&1 &
-    MC_PID=$!
-
-    log_info "Waiting for Mission Control (PID: $MC_PID)..."
-
-    RETRIES=0
-    while [ $RETRIES -lt 25 ]; do
-        if curl -sf http://127.0.0.1:3000/api/health &>/dev/null; then
-            log_success "Mission Control is live"
-            break
+    info "Waiting for gateway…"
+    TRIES=0
+    while [ $TRIES -lt 20 ]; do
+        if curl -sf -H "Authorization: Bearer ${GATEWAY_TOKEN}" http://127.0.0.1:18789/health &>/dev/null; then
+            ok "Gateway is live"; break
         fi
-        RETRIES=$((RETRIES + 1))
-        sleep 2
+        TRIES=$((TRIES+1)); sleep 3
     done
+    [ $TRIES -eq 20 ] && warn "Gateway health check timed out — check: pm2 logs clawhalla-gateway"
 
-    if [ $RETRIES -eq 25 ]; then
-        log_warning "Mission Control health check timed out — check /tmp/mission-control.log"
+    # ── Start MC via PM2 ──────────────────────────────────────────────────────
+    MC_URL=""
+    if [ "$INSTALL_MC" = "true" ]; then
+        MC_BIND_HOST="127.0.0.1"
+        [ "$MC_ACCESS" = "remote" ] && MC_BIND_HOST="0.0.0.0"
+
+        pm2 delete clawhalla-mc 2>/dev/null || true
+        pm2 start pnpm --name clawhalla-mc --cwd "${INSTALL_DIR}/apps/mission-control" \
+            -- dev --hostname "$MC_BIND_HOST" --port 3000
+        pm2 save --force &>/dev/null
+
+        info "Waiting for Mission Control…"
+        TRIES=0
+        while [ $TRIES -lt 30 ]; do
+            if curl -sf http://127.0.0.1:3000/api/health &>/dev/null; then
+                ok "Mission Control is live"; break
+            fi
+            TRIES=$((TRIES+1)); sleep 3
+        done
+        [ $TRIES -eq 30 ] && warn "MC health check timed out — check: pm2 logs clawhalla-mc"
+
+        MC_URL="http://localhost:3000"
+        [ "$MC_ACCESS" = "remote" ] && MC_URL="http://$(curl -sf --max-time 3 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'):3000"
     fi
 
-    # Save PIDs for easy management
-    cat > "$INSTALL_DIR/.pids" << EOF
-GATEWAY_PID=$GATEWAY_PID
-MC_PID=$MC_PID
-EOF
-
-    MC_URL="http://localhost:3000"
-    GATEWAY_DISPLAY="ws://127.0.0.1:18789"
+    # ── PM2 startup (auto-start on boot) ─────────────────────────────────────
+    info "Configuring PM2 startup…"
+    PM2_STARTUP=$(pm2 startup 2>/dev/null | tail -1)
+    if echo "$PM2_STARTUP" | grep -q "sudo"; then
+        eval "$PM2_STARTUP" &>/dev/null && ok "PM2 configured to start on boot" || warn "Run manually: ${PM2_STARTUP}"
+    fi
 
 fi # end install mode
 
-# ============================================================================
-# INSTALLATION COMPLETE
-# ============================================================================
-log_header "✨ Installation Complete!"
-
-echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}🎉 ClawHalla is ready!${NC}"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "${CYAN}📍 Install dir:${NC}      $INSTALL_DIR"
-echo -e "${CYAN}🌐 Mission Control:${NC}  $MC_URL"
-echo -e "${CYAN}🔌 Gateway:${NC}          $GATEWAY_DISPLAY"
-echo -e "${CYAN}🤖 Model:${NC}            $CLAUDE_MODEL"
-echo -e "${CYAN}🔐 Auth:${NC}             $AUTH_METHOD"
-echo ""
-
-if [ "$INSTALL_MODE" = "bare" ]; then
-    echo -e "${YELLOW}Manage services:${NC}"
-    echo ""
-    echo -e "  Restart gateway:   ${BLUE}nohup openclaw gateway > /tmp/openclaw-gateway.log 2>&1 &${NC}"
-    echo -e "  Restart MC:        ${BLUE}cd $INSTALL_DIR/apps/mission-control && pnpm dev${NC}"
-    echo -e "  Gateway logs:      ${BLUE}tail -f /tmp/openclaw-gateway.log${NC}"
-    echo -e "  MC logs:           ${BLUE}tail -f /tmp/mission-control.log${NC}"
-    echo ""
-else
-    echo -e "${YELLOW}Manage Docker:${NC}"
-    echo ""
-    echo -e "  ${BLUE}cd $INSTALL_DIR${NC}"
-    echo -e "  ${BLUE}docker compose logs -f${NC}"
-    echo -e "  ${BLUE}docker compose stop${NC}"
-    echo -e "  ${BLUE}docker compose start${NC}"
-    echo -e "  ${BLUE}docker compose exec clawhalla bash${NC}"
-    echo ""
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. VPS FIREWALL
+# ─────────────────────────────────────────────────────────────────────────────
+if [ "$ENV_TYPE" = "vps" ] && command -v ufw &>/dev/null; then
+    UFW_STATUS=$(sudo ufw status 2>/dev/null | head -1)
+    if echo "$UFW_STATUS" | grep -qi "active"; then
+        echo ""
+        box_top
+        box_title "Firewall (UFW detected)"
+        box_div
+        box_text "To access Mission Control from outside this server,"
+        box_text "port 3000 needs to be open."
+        box_empty
+        box_bot
+        echo ""
+        ask "Open port 3000 in UFW? (Y/n)" "Y" _UFW
+        if [[ ! "$_UFW" =~ ^[Nn]$ ]]; then
+            sudo ufw allow 3000/tcp &>/dev/null && ok "Port 3000 opened" || warn "Could not open port — run: sudo ufw allow 3000/tcp"
+        fi
+    fi
 fi
 
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "${CYAN}📚 Docs:${NC}      https://clawhalla.xyz/docs"
-echo -e "${CYAN}🐛 Issues:${NC}    https://github.com/deegalabs/clawhalla/issues"
-echo ""
-echo -e "${YELLOW}⭐ If ClawHalla helps you, star us on GitHub!${NC}"
-echo ""
-
-# Save install info
-cat > "$INSTALL_DIR/.install-info.json" << EOF
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. SAVE INSTALL INFO
+# ─────────────────────────────────────────────────────────────────────────────
+cat > "${INSTALL_DIR}/.install-info.json" <<EOF
 {
-  "installed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "version": "1.1.0",
-  "mode": "$INSTALL_MODE",
-  "project_name": "$PROJECT_NAME",
-  "model": "$CLAUDE_MODEL",
-  "auth_method": "$AUTH_METHOD",
-  "os": "$OS",
-  "os_version": "$OS_VERSION"
+  "installed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "workspace": "${WORKSPACE_NAME}",
+  "mode": "${INSTALL_MODE}",
+  "env_type": "${ENV_TYPE}",
+  "os": "${OS}",
+  "os_version": "${OS_VERSION}",
+  "services": {
+    "gateway": true,
+    "mission_control": ${INSTALL_MC},
+    "ollama": ${INSTALL_OLLAMA}
+  },
+  "mc_access": "${MC_ACCESS}"
 }
 EOF
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. SUMMARY
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo ""
+echo -e "  ${G}┌────────────────────────────────────────────────────────┐${W}"
+echo -e "  ${G}│                                                        │${W}"
+echo -e "  ${G}│   ClawHalla is ready!                                  │${W}"
+echo -e "  ${G}│                                                        │${W}"
+printf  "  ${G}│${W}   Workspace   %-41s${G}│${W}\n" "${WORKSPACE_NAME}"
+printf  "  ${G}│${W}   Mode        %-41s${G}│${W}\n" "${INSTALL_MODE} · ${ENV_TYPE}"
+printf  "  ${G}│${W}   Gateway     %-41s${G}│${W}\n" "ws://127.0.0.1:18789"
+
+if [ "$MC_ACCESS" = "cloud" ]; then
+    printf  "  ${G}│${W}   MC          %-41s${G}│${W}\n" "controls.clawhalla.xyz"
+    printf  "  ${G}│${W}              %-41s${G}│${W}\n" "→ connect gateway: ws://YOUR_IP:18789"
+elif [ -n "$MC_URL" ]; then
+    printf  "  ${G}│${W}   MC          %-41s${G}│${W}\n" "${MC_URL}"
+fi
+
+echo -e "  ${G}│                                                        │${W}"
+echo -e "  ${G}│   Next: open the URL above and complete setup in MC.  │${W}"
+echo -e "  ${G}│                                                        │${W}"
+echo -e "  ${G}└────────────────────────────────────────────────────────┘${W}"
+echo ""
+
+if [ "$INSTALL_MODE" = "bare" ]; then
+    echo -e "  ${D}Manage:  pm2 list  ·  pm2 logs  ·  pm2 restart all${W}"
+else
+    echo -e "  ${D}Manage:  cd ${INSTALL_DIR} && docker compose logs -f${W}"
+fi
+
+# ── Auto-open browser on local machine ────────────────────────────────────────
+if [ "$ENV_TYPE" = "local" ] && [ -n "$MC_URL" ]; then
+    echo ""
+    if [[ "$OS" == "macos" ]]; then
+        open "$MC_URL" 2>/dev/null || true
+    elif command -v xdg-open &>/dev/null; then
+        xdg-open "$MC_URL" 2>/dev/null || true
+    fi
+fi
+
+echo ""
 exit 0

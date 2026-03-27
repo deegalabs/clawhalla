@@ -1,0 +1,39 @@
+# ClawHalla — Full stack (Gateway + Mission Control)
+# Use when: everything runs on the same machine.
+#
+# Usage:
+#   cp docker/compose-templates/full-stack.yml docker-compose.yml
+#   docker compose up -d
+
+services:
+
+  openclaw:
+    build: ../..
+    container_name: clawhalla-openclaw
+    hostname: openclaw
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - "127.0.0.1:18789:18789"   # loopback only — MC accesses via internal network
+    volumes:
+      - ${DATA_DIR:-./data}/openclaw:/home/clawdbot/.openclaw
+    environment:
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+
+  mission-control:
+    build:
+      context: ../../apps/mission-control
+      dockerfile: Dockerfile.dev
+    container_name: clawhalla-mc
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ${DATA_DIR:-./data}/mission-control:/app/data
+    environment:
+      - GATEWAY_URL=http://openclaw:18789
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+      - DB_PATH=/app/data/mission-control.db
+    depends_on:
+      - openclaw

@@ -1,0 +1,60 @@
+# ClawHalla — Full stack + Ollama (free local models)
+# Use when: you want to run Llama, Mistral, DeepSeek, Qwen etc. locally
+#            without paying for API calls.
+#
+# After starting, pull a model:
+#   docker compose exec ollama ollama pull llama3.2
+#   docker compose exec ollama ollama pull mistral
+#   docker compose exec ollama ollama pull qwen2.5-coder
+#
+# Then configure the model in Mission Control → Settings → Models.
+
+services:
+
+  openclaw:
+    build: ../..
+    container_name: clawhalla-openclaw
+    hostname: openclaw
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - "127.0.0.1:18789:18789"
+    volumes:
+      - ${DATA_DIR:-./data}/openclaw:/home/clawdbot/.openclaw
+    environment:
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+
+  mission-control:
+    build:
+      context: ../../apps/mission-control
+      dockerfile: Dockerfile.dev
+    container_name: clawhalla-mc
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ${DATA_DIR:-./data}/mission-control:/app/data
+    environment:
+      - GATEWAY_URL=http://openclaw:18789
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
+      - DB_PATH=/app/data/mission-control.db
+    depends_on:
+      - openclaw
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: clawhalla-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ${DATA_DIR:-./data}/ollama:/root/.ollama
+    # Uncomment for GPU support (NVIDIA):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]

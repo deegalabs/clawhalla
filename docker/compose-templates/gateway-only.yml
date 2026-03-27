@@ -1,0 +1,23 @@
+# ClawHalla — Gateway only
+# Use when: you access Mission Control via controls.clawhalla.xyz
+#            or you already have MC installed elsewhere.
+#
+# Usage:
+#   cp docker/compose-templates/gateway-only.yml docker-compose.yml
+#   docker compose up -d
+
+services:
+
+  openclaw:
+    build: ../..
+    container_name: clawhalla-openclaw
+    hostname: openclaw
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - "18789:18789"   # expose gateway to host (needed for remote MC)
+    volumes:
+      - ${DATA_DIR:-./data}/openclaw:/home/clawdbot/.openclaw
+    environment:
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN}
