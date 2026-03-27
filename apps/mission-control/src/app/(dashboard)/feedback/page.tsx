@@ -44,20 +44,43 @@ const priorityColors = {
   low: 'bg-gray-500/20 text-gray-400 border-gray-500/20',
 };
 
-function loadGoals(): Goal[] {
+// Settings-backed persistence with localStorage cache
+async function loadFromSettings(key: string): Promise<unknown[]> {
+  try {
+    const res = await fetch(`/api/settings?key=${key}`);
+    const data = await res.json();
+    if (data.value) {
+      const parsed = JSON.parse(data.value);
+      if (typeof window !== 'undefined') localStorage.setItem(key, data.value);
+      return parsed;
+    }
+  } catch { /* fallback to localStorage */ }
+  if (typeof window === 'undefined') return [];
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+}
+
+function saveToSettings(key: string, data: unknown[]) {
+  const json = JSON.stringify(data);
+  if (typeof window !== 'undefined') localStorage.setItem(key, json);
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value: json }),
+  }).catch(() => {});
+}
+
+function loadGoalsCache(): Goal[] {
   if (typeof window === 'undefined') return [];
   try { return JSON.parse(localStorage.getItem('mc_autopilot_goals') || '[]'); } catch { return []; }
 }
-function saveGoals(g: Goal[]) {
-  if (typeof window !== 'undefined') localStorage.setItem('mc_autopilot_goals', JSON.stringify(g));
-}
-function loadRuns(): AutopilotRun[] {
+
+function loadRunsCache(): AutopilotRun[] {
   if (typeof window === 'undefined') return [];
   try { return JSON.parse(localStorage.getItem('mc_autopilot_runs') || '[]'); } catch { return []; }
 }
-function saveRuns(r: AutopilotRun[]) {
-  if (typeof window !== 'undefined') localStorage.setItem('mc_autopilot_runs', JSON.stringify(r.slice(0, 50)));
-}
+
+function saveGoals(g: Goal[]) { saveToSettings('mc_autopilot_goals', g); }
+function saveRuns(r: AutopilotRun[]) { saveToSettings('mc_autopilot_runs', r.slice(0, 50)); }
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -82,7 +105,12 @@ function AutopilotPageInner() {
   const [feedbackRunId, setFeedbackRunId] = useState<string | null>(null);
   const [feedbackNote, setFeedbackNote] = useState('');
 
-  useEffect(() => { setGoals(loadGoals()); setRuns(loadRuns()); }, []);
+  useEffect(() => {
+    // Load from localStorage cache immediately, then sync from settings API
+    setGoals(loadGoalsCache()); setRuns(loadRunsCache());
+    loadFromSettings('mc_autopilot_goals').then(g => { if (Array.isArray(g) && g.length > 0) setGoals(g as Goal[]); });
+    loadFromSettings('mc_autopilot_runs').then(r => { if (Array.isArray(r) && r.length > 0) setRuns(r as AutopilotRun[]); });
+  }, []);
 
   // Fetch crons
   const fetchCrons = useCallback(async () => {

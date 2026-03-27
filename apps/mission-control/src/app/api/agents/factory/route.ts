@@ -1,7 +1,10 @@
-import { NextResponse } from 'next/server';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { NextRequest, NextResponse } from 'next/server';
+import { readFile, writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { parse, stringify } from 'yaml';
+import { db } from '@/lib/db';
+import { agents as agentsTable, activities } from '@/lib/schema';
+import { eq } from 'drizzle-orm';
 
 const OPENCLAW_CONFIG = join(process.env.HOME || '/home/clawdbot', '.openclaw/openclaw.json');
 const AGENTS_DIR = join(process.env.HOME || '/home/clawdbot', '.openclaw/agents');
@@ -108,7 +111,36 @@ export async function POST(req: Request) {
 
     await writeFile(OPENCLAW_CONFIG, JSON.stringify(config, null, 2));
 
-    // 5. Add to org_structure.yaml
+    // 5. Register in database
+    const now = new Date();
+    await db.insert(agentsTable).values({
+      id,
+      name,
+      role,
+      tier,
+      squad: squad || null,
+      model,
+      status: 'idle',
+      emoji,
+      reportsTo: reportsTo || null,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: agentsTable.id,
+      set: { name, role, tier, squad: squad || null, model, emoji, reportsTo: reportsTo || null, updatedAt: now },
+    });
+
+    // Log activity
+    db.insert(activities).values({
+      id: `act_${Date.now().toString(36)}_fac`,
+      agentId: id,
+      action: 'agent_created',
+      target: name,
+      details: `Role: ${role}, Model: ${model}, Squad: ${squad || 'none'}`,
+      timestamp: now,
+    }).run();
+
+    // 6. Add to org_structure.yaml
     try {
       const orgRaw = await readFile(ORG_FILE, 'utf-8');
       const orgData = parse(orgRaw);
@@ -149,6 +181,157 @@ export async function POST(req: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create agent';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+// PATCH /api/agents/factory — update an existing agent
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, ...updates } = body;
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'id is required' }, { status: 400 });
+    }
+
+    const now = new Date();
+
+    // 1. Update in database
+    const dbUpdates: Record<string, unknown> = { updatedAt: now };
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
+    if (updates.model !== undefined) dbUpdates.model = updates.model;
+    if (updates.tier !== undefined) dbUpdates.tier = updates.tier;
+    if (updates.squad !== undefined) dbUpdates.squad = updates.squad || null;
+    if (updates.emoji !== undefined) dbUpdates.emoji = updates.emoji;
+    if (updates.reportsTo !== undefined) dbUpdates.reportsTo = updates.reportsTo || null;
+
+    db.update(agentsTable).set(dbUpdates).where(eq(agentsTable.id, id)).run();
+
+    // 2. Update openclaw.json
+    try {
+      const configRaw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+      const config = JSON.parse(configRaw);
+      const agentIdx = config.agents.list.findIndex((a: { id: string }) => a.id === id);
+      if (agentIdx >= 0) {
+        if (updates.name) config.agents.list[agentIdx].name = updates.name;
+        if (updates.model) config.agents.list[agentIdx].model = `anthropic/${updates.model}`;
+        if (updates.skills) config.agents.list[agentIdx].skills = updates.skills;
+        await writeFile(OPENCLAW_CONFIG, JSON.stringify(config, null, 2));
+      }
+    } catch { /* config update non-fatal */ }
+
+    // 3. Update org_structure.yaml
+    try {
+      const orgRaw = await readFile(ORG_FILE, 'utf-8');
+      const orgData = parse(orgRaw);
+      if (orgData.org.agents[id]) {
+        if (updates.role) orgData.org.agents[id].role = updates.role.toLowerCase().replace(/\s+/g, '_');
+        if (updates.model) orgData.org.agents[id].model = updates.model;
+        if (updates.tier !== undefined) orgData.org.agents[id].tier = updates.tier;
+        if (updates.squad !== undefined) orgData.org.agents[id].squad = updates.squad || null;
+        if (updates.reportsTo !== undefined) orgData.org.agents[id].reports_to = updates.reportsTo;
+        if (updates.skills) orgData.org.agents[id].skills = updates.skills;
+        await writeFile(ORG_FILE, stringify(orgData, { lineWidth: 120 }));
+      }
+    } catch { /* org update non-fatal */ }
+
+    // 4. Regenerate AGENTS.md if role/name changed
+    if (updates.name || updates.role || updates.model) {
+      try {
+        const existing = db.select().from(agentsTable).where(eq(agentsTable.id, id)).get();
+        if (existing) {
+          const agentDir = join(AGENTS_DIR, id, 'agent');
+          const agentsMd = generateAgentsMd({
+            id,
+            name: updates.name || existing.name,
+            role: updates.role || existing.role,
+            model: updates.model || existing.model,
+            tier: updates.tier ?? existing.tier,
+            squad: updates.squad !== undefined ? updates.squad : existing.squad,
+            reportsTo: updates.reportsTo || existing.reportsTo || '',
+            emoji: updates.emoji || existing.emoji || '🤖',
+            skills: updates.skills || [],
+          });
+          await writeFile(join(agentDir, 'AGENTS.md'), agentsMd);
+        }
+      } catch { /* file update non-fatal */ }
+    }
+
+    // Log activity
+    db.insert(activities).values({
+      id: `act_${Date.now().toString(36)}_upd`,
+      agentId: id,
+      action: 'agent_updated',
+      target: updates.name || id,
+      details: `Updated: ${Object.keys(updates).join(', ')}`,
+      timestamp: now,
+    }).run();
+
+    return NextResponse.json({ ok: true, id, updated: Object.keys(updates) });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
+  }
+}
+
+// DELETE /api/agents/factory — remove an agent
+export async function DELETE(req: NextRequest) {
+  try {
+    const url = new URL(req.url);
+    const id = url.searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'id query param required' }, { status: 400 });
+    }
+
+    // Don't allow deleting the chief (claw/main)
+    if (id === 'claw' || id === 'main') {
+      return NextResponse.json({ ok: false, error: 'Cannot delete the Chief Orchestrator' }, { status: 400 });
+    }
+
+    // 1. Remove from database
+    db.delete(agentsTable).where(eq(agentsTable.id, id)).run();
+
+    // 2. Remove from openclaw.json
+    try {
+      const configRaw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+      const config = JSON.parse(configRaw);
+      config.agents.list = config.agents.list.filter((a: { id: string }) => a.id !== id);
+      await writeFile(OPENCLAW_CONFIG, JSON.stringify(config, null, 2));
+    } catch { /* config update non-fatal */ }
+
+    // 3. Remove from org_structure.yaml
+    try {
+      const orgRaw = await readFile(ORG_FILE, 'utf-8');
+      const orgData = parse(orgRaw);
+      delete orgData.org.agents[id];
+      // Remove from squad members
+      for (const squad of Object.values(orgData.org.squads) as { members?: string[] }[]) {
+        if (squad.members) {
+          squad.members = squad.members.filter((m: string) => m !== id);
+        }
+      }
+      await writeFile(ORG_FILE, stringify(orgData, { lineWidth: 120 }));
+    } catch { /* org update non-fatal */ }
+
+    // 4. Remove agent directory
+    try {
+      await rm(join(AGENTS_DIR, id), { recursive: true, force: true });
+    } catch { /* dir removal non-fatal */ }
+
+    // Log activity
+    db.insert(activities).values({
+      id: `act_${Date.now().toString(36)}_del`,
+      agentId: 'main',
+      action: 'agent_deleted',
+      target: id,
+      details: `Agent ${id} removed from system`,
+      timestamp: new Date(),
+    }).run();
+
+    return NextResponse.json({ ok: true, id, action: 'deleted' });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
   }
 }
 

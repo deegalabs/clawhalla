@@ -3,17 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AGENT_EMOJIS } from '@/lib/agents';
 
-interface Task {
+interface Card {
   id: string;
   title: string;
-  status: string;
+  column: string;
   priority: string;
-  assignedTo?: string;
-  assigned_to?: string;
-  completedAt?: string;
-  completed_at?: string;
+  assignee?: string | null;
+  completedAt?: string | null;
   createdAt?: string;
-  created_at?: string;
 }
 
 interface AgentHealth {
@@ -53,27 +50,34 @@ function timeAgo(dateStr?: string): string {
 }
 
 export default function PipelinePage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const [agents, setAgents] = useState<AgentHealth[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
-      const [boardRes, healthRes, actRes] = await Promise.all([
-        fetch('/api/board/sync?project=clawhalla'),
+      const [boardsRes, healthRes, actRes] = await Promise.all([
+        fetch('/api/boards'),
         fetch('/api/agents/health'),
         fetch('/api/activities?limit=10'),
       ]);
-      const boardData = await boardRes.json();
+      const boardsData = await boardsRes.json();
       const healthData = await healthRes.json();
       const actData = await actRes.json();
 
-      if (boardData.tasks) {
-        setTasks(boardData.tasks.map((t: Task) => ({
-          ...t, assignedTo: t.assignedTo || t.assigned_to,
-          completedAt: t.completedAt || t.completed_at,
-          createdAt: t.createdAt || t.created_at,
-        })));
+      // Fetch cards from all boards
+      if (boardsData.ok && boardsData.boards) {
+        const allCards: Card[] = [];
+        const boardFetches = boardsData.boards.map((b: { id: string }) => fetch(`/api/boards/${b.id}`).then(r => r.json()));
+        const boardResults = await Promise.all(boardFetches);
+        for (const bd of boardResults) {
+          if (bd.ok && bd.cards) {
+            for (const c of bd.cards) {
+              allCards.push({ id: c.id, title: c.title, column: c.column, priority: c.priority || 'medium', assignee: c.assignee, completedAt: c.completedAt, createdAt: c.createdAt });
+            }
+          }
+        }
+        setCards(allCards);
       }
       if (healthData.ok) setAgents(healthData.agents);
       if (Array.isArray(actData)) setActivities(actData);
@@ -95,29 +99,29 @@ export default function PipelinePage() {
     return () => { if (es) es.close(); };
   }, [fetchData]);
 
-  const getAgentHealth = (id?: string) => agents.find(a => a.id === id);
+  const getAgentHealth = (id?: string | null) => agents.find(a => a.id === id);
 
   // Pipeline-specific data
-  const building = tasks.filter(t => t.status === 'in_progress');
-  const inReview = tasks.filter(t => t.status === 'review');
-  const shipped = tasks.filter(t => t.status === 'done');
-  const blocked = tasks.filter(t => t.status === 'blocked');
-  const backlogCount = tasks.filter(t => t.status === 'backlog').length;
+  const building = cards.filter(c => c.column === 'doing');
+  const inReview = cards.filter(c => c.column === 'review');
+  const shipped = cards.filter(c => c.column === 'done');
+  const blocked = cards.filter(c => c.column === 'blocked');
+  const backlogCount = cards.filter(c => c.column === 'backlog' || c.column === 'todo').length;
 
-  // Calculate avg pipeline time for completed tasks
-  const completedWithDates = shipped.filter(t => t.createdAt && t.completedAt);
+  // Calculate avg pipeline time for completed cards
+  const completedWithDates = shipped.filter(c => c.createdAt && c.completedAt);
   const avgPipelineMs = completedWithDates.length > 0
-    ? completedWithDates.reduce((sum, t) => {
-        const created = new Date(t.createdAt!).getTime();
-        const completed = new Date(t.completedAt!).getTime();
+    ? completedWithDates.reduce((sum, c) => {
+        const created = new Date(c.createdAt!).getTime();
+        const completed = new Date(c.completedAt!).getTime();
         return sum + (completed - created);
       }, 0) / completedWithDates.length
     : 0;
   const avgHours = Math.floor(avgPipelineMs / 3600000);
   const avgMins = Math.floor((avgPipelineMs % 3600000) / 60000);
 
-  // Active agents (agents currently assigned to in_progress tasks)
-  const activeAgentIds = new Set(building.map(t => t.assignedTo).filter(Boolean));
+  // Active agents (agents currently assigned to in_progress cards)
+  const activeAgentIds = new Set(building.map(c => c.assignee).filter(Boolean));
 
   return (
     <div className="space-y-5">
@@ -183,15 +187,15 @@ export default function PipelinePage() {
             <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded">{building.length}</span>
           </div>
           <div className="p-3 space-y-3">
-            {building.map(task => {
-              const health = getAgentHealth(task.assignedTo);
+            {building.map(card => {
+              const health = getAgentHealth(card.assignee);
               return (
-                <div key={task.id} className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
-                  <div className="text-sm text-gray-200 font-medium">{task.title}</div>
-                  {task.assignedTo && (
+                <div key={card.id} className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
+                  <div className="text-sm text-gray-200 font-medium">{card.title}</div>
+                  {card.assignee && (
                     <div className="flex items-center gap-2 mt-2">
-                      <span className="text-lg">{AGENT_EMOJIS[task.assignedTo] || '🤖'}</span>
-                      <span className="text-xs text-gray-300 capitalize">{task.assignedTo}</span>
+                      <span className="text-lg">{AGENT_EMOJIS[card.assignee] || '🤖'}</span>
+                      <span className="text-xs text-gray-300 capitalize">{card.assignee}</span>
                       {health && (
                         <span className={`w-2 h-2 rounded-full ${healthDots[health.state]}`} />
                       )}
@@ -204,9 +208,9 @@ export default function PipelinePage() {
                     </div>
                   )}
                   <div className="mt-2 h-1 bg-[#1a1a1d] rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${priorityBars[task.priority] || 'bg-blue-500'} ${avgPipelineMs === 0 ? 'animate-pulse' : ''}`} style={{ width: `${avgPipelineMs > 0 && task.createdAt ? Math.min(95, Math.round(((Date.now() - new Date(task.createdAt).getTime()) / avgPipelineMs) * 100)) : 50}%` }} />
+                    <div className={`h-full rounded-full ${priorityBars[card.priority] || 'bg-blue-500'} ${avgPipelineMs === 0 ? 'animate-pulse' : ''}`} style={{ width: `${avgPipelineMs > 0 && card.createdAt ? Math.min(95, Math.round(((Date.now() - new Date(card.createdAt).getTime()) / avgPipelineMs) * 100)) : 50}%` }} />
                   </div>
-                  <div className="text-[9px] text-gray-600 mt-1">{timeAgo(task.createdAt)}</div>
+                  <div className="text-[9px] text-gray-600 mt-1">{timeAgo(card.createdAt)}</div>
                 </div>
               );
             })}
@@ -226,13 +230,13 @@ export default function PipelinePage() {
             <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded">{inReview.length}</span>
           </div>
           <div className="p-3 space-y-3">
-            {inReview.map(task => (
-              <div key={task.id} className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
-                <div className="text-sm text-gray-200 font-medium">{task.title}</div>
-                {task.assignedTo && (
+            {inReview.map(card => (
+              <div key={card.id} className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
+                <div className="text-sm text-gray-200 font-medium">{card.title}</div>
+                {card.assignee && (
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-lg">{AGENT_EMOJIS[task.assignedTo] || '🤖'}</span>
-                    <span className="text-xs text-gray-400 capitalize">{task.assignedTo}</span>
+                    <span className="text-lg">{AGENT_EMOJIS[card.assignee] || '🤖'}</span>
+                    <span className="text-xs text-gray-400 capitalize">{card.assignee}</span>
                   </div>
                 )}
                 <div className="text-[9px] text-gray-600 mt-1">Awaiting review</div>
@@ -254,11 +258,11 @@ export default function PipelinePage() {
             <span className="text-[10px] bg-green-500/10 text-green-400 px-2 py-0.5 rounded">{shipped.length}</span>
           </div>
           <div className="p-3 space-y-2">
-            {shipped.slice(0, 6).map(task => (
-              <div key={task.id} className="flex items-center gap-2 px-3 py-2 bg-[#111113] rounded-lg border border-[#1e1e21]">
+            {shipped.slice(0, 6).map(card => (
+              <div key={card.id} className="flex items-center gap-2 px-3 py-2 bg-[#111113] rounded-lg border border-[#1e1e21]">
                 <span className="text-green-500 text-xs">✓</span>
-                <span className="text-xs text-gray-300 flex-1 truncate">{task.title}</span>
-                <span className="text-[9px] text-gray-600 shrink-0">{timeAgo(task.completedAt)}</span>
+                <span className="text-xs text-gray-300 flex-1 truncate">{card.title}</span>
+                <span className="text-[9px] text-gray-600 shrink-0">{timeAgo(card.completedAt || undefined)}</span>
               </div>
             ))}
             {shipped.length > 6 && (

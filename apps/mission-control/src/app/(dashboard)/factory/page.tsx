@@ -12,17 +12,14 @@ interface AgentHealth {
   sessionCount: number;
 }
 
-interface Task {
+interface Card {
   id: string;
   title: string;
-  status: string;
-  assignedTo?: string;
-  assigned_to?: string;
+  column: string;
+  assignee?: string | null;
   priority: string;
-  completedAt?: string;
-  completed_at?: string;
+  completedAt?: string | null;
   createdAt?: string;
-  created_at?: string;
 }
 
 interface Activity {
@@ -63,26 +60,39 @@ function fmtTokens(n: number): string {
 
 export default function FactoryPage() {
   const [agents, setAgents] = useState<AgentHealth[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [healthRes, boardRes, actRes, usageRes] = await Promise.all([
+      const [healthRes, boardsRes, actRes, usageRes] = await Promise.all([
         fetch('/api/agents/health'),
-        fetch('/api/board/sync?project=clawhalla'),
+        fetch('/api/boards'),
         fetch('/api/activities?limit=20'),
         fetch('/api/usage'),
       ]);
       const healthData = await healthRes.json();
-      const boardData = await boardRes.json();
+      const boardsData = await boardsRes.json();
       const actData = await actRes.json();
       const usageData = await usageRes.json();
 
       if (healthData.ok) setAgents(healthData.agents);
-      if (boardData.tasks) setTasks(boardData.tasks.map((t: Task) => ({ ...t, assignedTo: t.assignedTo || t.assigned_to, completedAt: t.completedAt || t.completed_at, createdAt: t.createdAt || t.created_at })));
+      // Fetch cards from all boards
+      if (boardsData.ok && boardsData.boards) {
+        const allCards: Card[] = [];
+        const boardFetches = boardsData.boards.map((b: { id: string }) => fetch(`/api/boards/${b.id}`).then(r => r.json()));
+        const boardResults = await Promise.all(boardFetches);
+        for (const bd of boardResults) {
+          if (bd.ok && bd.cards) {
+            for (const c of bd.cards) {
+              allCards.push({ id: c.id, title: c.title, column: c.column, priority: c.priority || 'medium', assignee: c.assignee, completedAt: c.completedAt, createdAt: c.createdAt });
+            }
+          }
+        }
+        setCards(allCards);
+      }
       if (Array.isArray(actData)) setActivities(actData);
       if (usageData.ok) setUsage(usageData);
     } catch (err) { console.error('[factory] fetch error:', err); }
@@ -106,9 +116,9 @@ export default function FactoryPage() {
   const stalledAgents = agents.filter(a => a.state === 'stalled' || a.state === 'stuck');
   const idleAgents = agents.filter(a => a.state === 'idle' || a.state === 'offline');
 
-  const inProgressTasks = tasks.filter(t => t.status === 'in_progress');
-  const queueTasks = tasks.filter(t => t.status === 'backlog' && t.assignedTo);
-  const completedToday = tasks.filter(t => t.status === 'done');
+  const inProgressCards = cards.filter(c => c.column === 'doing');
+  const queueCards = cards.filter(c => (c.column === 'backlog' || c.column === 'todo') && c.assignee);
+  const completedCards = cards.filter(c => c.column === 'done');
 
   // Avg idle time across agents with activity
   const agentsWithActivity = agents.filter(a => a.idleMinutes !== null);
@@ -145,7 +155,7 @@ export default function FactoryPage() {
         </div>
         <div className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
           <div className="text-[10px] text-gray-500 uppercase">Completed</div>
-          <div className="text-xl font-bold text-blue-400">{completedToday.length}</div>
+          <div className="text-xl font-bold text-blue-400">{completedCards.length}</div>
         </div>
         <div className="bg-[#111113] rounded-lg p-3 border border-[#1e1e21]">
           <div className="text-[10px] text-gray-500 uppercase">Cost Today</div>
@@ -174,7 +184,7 @@ export default function FactoryPage() {
             ) : (
               <div className="divide-y divide-[#1e1e21]">
                 {[...activeAgents, ...stalledAgents].map(agent => {
-                  const task = inProgressTasks.find(t => t.assignedTo === agent.id);
+                  const task = inProgressCards.find(c => c.assignee === agent.id);
                   const h = healthColors[agent.state];
                   const cost = agentUsage[agent.id];
                   return (
@@ -206,19 +216,19 @@ export default function FactoryPage() {
           </div>
 
           {/* Queue */}
-          {queueTasks.length > 0 && (
+          {queueCards.length > 0 && (
             <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden shrink-0">
               <div className="px-4 py-2 border-b border-[#1e1e21]">
                 <span className="text-[10px] text-gray-400 uppercase tracking-wider">Queue</span>
-                <span className="text-[10px] text-gray-600 ml-2">{queueTasks.length} waiting</span>
+                <span className="text-[10px] text-gray-600 ml-2">{queueCards.length} waiting</span>
               </div>
               <div className="divide-y divide-[#1e1e21]">
-                {queueTasks.slice(0, 5).map(task => (
-                  <div key={task.id} className="px-4 py-2 flex items-center gap-3">
-                    <span className="text-sm">{task.assignedTo ? AGENT_EMOJIS[task.assignedTo] || '🤖' : '📋'}</span>
-                    <span className="text-xs text-gray-300 flex-1 truncate">{task.title}</span>
-                    <span className="text-[9px] text-gray-600">@{task.assignedTo}</span>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded ${task.priority === 'critical' ? 'bg-red-500/20 text-red-400' : task.priority === 'high' ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>{task.priority}</span>
+                {queueCards.slice(0, 5).map(card => (
+                  <div key={card.id} className="px-4 py-2 flex items-center gap-3">
+                    <span className="text-sm">{card.assignee ? AGENT_EMOJIS[card.assignee] || '🤖' : '📋'}</span>
+                    <span className="text-xs text-gray-300 flex-1 truncate">{card.title}</span>
+                    <span className="text-[9px] text-gray-600">@{card.assignee}</span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded ${card.priority === 'critical' ? 'bg-red-500/20 text-red-400' : card.priority === 'high' ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-500/20 text-gray-400'}`}>{card.priority}</span>
                   </div>
                 ))}
               </div>
@@ -229,22 +239,22 @@ export default function FactoryPage() {
           <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden flex-1 min-h-0 flex flex-col">
             <div className="px-4 py-2 border-b border-[#1e1e21] shrink-0">
               <span className="text-[10px] text-gray-400 uppercase tracking-wider">Completed</span>
-              <span className="text-[10px] text-gray-600 ml-2">{completedToday.length}</span>
+              <span className="text-[10px] text-gray-600 ml-2">{completedCards.length}</span>
             </div>
             <div className="divide-y divide-[#1e1e21] flex-1 overflow-y-auto">
-              {completedToday.slice(0, 15).map(task => {
-                const cost = task.assignedTo ? agentUsage[task.assignedTo] : null;
+              {completedCards.slice(0, 15).map(card => {
+                const cost = card.assignee ? agentUsage[card.assignee] : null;
                 return (
-                  <div key={task.id} className="px-4 py-2 flex items-center gap-2">
+                  <div key={card.id} className="px-4 py-2 flex items-center gap-2">
                     <span className="text-green-500 text-xs">✓</span>
-                    <span className="text-sm">{task.assignedTo ? AGENT_EMOJIS[task.assignedTo] || '🤖' : ''}</span>
-                    <span className="text-xs text-gray-400 flex-1 truncate">{task.title}</span>
-                    {task.completedAt && <span className="text-[10px] text-gray-600">{timeAgo(task.completedAt)}</span>}
+                    <span className="text-sm">{card.assignee ? AGENT_EMOJIS[card.assignee] || '🤖' : ''}</span>
+                    <span className="text-xs text-gray-400 flex-1 truncate">{card.title}</span>
+                    {card.completedAt && <span className="text-[10px] text-gray-600">{timeAgo(card.completedAt)}</span>}
                     {cost && <span className="text-[10px] text-gray-700">${(cost.cost / 100).toFixed(2)}</span>}
                   </div>
                 );
               })}
-              {completedToday.length === 0 && (
+              {completedCards.length === 0 && (
                 <div className="px-4 py-6 text-center text-xs text-gray-700">Nothing completed yet</div>
               )}
             </div>

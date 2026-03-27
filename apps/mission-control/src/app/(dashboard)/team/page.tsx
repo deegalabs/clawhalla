@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 
 interface OrgAgent {
@@ -25,12 +25,20 @@ const statusDot: Record<string, string> = {
   active: 'bg-green-500', idle: 'bg-amber-500', offline: 'bg-gray-600',
 };
 
-const squadColors: Record<string, { border: string; bg: string; text: string }> = {
+const defaultSquadColors: Record<string, { border: string; bg: string; text: string }> = {
   dev_squad: { border: 'border-blue-500/40', bg: 'bg-blue-500/10', text: 'text-blue-400' },
   blockchain_squad: { border: 'border-purple-500/40', bg: 'bg-purple-500/10', text: 'text-purple-400' },
   clop_cabinet: { border: 'border-green-500/40', bg: 'bg-green-500/10', text: 'text-green-400' },
   product_squad: { border: 'border-amber-500/40', bg: 'bg-amber-500/10', text: 'text-amber-400' },
+  personal: { border: 'border-cyan-500/40', bg: 'bg-cyan-500/10', text: 'text-cyan-400' },
+  hackathon: { border: 'border-pink-500/40', bg: 'bg-pink-500/10', text: 'text-pink-400' },
+  social: { border: 'border-indigo-500/40', bg: 'bg-indigo-500/10', text: 'text-indigo-400' },
 };
+
+function getSquadColor(squadId: string | null) {
+  if (!squadId) return null;
+  return defaultSquadColors[squadId] || { border: 'border-gray-500/30', bg: 'bg-gray-500/10', text: 'text-gray-400' };
+}
 
 function getStatus(lastActivity: number | undefined, ok: boolean): 'active' | 'idle' | 'offline' {
   if (!ok) return 'offline';
@@ -46,17 +54,10 @@ const modelOptions = [
   { value: 'claude-haiku-4-5', label: 'Haiku 4.5' },
   { value: 'claude-opus-4-6', label: 'Opus 4.6' },
 ];
-const squadOptions = [
-  { value: '', label: 'None' },
-  { value: 'dev_squad', label: 'Dev Squad' },
-  { value: 'blockchain_squad', label: 'Blockchain Squad' },
-  { value: 'clop_cabinet', label: 'Clop Cabinet' },
-  { value: 'product_squad', label: 'Product Squad' },
-];
 
 // ---- Org Card (compact, used in tier rows) ----
 function OrgCard({ agent, onSelect, isSelected }: { agent: Agent; onSelect: (a: Agent, e: React.MouseEvent) => void; isSelected: boolean }) {
-  const sqColor = agent.squad ? squadColors[agent.squad] : null;
+  const sqColor = getSquadColor(agent.squad);
   return (
     <button onClick={(e) => onSelect(agent, e)}
       className={`relative rounded-xl border p-3 w-36 text-center transition-all hover:scale-[1.03] shrink-0 ${
@@ -83,136 +84,256 @@ const tierLabels = ['PLATFORM', 'EXECUTIVE', 'MANAGEMENT', 'EXECUTION'];
 const tierDescriptions = ['System Controller', 'Strategic Decision Makers', 'Squad Chiefs & Coordinators', 'Specialized Agents'];
 
 // ---- Agent Detail Panel ----
-function AgentDetail({ agent, allAgents, onClose }: { agent: Agent; allAgents: Agent[]; onClose: () => void }) {
+function AgentDetail({ agent, allAgents, squads, onClose, onRefresh }: { agent: Agent; allAgents: Agent[]; squads: OrgSquad[]; onClose: () => void; onRefresh: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ name: agent.name, role: agent.role, model: agent.model, emoji: agent.emoji, squad: agent.squad || '', tier: agent.tier, reportsTo: agent.reportsTo || '' });
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const manager = allAgents.find(a => a.id === agent.reportsTo);
   const directReports = allAgents.filter(a => a.reportsTo === agent.id);
-  const peers = manager ? allAgents.filter(a => a.reportsTo === manager.id && a.id !== agent.id) : [];
-  const sqColor = agent.squad ? squadColors[agent.squad] : null;
+  const sqColor = getSquadColor(agent.squad);
+  const isChief = agent.id === 'claw' || agent.id === 'main';
+
+  const squadOpts = useMemo(() => {
+    const opts = [{ value: '', label: 'None' }];
+    for (const s of squads) opts.push({ value: s.id, label: s.name });
+    return opts;
+  }, [squads]);
+
+  const managerOpts = useMemo(() => {
+    return allAgents.filter(a => a.id !== agent.id && a.tier < agent.tier).map(a => ({ value: a.id, label: `${a.emoji} ${a.name}` }));
+  }, [allAgents, agent.id, agent.tier]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/agents/factory', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: agent.id, ...editForm, squad: editForm.squad || null }),
+      });
+      const data = await res.json();
+      if (data.ok) { setEditing(false); onRefresh(); }
+    } catch { /* ignore */ }
+    setSaving(false);
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/agents/factory?id=${agent.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) { onClose(); onRefresh(); }
+    } catch { /* ignore */ }
+    setDeleting(false);
+  };
+
+  const inputCls = 'w-full px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none focus:border-amber-500/60';
 
   return (
     <div className="bg-[#111113] rounded-xl border border-[#1e1e21] overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-[#1e1e21] flex items-start gap-3">
         <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-3xl shrink-0 ${sqColor?.bg || 'bg-[#1a1a1d]'}`}>
-          {agent.emoji}
+          {editing ? editForm.emoji : agent.emoji}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-100">{agent.name}</span>
+            <span className="text-sm font-semibold text-gray-100">{editing ? editForm.name : agent.name}</span>
             <span className={`w-2 h-2 rounded-full ${statusDot[agent.status]}`} />
             <span className="text-[9px] text-gray-500 capitalize">{agent.status}</span>
           </div>
-          <div className="text-[11px] text-gray-400">{agent.role}</div>
-          <div className={`text-[10px] mt-0.5 ${modelColors[agent.liveModel || agent.model] || 'text-gray-600'}`}>
-            {(agent.liveModel || agent.model).replace('claude-', '')}
+          <div className="text-[11px] text-gray-400">{editing ? editForm.role : agent.role}</div>
+          <div className={`text-[10px] mt-0.5 ${modelColors[editing ? editForm.model : (agent.liveModel || agent.model)] || 'text-gray-600'}`}>
+            {(editing ? editForm.model : (agent.liveModel || agent.model)).replace('claude-', '')}
           </div>
         </div>
         <button onClick={onClose} className="text-gray-600 hover:text-gray-300 text-sm">✕</button>
       </div>
 
-      {/* Info grid */}
       <div className="p-4 space-y-3">
-        {/* Organization */}
-        <div>
-          <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">Organization</div>
-          <div className="grid grid-cols-2 gap-2 text-[10px]">
+        {/* ---- EDIT MODE ---- */}
+        {editing ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[8px] text-gray-600 mb-0.5">Name</label>
+                <input value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-[8px] text-gray-600 mb-0.5">Emoji</label>
+                <input value={editForm.emoji} onChange={e => setEditForm({ ...editForm, emoji: e.target.value })} className={inputCls} />
+              </div>
+            </div>
             <div>
-              <span className="text-gray-600">Tier:</span>
-              <span className="text-gray-300 ml-1">{agent.tier} — {['Platform', 'Executive', 'Management', 'Execution'][agent.tier]}</span>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Role</label>
+              <input value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })} className={inputCls} />
             </div>
-            {agent.squad && (
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <span className="text-gray-600">Squad:</span>
-                <span className={`ml-1 ${sqColor?.text || 'text-gray-300'}`}>{agent.squad.replace('_', ' ')}</span>
+                <label className="block text-[8px] text-gray-600 mb-0.5">Model</label>
+                <select value={editForm.model} onChange={e => setEditForm({ ...editForm, model: e.target.value })} className={inputCls}>
+                  {modelOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Reports to */}
-        {manager && (
-          <div>
-            <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">Reports to</div>
-            <div className="flex items-center gap-2 p-2 bg-[#0a0a0b] rounded-lg border border-[#1e1e21]">
-              <span className="text-lg">{manager.emoji}</span>
               <div>
-                <div className="text-[10px] font-medium text-gray-200">{manager.name}</div>
-                <div className="text-[9px] text-gray-500">{manager.role}</div>
+                <label className="block text-[8px] text-gray-600 mb-0.5">Tier</label>
+                <select value={editForm.tier} onChange={e => setEditForm({ ...editForm, tier: parseInt(e.target.value) })} className={inputCls}>
+                  <option value={0}>0 — Platform</option>
+                  <option value={1}>1 — Executive</option>
+                  <option value={2}>2 — Management</option>
+                  <option value={3}>3 — Execution</option>
+                </select>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Direct reports */}
-        {directReports.length > 0 && (
-          <div>
-            <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">
-              Direct Reports ({directReports.length})
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[8px] text-gray-600 mb-0.5">Squad</label>
+                <select value={editForm.squad} onChange={e => setEditForm({ ...editForm, squad: e.target.value })} className={inputCls}>
+                  {squadOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[8px] text-gray-600 mb-0.5">Reports to</label>
+                <select value={editForm.reportsTo} onChange={e => setEditForm({ ...editForm, reportsTo: e.target.value })} className={inputCls}>
+                  <option value="">None</option>
+                  {managerOpts.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="space-y-1">
-              {directReports.map(r => (
-                <div key={r.id} className="flex items-center gap-2 p-1.5 bg-[#0a0a0b] rounded border border-[#1e1e21]">
-                  <span className={`w-1.5 h-1.5 rounded-full ${statusDot[r.status]}`} />
-                  <span className="text-sm">{r.emoji}</span>
-                  <span className="text-[10px] text-gray-300">{r.name}</span>
-                  <span className="text-[9px] text-gray-600 ml-auto">{r.role}</span>
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleSave} disabled={saving}
+                className="px-3 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button onClick={() => { setEditing(false); setEditForm({ name: agent.name, role: agent.role, model: agent.model, emoji: agent.emoji, squad: agent.squad || '', tier: agent.tier, reportsTo: agent.reportsTo || '' }); }}
+                className="px-3 py-1.5 text-[10px] font-medium text-gray-400 rounded hover:text-gray-200 border border-[#1e1e21]">
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* ---- VIEW MODE ---- */}
+            {/* Organization */}
+            <div>
+              <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">Organization</div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div>
+                  <span className="text-gray-600">Tier:</span>
+                  <span className="text-gray-300 ml-1">{agent.tier} — {['Platform', 'Executive', 'Management', 'Execution'][agent.tier]}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Works with (peers) */}
-        {peers.length > 0 && (
-          <div>
-            <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">
-              Works with ({peers.length})
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {peers.map(p => (
-                <div key={p.id} className="flex items-center gap-1.5 px-2 py-1 bg-[#0a0a0b] rounded-lg border border-[#1e1e21]">
-                  <span className="text-sm">{p.emoji}</span>
+                {agent.squad && (
                   <div>
-                    <div className="text-[9px] font-medium text-gray-300">{p.name}</div>
-                    <div className="text-[8px] text-gray-600">{p.role}</div>
+                    <span className="text-gray-600">Squad:</span>
+                    <span className={`ml-1 ${sqColor?.text || 'text-gray-300'}`}>{agent.squad.replace(/_/g, ' ')}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Reports to */}
+            {manager && (
+              <div>
+                <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">Reports to</div>
+                <div className="flex items-center gap-2 p-2 bg-[#0a0a0b] rounded-lg border border-[#1e1e21]">
+                  <span className="text-lg">{manager.emoji}</span>
+                  <div>
+                    <div className="text-[10px] font-medium text-gray-200">{manager.name}</div>
+                    <div className="text-[9px] text-gray-500">{manager.role}</div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              </div>
+            )}
 
-        {/* Skills */}
-        {agent.skills.length > 0 && (
-          <div>
-            <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">Skills</div>
-            <div className="flex flex-wrap gap-1">
-              {agent.skills.map(s => (
-                <span key={s} className="text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400/80 rounded">{s}</span>
-              ))}
-            </div>
-          </div>
-        )}
+            {/* Direct reports */}
+            {directReports.length > 0 && (
+              <div>
+                <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">
+                  Direct Reports ({directReports.length})
+                </div>
+                <div className="space-y-1">
+                  {directReports.map(r => (
+                    <div key={r.id} className="flex items-center gap-2 p-1.5 bg-[#0a0a0b] rounded border border-[#1e1e21]">
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusDot[r.status]}`} />
+                      <span className="text-sm">{r.emoji}</span>
+                      <span className="text-[10px] text-gray-300">{r.name}</span>
+                      <span className="text-[9px] text-gray-600 ml-auto">{r.role}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-        {/* Actions */}
-        <div className="flex gap-2 pt-1">
-          <a href={`/chat`} className="px-3 py-1.5 text-[10px] font-medium bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 border border-amber-500/20">
-            💬 Chat
-          </a>
-          <button className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200 border border-[#1e1e21]">
-            📋 View Tasks
-          </button>
-        </div>
+            {/* Skills */}
+            {agent.skills.length > 0 && (
+              <div>
+                <div className="text-[9px] text-gray-600 uppercase tracking-wider mb-1.5">Skills</div>
+                <div className="flex flex-wrap gap-1">
+                  {agent.skills.map(s => (
+                    <span key={s} className="text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-400/80 rounded">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-1 flex-wrap">
+              <a href="/chat" className="px-3 py-1.5 text-[10px] font-medium bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 border border-amber-500/20">
+                💬 Chat
+              </a>
+              {!isChief && (
+                <button onClick={() => setEditing(true)}
+                  className="px-3 py-1.5 text-[10px] font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200 border border-[#1e1e21]">
+                  ✏️ Edit
+                </button>
+              )}
+              {!isChief && !confirmDelete && (
+                <button onClick={() => setConfirmDelete(true)}
+                  className="px-3 py-1.5 text-[10px] font-medium text-red-400/60 rounded hover:text-red-400 border border-[#1e1e21] hover:border-red-500/30">
+                  🗑 Delete
+                </button>
+              )}
+              {confirmDelete && (
+                <div className="flex items-center gap-1.5">
+                  <button onClick={handleDelete} disabled={deleting}
+                    className="px-2.5 py-1.5 text-[10px] font-medium bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 border border-red-500/30 disabled:opacity-40">
+                    {deleting ? 'Removing...' : 'Confirm Delete'}
+                  </button>
+                  <button onClick={() => setConfirmDelete(false)}
+                    className="px-2 py-1.5 text-[10px] text-gray-500 hover:text-gray-300">
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-// ---- Create Agent Form ----
-function CreateAgentForm({ onCreated }: { onCreated: () => void }) {
-  const [form, setForm] = useState({ id: '', name: '', role: '', model: 'claude-sonnet-4-5', tier: 3, squad: '', reportsTo: '', emoji: '🤖', skills: 'clawban', description: '' });
+// ---- Factory Tab: Create form + Agent roster ----
+function FactoryTab({ agents, squads, onCreated, onSelect }: { agents: Agent[]; squads: OrgSquad[]; onCreated: () => void; onSelect: (a: Agent, e: React.MouseEvent) => void }) {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ id: '', name: '', role: '', model: 'claude-sonnet-4-5', tier: 3, squad: '', reportsTo: 'claw', emoji: '🤖', skills: 'clawban', description: '' });
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const squadOpts = useMemo(() => {
+    const opts = [{ value: '', label: 'None' }];
+    for (const s of squads) opts.push({ value: s.id, label: s.name });
+    return opts;
+  }, [squads]);
+
+  const managerOpts = useMemo(() => {
+    return agents.filter(a => a.tier < 3).map(a => ({ value: a.id, label: `${a.emoji} ${a.name}` }));
+  }, [agents]);
+
+  const inputCls = 'w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none focus:border-amber-500/60';
 
   const handleSubmit = async () => {
     if (!form.id || !form.name || !form.role) { setResult({ ok: false, msg: 'ID, name, and role required' }); return; }
@@ -225,78 +346,144 @@ function CreateAgentForm({ onCreated }: { onCreated: () => void }) {
       const data = await res.json();
       if (data.ok) {
         setResult({ ok: true, msg: `Agent "${data.agent.name}" created` });
-        // Create task for agent creation
-        fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: `Created agent: ${form.name} (${form.role})`, status: 'done', priority: 'medium', assignedTo: 'main' }),
-        }).catch(() => {});
-        setForm({ id: '', name: '', role: '', model: 'claude-sonnet-4-5', tier: 3, squad: '', reportsTo: '', emoji: '🤖', skills: 'clawban', description: '' });
+        setForm({ id: '', name: '', role: '', model: 'claude-sonnet-4-5', tier: 3, squad: '', reportsTo: 'claw', emoji: '🤖', skills: 'clawban', description: '' });
+        setShowForm(false);
         onCreated();
       } else { setResult({ ok: false, msg: data.error || 'Failed' }); }
     } catch { setResult({ ok: false, msg: 'Failed' }); }
     setSaving(false);
   };
 
+  const tierLabel = (t: number) => ['Platform', 'Executive', 'Management', 'Execution'][t] || '?';
+
   return (
-    <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4 space-y-3">
-      <div className="text-xs font-semibold text-gray-200">Agent Factory</div>
-      <div className="grid grid-cols-4 gap-2">
-        {[
-          { key: 'id', label: 'ID', placeholder: 'agent_id', mono: true },
-          { key: 'name', label: 'Name', placeholder: 'Agent Name' },
-          { key: 'role', label: 'Role', placeholder: 'Senior Developer' },
-          { key: 'emoji', label: 'Emoji', placeholder: '🤖' },
-        ].map(f => (
-          <div key={f.key}>
-            <label className="block text-[9px] text-gray-500 mb-0.5">{f.label}</label>
-            <input type="text" placeholder={f.placeholder}
-              value={form[f.key as keyof typeof form] as string}
-              onChange={e => setForm({ ...form, [f.key]: f.key === 'id' ? e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') : e.target.value })}
-              className={`w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none focus:border-amber-500 ${f.mono ? 'font-mono' : ''}`} />
+    <div className="space-y-4 py-2">
+      {/* Header + Add button */}
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] text-gray-500">{agents.length} agents registered</div>
+        <button onClick={() => setShowForm(!showForm)}
+          className={`px-3 py-1.5 text-[10px] font-medium rounded border transition-colors ${showForm ? 'bg-[#1a1a1d] text-gray-400 border-[#1e1e21]' : 'bg-amber-500 text-gray-900 border-amber-500 hover:bg-amber-400'}`}>
+          {showForm ? '✕ Cancel' : '+ New Agent'}
+        </button>
+      </div>
+
+      {/* Create form (collapsible) */}
+      {showForm && (
+        <div className="bg-[#111113] rounded-lg border border-amber-500/20 p-4 space-y-3">
+          <div className="text-[11px] font-semibold text-amber-400">Create New Agent</div>
+          <div className="grid grid-cols-4 gap-2">
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">ID</label>
+              <input placeholder="agent_id" value={form.id}
+                onChange={e => setForm({ ...form, id: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '') })}
+                className={`${inputCls} font-mono`} />
+            </div>
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Name</label>
+              <input placeholder="Agent Name" value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Role</label>
+              <input placeholder="Senior Developer" value={form.role}
+                onChange={e => setForm({ ...form, role: e.target.value })} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Emoji</label>
+              <input placeholder="🤖" value={form.emoji}
+                onChange={e => setForm({ ...form, emoji: e.target.value })} className={inputCls} />
+            </div>
           </div>
-        ))}
+          <div className="grid grid-cols-4 gap-2">
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Model</label>
+              <select value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} className={inputCls}>
+                {modelOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Tier</label>
+              <select value={form.tier} onChange={e => setForm({ ...form, tier: parseInt(e.target.value) })} className={inputCls}>
+                <option value={1}>1 — Executive</option>
+                <option value={2}>2 — Management</option>
+                <option value={3}>3 — Execution</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Squad</label>
+              <select value={form.squad} onChange={e => setForm({ ...form, squad: e.target.value })} className={inputCls}>
+                {squadOpts.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[8px] text-gray-600 mb-0.5">Reports to</label>
+              <select value={form.reportsTo} onChange={e => setForm({ ...form, reportsTo: e.target.value })} className={inputCls}>
+                <option value="">None</option>
+                {managerOpts.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[8px] text-gray-600 mb-0.5">Skills (comma-separated)</label>
+            <input placeholder="clawban, coding-agent" value={form.skills}
+              onChange={e => setForm({ ...form, skills: e.target.value })} className={inputCls} />
+          </div>
+          {result && <div className={`text-[10px] ${result.ok ? 'text-green-400' : 'text-red-400'}`}>{result.msg}</div>}
+          <button onClick={handleSubmit} disabled={saving}
+            className="px-3 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">
+            {saving ? 'Creating...' : 'Create Agent'}
+          </button>
+        </div>
+      )}
+
+      {/* Agent roster table */}
+      <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
+        <table className="w-full text-[10px]">
+          <thead>
+            <tr className="border-b border-[#1e1e21] text-gray-600 text-left">
+              <th className="px-3 py-2 font-medium">Agent</th>
+              <th className="px-3 py-2 font-medium">Role</th>
+              <th className="px-3 py-2 font-medium">Model</th>
+              <th className="px-3 py-2 font-medium">Tier</th>
+              <th className="px-3 py-2 font-medium">Squad</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agents.map(a => {
+              const sc = getSquadColor(a.squad);
+              return (
+                <tr key={a.id} onClick={(e) => onSelect(a, e)}
+                  className="border-b border-[#1e1e21]/50 hover:bg-[#1a1a1d] cursor-pointer transition-colors">
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{a.emoji}</span>
+                      <div>
+                        <div className="text-gray-200 font-medium">{a.name}</div>
+                        <div className="text-[8px] text-gray-600 font-mono">{a.id}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-gray-400">{a.role}</td>
+                  <td className={`px-3 py-2 ${modelColors[a.liveModel || a.model] || 'text-gray-500'}`}>
+                    {(a.liveModel || a.model).replace('claude-', '')}
+                  </td>
+                  <td className="px-3 py-2 text-gray-500">{a.tier} — {tierLabel(a.tier)}</td>
+                  <td className="px-3 py-2">
+                    {a.squad ? <span className={`px-1.5 py-0.5 rounded text-[9px] ${sc?.bg || ''} ${sc?.text || 'text-gray-400'}`}>{a.squad.replace(/_/g, ' ')}</span> : <span className="text-gray-700">—</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${statusDot[a.status]}`} />
+                      <span className="text-gray-500 capitalize">{a.status}</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
-      <div className="grid grid-cols-4 gap-2">
-        <div>
-          <label className="block text-[9px] text-gray-500 mb-0.5">Model</label>
-          <select value={form.model} onChange={e => setForm({ ...form, model: e.target.value })}
-            className="w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none">
-            {modelOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-[9px] text-gray-500 mb-0.5">Tier</label>
-          <select value={form.tier} onChange={e => setForm({ ...form, tier: parseInt(e.target.value) })}
-            className="w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none">
-            <option value={1}>1 — Executive</option>
-            <option value={2}>2 — Management</option>
-            <option value={3}>3 — Execution</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-[9px] text-gray-500 mb-0.5">Squad</label>
-          <select value={form.squad} onChange={e => setForm({ ...form, squad: e.target.value })}
-            className="w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none">
-            {squadOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-[9px] text-gray-500 mb-0.5">Reports to</label>
-          <input type="text" placeholder="Manager ID" value={form.reportsTo}
-            onChange={e => setForm({ ...form, reportsTo: e.target.value })}
-            className="w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none focus:border-amber-500" />
-        </div>
-      </div>
-      <div>
-        <label className="block text-[9px] text-gray-500 mb-0.5">Skills (comma-separated)</label>
-        <input type="text" placeholder="clawban, coding-agent" value={form.skills}
-          onChange={e => setForm({ ...form, skills: e.target.value })}
-          className="w-full px-2 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-200 focus:outline-none focus:border-amber-500" />
-      </div>
-      {result && <div className={`text-[10px] ${result.ok ? 'text-green-400' : 'text-red-400'}`}>{result.msg}</div>}
-      <button onClick={handleSubmit} disabled={saving}
-        className="px-3 py-1.5 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40">
-        {saving ? 'Creating...' : 'Create Agent'}
-      </button>
     </div>
   );
 }
@@ -418,7 +605,7 @@ function TeamPageInner() {
             <div className="grid grid-cols-2 gap-3 p-1">
               {squads.map(squad => {
                 const members = agents.filter(a => a.squad === squad.id);
-                const sc = squadColors[squad.id] || { border: 'border-gray-500/30', bg: 'bg-gray-500/10', text: 'text-gray-400' };
+                const sc = getSquadColor(squad.id) || { border: 'border-gray-500/30', bg: 'bg-gray-500/10', text: 'text-gray-400' };
                 return (
                   <div key={squad.id} className={`bg-[#111113] rounded-lg border ${sc.border} p-4`}>
                     <div className="flex items-center justify-between mb-3">
@@ -465,8 +652,8 @@ function TeamPageInner() {
 
           {/* FACTORY TAB */}
           {tab === 'factory' && (
-            <div className="max-w-2xl mx-auto py-2">
-              <CreateAgentForm onCreated={fetchData} />
+            <div className="py-2">
+              <FactoryTab agents={agents} squads={squads} onCreated={fetchData} onSelect={handleSelectAgent} />
             </div>
           )}
         </div>
@@ -480,7 +667,7 @@ function TeamPageInner() {
                 top: Math.min(popoverPos.y, window.innerHeight - 400),
                 left: Math.min(popoverPos.x, window.innerWidth - 340),
               }}>
-              <AgentDetail agent={selectedAgent} allAgents={agents} onClose={() => setSelectedAgent(null)} />
+              <AgentDetail agent={selectedAgent} allAgents={agents} squads={squads} onClose={() => setSelectedAgent(null)} onRefresh={fetchData} />
             </div>
           </>
         )}

@@ -8,7 +8,7 @@ import { autoTask } from '@/lib/tasks';
 // Types
 interface AccountStatus { platform: string; connected: boolean; label: string; }
 
-type ContentTab = 'pipeline' | 'create' | 'drafts' | 'scheduled' | 'accounts' | 'analytics';
+type ContentTab = 'pipeline' | 'create' | 'drafts' | 'scheduled' | 'accounts';
 
 // Pipeline types
 type PipelineStepStatus = 'pending' | 'running' | 'done' | 'gate' | 'skipped' | 'error';
@@ -402,7 +402,7 @@ function ContentPageInner() {
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-200">Content Studio</h2>
           <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
-            {(['pipeline', 'create', 'drafts', 'scheduled', 'accounts', 'analytics'] as ContentTab[]).map(t => (
+            {(['pipeline', 'create', 'drafts', 'scheduled', 'accounts'] as ContentTab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-2.5 py-1 text-[11px] rounded capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
                 {t === 'pipeline' ? '🔄 Pipeline' : t}
@@ -986,27 +986,6 @@ function ContentPageInner() {
         </div>
       )}
 
-      {/* ANALYTICS TAB */}
-      {tab === 'analytics' && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-8 text-center">
-            <div className="text-3xl mb-2">📊</div>
-            <div className="text-sm font-medium text-gray-200">Content Analytics</div>
-            <p className="text-xs text-gray-500 mt-2 max-w-md mx-auto">
-              Post performance, engagement metrics, audience growth. Powered by Loki.
-            </p>
-            <div className="mt-4 grid grid-cols-3 gap-3 max-w-md mx-auto">
-              {[['—', 'Impressions'], ['—', 'Engagement'], ['—', 'Posts']].map(([v, l]) => (
-                <div key={l} className="bg-[#0a0a0b] rounded-lg p-3 border border-[#1e1e21]">
-                  <div className="text-lg font-bold text-gray-400">{v}</div>
-                  <div className="text-[9px] text-gray-600">{l}</div>
-                </div>
-              ))}
-            </div>
-            <p className="text-[10px] text-gray-700 mt-4">Connect LinkedIn in Accounts tab to enable.</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
