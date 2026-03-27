@@ -145,6 +145,11 @@ function SettingsPageInner() {
     setDbSaving(false);
   };
 
+  // Reset state
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+
   // Maintenance handlers
   const [maintMsg, setMaintMsg] = useState('');
   const handleReindex = async () => {
@@ -280,6 +285,60 @@ function SettingsPageInner() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Danger Zone */}
+            <div className="bg-[#111113] rounded-lg border border-red-500/20 p-4">
+              <div className="text-[10px] text-red-400 uppercase tracking-wider mb-3 font-medium">Danger Zone</div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] text-gray-300">Reset Everything</div>
+                    <div className="text-[9px] text-gray-600">Delete all data and restart onboarding from scratch</div>
+                  </div>
+                  {!resetConfirm ? (
+                    <button onClick={() => setResetConfirm(true)}
+                      className="px-3 py-1.5 text-[10px] font-medium text-red-400 bg-red-500/10 rounded border border-red-500/20 hover:bg-red-500/20">
+                      Reset
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button onClick={() => setResetConfirm(false)}
+                        className="px-3 py-1.5 text-[10px] font-medium text-gray-400 bg-[#1a1a1d] rounded border border-[#1e1e21]">
+                        Cancel
+                      </button>
+                      <button
+                        disabled={resetting}
+                        onClick={async () => {
+                          setResetting(true);
+                          setResetMsg('');
+                          try {
+                            const res = await fetch('/api/reset', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ confirm: 'RESET' }),
+                            });
+                            const data = await res.json();
+                            if (data.ok) {
+                              setResetMsg('Reset complete. Redirecting to onboarding...');
+                              setTimeout(() => { window.location.href = '/onboarding'; }, 1500);
+                            } else {
+                              setResetMsg(data.error || 'Reset failed');
+                            }
+                          } catch {
+                            setResetMsg('Reset failed');
+                          }
+                          setResetting(false);
+                          setResetConfirm(false);
+                        }}
+                        className="px-3 py-1.5 text-[10px] font-medium text-white bg-red-600 rounded border border-red-500 hover:bg-red-500 disabled:opacity-40">
+                        {resetting ? 'Resetting...' : 'Confirm Reset'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {resetMsg && <div className={`text-[10px] ${resetMsg.includes('complete') ? 'text-green-400' : 'text-red-400'}`}>{resetMsg}</div>}
               </div>
             </div>
           </div>

@@ -502,15 +502,27 @@ function OnboardingWizard() {
             </p>
           </div>
 
+          {!gatewayToken && !tokenConfigured && (
+            <p className="text-xs text-amber-400/80 mb-3">
+              A token is required. Click &quot;Generate&quot; or paste your own.
+            </p>
+          )}
+
           <div className="flex gap-3">
             <button onClick={() => setStep(provider === 'skip' ? 2 : 3)} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-gray-300 hover:bg-white/10 transition-colors flex-1">
               Back
             </button>
             <button
-              onClick={() => setStep(5)}
+              onClick={() => {
+                if (!gatewayToken && !tokenConfigured) {
+                  generateToken();
+                  return;
+                }
+                setStep(5);
+              }}
               className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 transition-colors flex-1"
             >
-              Next
+              {!gatewayToken && !tokenConfigured ? 'Generate & Continue' : 'Next'}
             </button>
           </div>
         </Card>
@@ -555,10 +567,19 @@ function OnboardingWizard() {
                   type="password"
                   value={telegramToken}
                   onChange={(e) => setTelegramToken(e.target.value)}
-                  placeholder="123456:ABC-DEF..."
-                  className="mt-1 block w-full rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:border-amber-500/50 focus:ring-0 focus:outline-none transition-colors"
+                  placeholder="123456789:ABCdefGHI-jklMNOpqrSTUvwx"
+                  className={`mt-1 block w-full rounded-lg bg-white/[0.04] border px-3 py-2 text-sm text-gray-200 placeholder:text-gray-600 focus:ring-0 focus:outline-none transition-colors ${
+                    telegramToken && !/^\d{8,}:[A-Za-z0-9_-]{35,}$/.test(telegramToken)
+                      ? 'border-red-500/50 focus:border-red-500/50'
+                      : 'border-white/10 focus:border-amber-500/50'
+                  }`}
                 />
               </label>
+              {telegramToken && !/^\d{8,}:[A-Za-z0-9_-]{35,}$/.test(telegramToken) && (
+                <p className="text-xs text-red-400">
+                  Invalid format. Token should be like: 123456789:ABCdefGHI-jklMNOpqrSTUvwx
+                </p>
+              )}
               <p className="text-xs text-gray-600">
                 Create a bot via @BotFather on Telegram, then paste the token here.
               </p>
@@ -571,7 +592,7 @@ function OnboardingWizard() {
             </button>
             <button
               onClick={() => setStep(6)}
-              disabled={channel === 'telegram' && !telegramToken}
+              disabled={channel === 'telegram' && (!telegramToken || !/^\d{8,}:[A-Za-z0-9_-]{35,}$/.test(telegramToken))}
               className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 transition-colors flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next
@@ -595,17 +616,14 @@ function OnboardingWizard() {
           </p>
 
           <div className="grid gap-3 mb-6">
-            {SQUAD_TEMPLATES.map((squad) => (
+            {SQUAD_TEMPLATES.filter(s => s.tier === 'free').map((squad) => (
               <button
                 key={squad.id}
-                onClick={() => squad.tier === 'free' && setSelectedSquad(squad.id)}
-                disabled={squad.tier === 'pro'}
+                onClick={() => setSelectedSquad(squad.id)}
                 className={`w-full text-left rounded-xl border p-4 transition-colors ${
                   selectedSquad === squad.id
                     ? 'border-amber-500/50 bg-amber-500/[0.06]'
-                    : squad.tier === 'pro'
-                      ? 'border-white/5 bg-white/[0.01] opacity-50 cursor-not-allowed'
-                      : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
+                    : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -615,12 +633,8 @@ function OnboardingWizard() {
                       {squad.name}
                     </span>
                   </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                    squad.tier === 'free'
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                      : 'bg-white/5 text-gray-500 border border-white/10'
-                  }`}>
-                    {squad.tier === 'free' ? 'Free' : 'Pro — Coming Soon'}
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Free
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mb-2">{squad.description}</p>
@@ -634,6 +648,25 @@ function OnboardingWizard() {
                 </div>
               </button>
             ))}
+
+            {/* Pro squads teaser */}
+            <div className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm">🔒</span>
+                <span className="text-xs font-semibold text-gray-400">Pro Squads</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Coming Soon</span>
+              </div>
+              <p className="text-[11px] text-gray-600 mb-2">
+                Larger specialized squads for development teams and customer support. Available in a future release.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {SQUAD_TEMPLATES.filter(s => s.tier === 'pro').map(s => (
+                  <span key={s.id} className="text-[10px] text-gray-600 bg-white/[0.03] px-2 py-0.5 rounded-full">
+                    {s.emoji} {s.name}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3">
