@@ -191,10 +191,93 @@ ask "Data directory   " "${INSTALL_DIR}/data" DATA_DIR
 echo ""
 
 if [ -d "$INSTALL_DIR" ]; then
-    warn "Directory $INSTALL_DIR already exists."
-    ask "Overwrite? (y/N)" "N" _OVR
-    [[ "$_OVR" =~ ^[Yy]$ ]] || { err "Aborted."; exit 1; }
-    rm -rf "$INSTALL_DIR"
+    # ── Detect existing install ───────────────────────────────────────────────
+    if [ -f "${INSTALL_DIR}/.install-info.json" ]; then
+        EXISTING_VER=$(grep -o '"version": *"[^"]*"' "${INSTALL_DIR}/.install-info.json" | grep -o '"[^"]*"$' | tr -d '"')
+        EXISTING_MODE_RAW=$(grep -o '"mode": *"[^"]*"' "${INSTALL_DIR}/.install-info.json" | grep -o '"[^"]*"$' | tr -d '"')
+
+        echo ""
+        box_top
+        box_title "Existing install detected"
+        box_div
+        box_text "Version : ${EXISTING_VER:-unknown}  ·  Mode: ${EXISTING_MODE_RAW:-unknown}"
+        box_text "Directory: ${INSTALL_DIR}"
+        box_empty
+        box_opt "1" "Update     " "pull latest code, keep all data"
+        box_opt "2" "Reinstall  " "fresh install, DATA DIR preserved"
+        box_opt "3" "Abort      " "exit without changes"
+        box_empty
+        box_bot
+        echo ""
+
+        while true; do
+            ask "Choose" "1" _EXISTING
+            case $_EXISTING in
+                1) EXISTING_ACTION="update"    ; break ;;
+                2) EXISTING_ACTION="reinstall" ; break ;;
+                3) err "Aborted."; exit 0 ;;
+                *) err "Enter 1, 2, or 3." ;;
+            esac
+        done
+        echo ""
+
+        # ── Stop existing services ────────────────────────────────────────────
+        info "Stopping existing services…"
+        if [ "${EXISTING_MODE_RAW:-}" = "docker" ]; then
+            cd "$INSTALL_DIR" && docker compose down 2>/dev/null || true
+        else
+            pm2 stop clawhalla-gateway clawhalla-mc 2>/dev/null || true
+        fi
+        ok "Services stopped"
+
+        if [ "$EXISTING_ACTION" = "update" ]; then
+            # Update: pull code, restart — data untouched
+            info "Pulling latest code…"
+            cd "$INSTALL_DIR" && git pull --quiet && ok "Code updated"
+
+            info "Starting services…"
+            if [ "${EXISTING_MODE_RAW:-}" = "docker" ]; then
+                docker compose up -d --build
+            else
+                pm2 restart clawhalla-gateway 2>/dev/null || true
+                pm2 restart clawhalla-mc 2>/dev/null || true
+            fi
+            ok "Services restarted"
+            echo ""
+            echo -e "  ${G}ClawHalla updated to latest version.${NC}"
+            echo ""
+            exit 0
+        fi
+
+        # Reinstall: wipe code dir only — DATA_DIR is preserved
+        # Warn if DATA_DIR is nested inside INSTALL_DIR (default layout)
+        if [[ "$DATA_DIR" == "${INSTALL_DIR}"* ]]; then
+            warn "Data directory is inside install directory:"
+            warn "  ${DATA_DIR}"
+            warn "It will be PRESERVED — only code will be replaced."
+            echo ""
+            # Move data out temporarily, then restore after rm
+            TMP_DATA=$(mktemp -d)
+            cp -r "$DATA_DIR/." "$TMP_DATA/"
+            DATA_BACKED_UP=true
+        fi
+
+        rm -rf "$INSTALL_DIR"
+
+        if [ "${DATA_BACKED_UP:-false}" = "true" ]; then
+            mkdir -p "$DATA_DIR"
+            cp -r "$TMP_DATA/." "$DATA_DIR/"
+            rm -rf "$TMP_DATA"
+            ok "Data directory restored"
+        fi
+
+    else
+        # Directory exists but no .install-info.json — unknown contents
+        warn "Directory ${INSTALL_DIR} already exists (not a ClawHalla install)."
+        ask "Remove and continue? (y/N)" "N" _OVR
+        [[ "$_OVR" =~ ^[Yy]$ ]] || { err "Aborted."; exit 1; }
+        rm -rf "$INSTALL_DIR"
+    fi
 fi
 
 # ── Services ─────────────────────────────────────────────────────────────────
