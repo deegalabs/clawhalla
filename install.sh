@@ -263,13 +263,7 @@ if [ -d "$INSTALL_DIR" ]; then
         fi
 
         rm -rf "$INSTALL_DIR"
-
-        if [ "${DATA_BACKED_UP:-false}" = "true" ]; then
-            mkdir -p "$DATA_DIR"
-            cp -r "$TMP_DATA/." "$DATA_DIR/"
-            rm -rf "$TMP_DATA"
-            ok "Data directory restored"
-        fi
+        # NOTE: DATA_DIR restore happens AFTER git clone to avoid recreating INSTALL_DIR prematurely
 
     else
         # Directory exists but no .install-info.json — unknown contents
@@ -353,6 +347,14 @@ echo ""
 info "Cloning repository…"
 git clone https://github.com/deegalabs/clawhalla.git "$INSTALL_DIR" --quiet
 ok "Cloned to ${INSTALL_DIR}"
+
+# Restore data dir if it was backed up during reinstall
+if [ "${DATA_BACKED_UP:-false}" = "true" ]; then
+    mkdir -p "$DATA_DIR"
+    cp -r "$TMP_DATA/." "$DATA_DIR/"
+    rm -rf "$TMP_DATA"
+    ok "Data directory restored"
+fi
 echo ""
 
 # Docker: data dir holds volume mounts for both services
