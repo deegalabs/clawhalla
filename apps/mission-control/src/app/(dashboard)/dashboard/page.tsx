@@ -57,7 +57,7 @@ function timeAgo(ms: number | string): string {
 }
 
 const quickNav = [
-  { href: '/tasks', label: 'Tasks', icon: '✓', desc: 'Kanban board' },
+  { href: '/tasks', label: 'Boards', icon: '✓', desc: 'Kanban boards' },
   { href: '/pipeline', label: 'Pipeline', icon: '⚡', desc: 'Build status' },
   { href: '/team', label: 'Team', icon: '👥', desc: 'Agent hierarchy' },
   { href: '/office', label: 'Office', icon: '🏢', desc: 'Live agents' },

@@ -2,47 +2,81 @@
 
 import { useState, useEffect, useCallback, DragEvent } from 'react';
 import { MarkdownView } from '@/components/ui/markdown-view';
-import { AGENT_EMOJIS } from '@/lib/agents';
+import { AGENT_EMOJIS, AGENT_ROSTER, PRIORITY_COLORS } from '@/lib/agents';
 
-// Types
-interface Task {
+// ─── Types ──────────────────────────────────────────────────────
+interface BoardColumn {
   id: string;
-  title: string;
-  description?: string;
-  status: string;
-  priority: string;
-  assignedTo?: string;
-  assigned_to?: string;
-  storyId?: string;
-  story_id?: string;
-  sprintId?: string;
-  sprint_id?: string;
-  tags?: string;
-  notes?: string;
-  estimatedHours?: number;
-  estimated_hours?: number;
-  createdAt?: string;
-  created_at?: string;
-  updatedAt?: string;
-  updated_at?: string;
-  completedAt?: string;
-  completed_at?: string;
+  name: string;
+  color?: string;
+  wipLimit?: number;
 }
 
-type BoardView = 'kanban' | 'sprints' | 'epics';
+interface Board {
+  id: string;
+  name: string;
+  description: string | null;
+  type: string;
+  columns: BoardColumn[];
+  owner: string;
+  squad: string | null;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+}
 
-interface Epic { id: string; title: string; status: string; notes?: string; }
-interface Story { id: string; epicId?: string; epic_id?: string; title: string; status: string; points?: number; }
-interface Sprint { id: string; name: string; status: string; startDate?: string; start_date?: string; endDate?: string; end_date?: string; storyIds?: string; story_ids?: string; }
+interface Card {
+  id: string;
+  boardId: string;
+  title: string;
+  description: string | null;
+  column: string;
+  position: number;
+  assignee: string | null;
+  labels: string[];
+  priority: string;
+  dueDate: string | null;
+  checklist: { text: string; done: boolean }[];
+  attachments: string[];
+  parentCardId: string | null;
+  storyId: string | null;
+  epicId: string | null;
+  sprintId: string | null;
+  progress: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  archivedAt: string | null;
+}
 
-// Constants
-const columns = [
-  { id: 'backlog', label: 'Backlog', dotColor: 'bg-gray-500', borderColor: 'border-t-gray-500' },
-  { id: 'in_progress', label: 'In Progress', dotColor: 'bg-blue-500', borderColor: 'border-t-blue-500' },
-  { id: 'review', label: 'Review', dotColor: 'bg-amber-500', borderColor: 'border-t-amber-500' },
-  { id: 'done', label: 'Done', dotColor: 'bg-green-500', borderColor: 'border-t-green-500' },
-];
+interface BoardTemplate {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  columns: BoardColumn[];
+}
 
+interface CardComment {
+  id: string;
+  cardId: string;
+  author: string;
+  content: string;
+  createdAt: string;
+}
+
+interface CardHistoryEntry {
+  id: string;
+  cardId: string;
+  action: string;
+  by: string;
+  fromValue: string | null;
+  toValue: string | null;
+  timestamp: string;
+}
+
+// ─── Constants ──────────────────────────────────────────────────
 const priorityConfig: Record<string, { border: string; dot: string; label: string }> = {
   critical: { border: 'border-l-red-500', dot: 'bg-red-500', label: 'Critical' },
   high: { border: 'border-l-amber-500', dot: 'bg-amber-500', label: 'High' },
@@ -50,35 +84,153 @@ const priorityConfig: Record<string, { border: string; dot: string; label: strin
   low: { border: 'border-l-gray-600', dot: 'bg-gray-600', label: 'Low' },
 };
 
-
-function norm(t: Task): Task {
-  return { ...t, assignedTo: t.assignedTo || t.assigned_to, storyId: t.storyId || t.story_id,
-    sprintId: t.sprintId || t.sprint_id, createdAt: t.createdAt || t.created_at,
-    completedAt: t.completedAt || t.completed_at, estimatedHours: t.estimatedHours || t.estimated_hours,
-    tags: t.tags || '', notes: t.notes || '' };
+function timeAgo(d?: string | null): string {
+  if (!d) return '';
+  const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
+  if (m < 1) return 'now';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
 }
 
-function timeAgo(d?: string): string {
-  if (!d) return ''; const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
-  if (m < 1) return 'now'; if (m < 60) return `${m}m`; const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`; return `${Math.floor(h / 24)}d`;
-}
-
-// ─── Task Detail Modal ──────────────────────────────────────────
-function TaskDetailModal({ task, onClose, onSave, onDelete }: {
-  task: Task; onClose: () => void;
-  onSave: (t: Task) => void; onDelete: (id: string) => void;
+// ─── New Board Modal ────────────────────────────────────────────
+function NewBoardModal({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (name: string, template: BoardTemplate) => void;
 }) {
-  const [form, setForm] = useState({ ...task });
-  const [tab, setTab] = useState<'details' | 'checklist' | 'notes' | 'dispatch'>('details');
-  const [checklist, setChecklist] = useState<{ text: string; done: boolean }[]>(() => {
-    try { const parsed = JSON.parse(task.notes || '[]'); return Array.isArray(parsed) ? parsed.filter((c: { text?: string }) => c && typeof c.text === 'string') as { text: string; done: boolean }[] : []; }
-    catch { return []; }
-  });
+  const [templates, setTemplates] = useState<BoardTemplate[]>([]);
+  const [selected, setSelected] = useState<BoardTemplate | null>(null);
+  const [name, setName] = useState('');
+
+  useEffect(() => {
+    fetch('/api/boards/templates').then(r => r.json()).then(setTemplates).catch(console.error);
+  }, []);
+
+  const handleCreate = () => {
+    if (!name.trim() || !selected) return;
+    onCreate(name.trim(), selected);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={onClose}>
+      <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-4" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold text-gray-200">New Board</h3>
+
+        <input
+          type="text"
+          placeholder="Board name"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500"
+          autoFocus
+        />
+
+        <div>
+          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Choose template</div>
+          <div className="grid grid-cols-2 gap-2">
+            {templates.map(t => (
+              <button
+                key={t.id}
+                onClick={() => { setSelected(t); if (!name) setName(t.name); }}
+                className={`text-left p-3 rounded-lg border transition-colors ${
+                  selected?.id === t.id
+                    ? 'border-amber-500/50 bg-amber-500/5'
+                    : 'border-[#1e1e21] bg-[#0a0a0b] hover:border-[#333]'
+                }`}
+              >
+                <div className="text-xs font-medium text-gray-200">{t.name}</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">{t.description}</div>
+                <div className="flex gap-1 mt-2 flex-wrap">
+                  {t.columns.map(c => (
+                    <span key={c.id} className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: `${c.color}20`, color: c.color }}>
+                      {c.name}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={handleCreate}
+            disabled={!name.trim() || !selected}
+            className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Create Board
+          </button>
+          <button onClick={onClose} className="flex-1 px-4 py-2 text-xs text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Card Detail Modal ──────────────────────────────────────────
+function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }: {
+  card: Card;
+  boardId: string;
+  columns: BoardColumn[];
+  onClose: () => void;
+  onUpdate: (card: Card) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [form, setForm] = useState({ ...card });
+  const [tab, setTab] = useState<'details' | 'checklist' | 'comments' | 'history' | 'dispatch'>('details');
+  const [checklist, setChecklist] = useState<{ text: string; done: boolean }[]>(card.checklist || []);
   const [newCheckItem, setNewCheckItem] = useState('');
+  const [comments, setComments] = useState<CardComment[]>([]);
+  const [history, setHistory] = useState<CardHistoryEntry[]>([]);
+  const [newComment, setNewComment] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchResult, setDispatchResult] = useState<{ ok: boolean; output: string; duration?: number; agentId?: string } | null>(null);
+
+  // Load comments and history on mount
+  useEffect(() => {
+    fetch(`/api/boards/${boardId}/cards/${card.id}`).then(r => r.json()).then(data => {
+      if (data.history) setHistory(data.history);
+    }).catch(console.error);
+
+    fetch(`/api/boards/${boardId}/cards/${card.id}/comments`).then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setComments(data);
+    }).catch(console.error);
+  }, [boardId, card.id]);
+
+  const handleSave = async () => {
+    const updates: Record<string, unknown> = {};
+    if (form.title !== card.title) updates.title = form.title;
+    if (form.description !== card.description) updates.description = form.description;
+    if (form.column !== card.column) updates.column = form.column;
+    if (form.assignee !== card.assignee) updates.assignee = form.assignee;
+    if (form.priority !== card.priority) updates.priority = form.priority;
+    if (form.dueDate !== card.dueDate) updates.dueDate = form.dueDate;
+    if (JSON.stringify(checklist) !== JSON.stringify(card.checklist)) updates.checklist = checklist;
+    if (JSON.stringify(form.labels) !== JSON.stringify(card.labels)) updates.labels = form.labels;
+
+    if (Object.keys(updates).length > 0) {
+      await fetch(`/api/boards/${boardId}/cards/${card.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+    }
+    onUpdate({ ...form, checklist });
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim()) return;
+    const res = await fetch(`/api/boards/${boardId}/cards/${card.id}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: newComment.trim() }),
+    });
+    const comment = await res.json();
+    setComments([...comments, comment]);
+    setNewComment('');
+  };
 
   const handleDispatch = async () => {
     setDispatching(true);
@@ -86,8 +238,9 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
     setTab('dispatch');
     try {
       const res = await fetch('/api/dispatch', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: form.id }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId: card.id, taskId: card.id }),
       });
       const data = await res.json();
       setDispatchResult({
@@ -97,7 +250,8 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
         agentId: data.agentId,
       });
       if (data.success) {
-        setForm(prev => ({ ...prev, status: 'done' }));
+        const doneCol = columns.find(c => /^(done|deployed|resolved|published|closed)$/i.test(c.id));
+        if (doneCol) setForm(prev => ({ ...prev, column: doneCol.id }));
       }
     } catch (err) {
       setDispatchResult({ ok: false, output: String(err) });
@@ -105,14 +259,13 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
     setDispatching(false);
   };
 
-  const handleSave = () => {
-    const notes = checklist.length > 0 ? JSON.stringify(checklist) : form.notes;
-    onSave({ ...form, notes });
+  const addCheckItem = () => {
+    if (!newCheckItem.trim()) return;
+    setChecklist([...checklist, { text: newCheckItem.trim(), done: false }]);
+    setNewCheckItem('');
   };
-
-  const addCheckItem = () => { if (!newCheckItem.trim()) return; setChecklist([...checklist, { text: newCheckItem.trim(), done: false }]); setNewCheckItem(''); };
-  const toggleCheck = (i: number) => { setChecklist(checklist.map((c, idx) => idx === i ? { ...c, done: !c.done } : c)); };
-  const removeCheck = (i: number) => { setChecklist(checklist.filter((_, idx) => idx !== i)); };
+  const toggleCheck = (i: number) => setChecklist(checklist.map((c, idx) => idx === i ? { ...c, done: !c.done } : c));
+  const removeCheck = (i: number) => setChecklist(checklist.filter((_, idx) => idx !== i));
   const checkDone = checklist.filter(c => c.done).length;
 
   return (
@@ -123,37 +276,38 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
           <div className="flex-1">
             <input type="text" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
               className="w-full text-base font-semibold text-gray-100 bg-transparent focus:outline-none" />
-            <div className="text-[10px] text-gray-600 mt-0.5">{form.id} • {timeAgo(form.createdAt)}</div>
+            <div className="text-[10px] text-gray-600 mt-0.5">{form.id} {timeAgo(form.createdAt)}</div>
           </div>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-lg ml-4">×</button>
         </div>
 
         {/* Toolbar */}
         <div className="px-5 py-2 border-b border-[#1e1e21] flex flex-wrap gap-1.5 shrink-0">
-          <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
+          <select value={form.column} onChange={e => setForm({ ...form, column: e.target.value })}
             className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
-            {columns.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}
             className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
             {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
-          <input type="text" placeholder="@agent" value={form.assignedTo || ''} onChange={e => setForm({ ...form, assignedTo: e.target.value })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-24 focus:outline-none focus:border-amber-500" />
-          <input type="text" placeholder="Sprint" value={form.sprintId || ''} onChange={e => setForm({ ...form, sprintId: e.target.value })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-20 focus:outline-none focus:border-amber-500" />
-          <input type="text" placeholder="Story" value={form.storyId || ''} onChange={e => setForm({ ...form, storyId: e.target.value })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-20 focus:outline-none focus:border-amber-500" />
-          <input type="text" placeholder="Tags" value={form.tags || ''} onChange={e => setForm({ ...form, tags: e.target.value })}
-            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 flex-1 focus:outline-none focus:border-amber-500" />
+          <select value={form.assignee || ''} onChange={e => setForm({ ...form, assignee: e.target.value || null })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500">
+            <option value="">Unassigned</option>
+            {AGENT_ROSTER.map(a => <option key={a.id} value={a.id}>{a.emoji} {a.name}</option>)}
+          </select>
+          <input type="date" value={form.dueDate || ''} onChange={e => setForm({ ...form, dueDate: e.target.value || null })}
+            className="px-2 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none focus:border-amber-500" />
         </div>
 
         {/* Tabs */}
         <div className="px-5 pt-1 flex gap-0.5 border-b border-[#1e1e21] shrink-0">
-          {(['details', 'checklist', 'notes', 'dispatch'] as const).map(t => (
+          {(['details', 'checklist', 'comments', 'history', 'dispatch'] as const).map(t => (
             <button key={t} data-tab={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 text-[11px] rounded-t capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
-              {t === 'dispatch' ? '▶ Dispatch' : t}{t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
+              {t === 'dispatch' ? '▶ Dispatch' : t}
+              {t === 'checklist' && checklist.length > 0 ? ` (${checkDone}/${checklist.length})` : ''}
+              {t === 'comments' && comments.length > 0 ? ` (${comments.length})` : ''}
             </button>
           ))}
         </div>
@@ -165,22 +319,22 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
               <div>
                 <label className="block text-[10px] text-gray-500 uppercase mb-1">Description</label>
                 <textarea rows={8} value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })}
-                  placeholder="Task description... (markdown supported)"
+                  placeholder="Card description... (markdown supported)"
                   className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 resize-none leading-relaxed" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] text-gray-500 uppercase mb-1">Est. Hours</label>
-                  <input type="number" value={form.estimatedHours || ''} onChange={e => setForm({ ...form, estimatedHours: parseInt(e.target.value) || undefined })}
-                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
+              {form.description && (
+                <div className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
+                  <MarkdownView content={form.description} maxHeight="max-h-[30vh]" />
                 </div>
-                <div>
-                  <label className="block text-[10px] text-gray-500 uppercase mb-1">Completed</label>
-                  <div className="px-3 py-1.5 text-xs text-gray-500">{form.completedAt ? timeAgo(form.completedAt) + ' ago' : '—'}</div>
-                </div>
+              )}
+              <div className="grid grid-cols-3 gap-3 text-[11px]">
+                <div><span className="text-gray-600">Created:</span> <span className="text-gray-400">{timeAgo(form.createdAt)}</span></div>
+                <div><span className="text-gray-600">Updated:</span> <span className="text-gray-400">{timeAgo(form.updatedAt)}</span></div>
+                <div><span className="text-gray-600">Completed:</span> <span className="text-gray-400">{form.completedAt ? timeAgo(form.completedAt) : '—'}</span></div>
               </div>
             </div>
           )}
+
           {tab === 'checklist' && (
             <div className="space-y-2">
               {checklist.length > 0 && (
@@ -205,36 +359,65 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
               </div>
             </div>
           )}
-          {tab === 'notes' && (
-            <div>
-              <MarkdownView content={form.notes || ''} defaultView="rendered" maxHeight="max-h-[40vh]" />
-              <textarea rows={8} value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })}
-                placeholder="Notes, code snippets, links..."
-                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 font-mono focus:outline-none focus:border-amber-500 focus-visible:outline-none resize-none leading-relaxed mt-2" />
+
+          {tab === 'comments' && (
+            <div className="space-y-3">
+              {comments.length === 0 && <div className="text-xs text-gray-600 text-center py-4">No comments yet</div>}
+              {comments.map(c => (
+                <div key={c.id} className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-xs">{AGENT_EMOJIS[c.author] || '👤'}</span>
+                    <span className="text-[11px] text-gray-300 font-medium capitalize">{c.author}</span>
+                    <span className="text-[10px] text-gray-600">{timeAgo(c.createdAt)}</span>
+                  </div>
+                  <div className="text-xs text-gray-400">{c.content}</div>
+                </div>
+              ))}
+              <div className="flex gap-2 mt-2">
+                <input type="text" placeholder="Add comment..." value={newComment} onChange={e => setNewComment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddComment()}
+                  className="flex-1 px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-300 focus:outline-none focus:border-amber-500" />
+                <button onClick={handleAddComment} className="px-3 py-1.5 text-[11px] bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200">Send</button>
+              </div>
             </div>
           )}
+
+          {tab === 'history' && (
+            <div className="space-y-1.5">
+              {history.length === 0 && <div className="text-xs text-gray-600 text-center py-4">No history</div>}
+              {history.map(h => (
+                <div key={h.id} className="flex items-center gap-2 text-[11px] px-2 py-1.5 bg-[#0a0a0b] rounded">
+                  <span>{AGENT_EMOJIS[h.by] || '👤'}</span>
+                  <span className="text-gray-400 capitalize">{h.by}</span>
+                  <span className="text-gray-600">{h.action}</span>
+                  {h.fromValue && <span className="text-gray-700">{h.fromValue}</span>}
+                  {h.fromValue && h.toValue && <span className="text-gray-700">→</span>}
+                  {h.toValue && <span className="text-gray-400">{h.toValue}</span>}
+                  <span className="text-gray-700 ml-auto">{timeAgo(h.timestamp)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {tab === 'dispatch' && (
             <div className="space-y-3">
-              {/* Dispatch info */}
               <div className="bg-[#0a0a0b] rounded-lg border border-[#1e1e21] p-3">
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Dispatch Info</div>
                 <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div><span className="text-gray-600">Agent:</span> <span className="text-amber-400">@{form.assignedTo || 'main'}</span></div>
-                  <div><span className="text-gray-600">Priority:</span> <span className="text-gray-300">{form.priority || 'medium'}</span></div>
-                  <div><span className="text-gray-600">Status:</span> <span className="text-gray-300">{form.status}</span></div>
-                  <div><span className="text-gray-600">Tags:</span> <span className="text-gray-300">{form.tags || '—'}</span></div>
+                  <div><span className="text-gray-600">Agent:</span> <span className="text-amber-400">@{form.assignee || 'main'}</span></div>
+                  <div><span className="text-gray-600">Priority:</span> <span className="text-gray-300">{form.priority}</span></div>
+                  <div><span className="text-gray-600">Column:</span> <span className="text-gray-300">{columns.find(c => c.id === form.column)?.name || form.column}</span></div>
+                  <div><span className="text-gray-600">Labels:</span> <span className="text-gray-300">{form.labels?.join(', ') || '—'}</span></div>
                 </div>
               </div>
 
-              {/* Run button */}
               {!dispatching && !dispatchResult && (
                 <button onClick={handleDispatch}
                   className="w-full py-3 text-sm font-medium bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-400 flex items-center justify-center gap-2">
-                  <span>▶</span> Run Task — Dispatch to @{form.assignedTo || 'main'}
+                  <span>▶</span> Run Task — Dispatch to @{form.assignee || 'main'}
                 </button>
               )}
 
-              {/* Running state */}
               {dispatching && (
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4 text-center">
                   <div className="flex items-center justify-center gap-2 mb-2">
@@ -244,16 +427,15 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
                       <span className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </span>
                   </div>
-                  <div className="text-sm text-amber-400">Agent @{form.assignedTo || 'main'} executing...</div>
+                  <div className="text-sm text-amber-400">Agent @{form.assignee || 'main'} executing...</div>
                   <div className="text-[10px] text-gray-600 mt-1">This may take up to 2 minutes</div>
                 </div>
               )}
 
-              {/* Result */}
               {dispatchResult && (
                 <div className={`rounded-lg border p-4 ${dispatchResult.ok ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-lg ${dispatchResult.ok ? '' : ''}`}>{dispatchResult.ok ? '✅' : '❌'}</span>
+                    <span className="text-lg">{dispatchResult.ok ? '✅' : '❌'}</span>
                     <div>
                       <div className={`text-sm font-medium ${dispatchResult.ok ? 'text-green-400' : 'text-red-400'}`}>
                         {dispatchResult.ok ? 'Task Completed' : 'Task Failed'}
@@ -265,7 +447,6 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
                     </div>
                   </div>
                   <MarkdownView content={dispatchResult.output} maxHeight="max-h-60" />
-                  {/* Retry button if failed */}
                   {!dispatchResult.ok && (
                     <button onClick={() => { setDispatchResult(null); handleDispatch(); }}
                       className="mt-3 px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">
@@ -280,14 +461,16 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
 
         {/* Footer */}
         <div className="px-5 py-2.5 border-t border-[#1e1e21] flex items-center justify-between shrink-0">
-          <div>{confirmDelete ? (
-            <div className="flex gap-2">
-              <button onClick={() => onDelete(form.id)} className="px-3 py-1 text-[11px] bg-red-500/20 text-red-400 rounded">Confirm</button>
-              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1 text-[11px] text-gray-500">Cancel</button>
-            </div>
-          ) : (
-            <button onClick={() => setConfirmDelete(true)} className="px-3 py-1 text-[11px] text-gray-600 hover:text-red-400">Delete</button>
-          )}</div>
+          <div>
+            {confirmDelete ? (
+              <div className="flex gap-2">
+                <button onClick={() => onDelete(form.id)} className="px-3 py-1 text-[11px] bg-red-500/20 text-red-400 rounded">Confirm</button>
+                <button onClick={() => setConfirmDelete(false)} className="px-3 py-1 text-[11px] text-gray-500">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(true)} className="px-3 py-1 text-[11px] text-gray-600 hover:text-red-400">Delete</button>
+            )}
+          </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
             <button onClick={handleSave} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Save</button>
@@ -298,319 +481,391 @@ function TaskDetailModal({ task, onClose, onSave, onDelete }: {
   );
 }
 
+// ─── New Card Inline ────────────────────────────────────────────
+function NewCardInline({ columnId, boardId, onCreated }: {
+  columnId: string;
+  boardId: string;
+  onCreated: () => void;
+}) {
+  const [show, setShow] = useState(false);
+  const [title, setTitle] = useState('');
+  const [priority, setPriority] = useState('medium');
+
+  const handleCreate = async () => {
+    if (!title.trim()) return;
+    await fetch(`/api/boards/${boardId}/cards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title.trim(), column: columnId, priority }),
+    });
+    setTitle('');
+    setPriority('medium');
+    setShow(false);
+    onCreated();
+  };
+
+  if (!show) {
+    return (
+      <button onClick={() => setShow(true)}
+        className="w-full text-left px-2.5 py-1.5 text-[11px] text-gray-600 hover:text-amber-400 rounded hover:bg-[#141416]">
+        + Add card
+      </button>
+    );
+  }
+
+  return (
+    <div className="p-2 space-y-1.5">
+      <input type="text" placeholder="Card title..." value={title} onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setShow(false); }}
+        className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500"
+        autoFocus />
+      <div className="flex items-center gap-1.5">
+        <select value={priority} onChange={e => setPriority(e.target.value)}
+          className="px-1.5 py-1 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[10px] text-gray-300 focus:outline-none">
+          {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <button onClick={handleCreate} className="px-2.5 py-1 text-[10px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Add</button>
+        <button onClick={() => setShow(false)} className="px-2.5 py-1 text-[10px] text-gray-500">×</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────────
-export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [epicsData, setEpicsData] = useState<Epic[]>([]);
-  const [storiesData, setStoriesData] = useState<Story[]>([]);
-  const [sprintsData, setSprintsData] = useState<Sprint[]>([]);
-  const [view, setView] = useState<BoardView>('kanban');
-  const [showCreate, setShowCreate] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+export default function BoardsPage() {
+  const [boardsList, setBoardsList] = useState<Board[]>([]);
+  const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
+  const [activeBoard, setActiveBoard] = useState<(Board & { cards: Card[] }) | null>(null);
+  const [showNewBoard, setShowNewBoard] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [filter, setFilter] = useState({ search: '', assignee: '', priority: '' });
-  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '', sprintId: '', storyId: '', tags: '', estimatedHours: '' });
-  const [showNewSprint, setShowNewSprint] = useState(false);
-  const [showNewEpic, setShowNewEpic] = useState(false);
-  const [newSprint, setNewSprint] = useState({ name: '', startDate: '', endDate: '' });
-  const [newEpic, setNewEpic] = useState({ title: '', priority: 'medium', notes: '' });
+  const [loading, setLoading] = useState(true);
 
-  const handleCreateSprint = async () => {
-    if (!newSprint.name) return;
-    await fetch('/api/sprints', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newSprint) });
-    setShowNewSprint(false); setNewSprint({ name: '', startDate: '', endDate: '' }); fetchTasks();
-  };
-
-  const handleCreateEpic = async () => {
-    if (!newEpic.title) return;
-    await fetch('/api/epics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newEpic) });
-    setShowNewEpic(false); setNewEpic({ title: '', priority: 'medium', notes: '' }); fetchTasks();
-  };
-
-  const fetchTasks = useCallback(() => {
-    fetch('/api/board/sync?project=clawhalla').then(r => r.json()).then(data => {
-      setTasks((data.tasks || []).map((t: Task) => norm(t)));
-      setEpicsData(data.epics || []); setStoriesData(data.stories || []); setSprintsData(data.sprints || []);
-    }).catch(console.error);
+  // Fetch boards list
+  const fetchBoards = useCallback(async () => {
+    try {
+      const res = await fetch('/api/boards');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setBoardsList(data.map((b: Board & { columns: string | BoardColumn[] }) => ({
+          ...b,
+          columns: typeof b.columns === 'string' ? JSON.parse(b.columns) : b.columns,
+        })));
+      }
+    } catch (err) { console.error('[boards] fetch error:', err); }
   }, []);
 
-  useEffect(() => { fetchTasks(); const i = setInterval(fetchTasks, 30000); return () => clearInterval(i); }, [fetchTasks]);
-  useEffect(() => { let es: EventSource | null = null; try { es = new EventSource('/api/sse'); es.onmessage = (e) => { const d = JSON.parse(e.data); if (d.type === 'file_change') fetchTasks(); }; } catch {} return () => { if (es) es.close(); }; }, [fetchTasks]);
+  // Fetch active board with cards
+  const fetchActiveBoard = useCallback(async (boardId: string) => {
+    try {
+      const res = await fetch(`/api/boards/${boardId}`);
+      const data = await res.json();
+      if (data.id) {
+        setActiveBoard(data);
+      }
+    } catch (err) { console.error('[boards] fetch board error:', err); }
+    setLoading(false);
+  }, []);
 
-  const filtered = tasks.filter(t => {
-    if (filter.search && !t.title.toLowerCase().includes(filter.search.toLowerCase())) return false;
-    if (filter.assignee && t.assignedTo !== filter.assignee) return false;
-    if (filter.priority && t.priority !== filter.priority) return false;
+  // Initial load
+  useEffect(() => {
+    fetchBoards().then(() => setLoading(false));
+  }, [fetchBoards]);
+
+  // When boards list loads, select first board
+  useEffect(() => {
+    if (boardsList.length > 0 && !activeBoardId) {
+      setActiveBoardId(boardsList[0].id);
+    }
+  }, [boardsList, activeBoardId]);
+
+  // When active board changes, fetch it
+  useEffect(() => {
+    if (activeBoardId) {
+      fetchActiveBoard(activeBoardId);
+    } else {
+      setActiveBoard(null);
+    }
+  }, [activeBoardId, fetchActiveBoard]);
+
+  // SSE for real-time updates
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/sse');
+      es.onmessage = () => {
+        fetchBoards();
+        if (activeBoardId) fetchActiveBoard(activeBoardId);
+      };
+      es.onerror = () => { es?.close(); };
+    } catch { /* SSE not available */ }
+    return () => { if (es) es.close(); };
+  }, [fetchBoards, fetchActiveBoard, activeBoardId]);
+
+  // Polling fallback
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchBoards();
+      if (activeBoardId) fetchActiveBoard(activeBoardId);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchBoards, fetchActiveBoard, activeBoardId]);
+
+  // Create board from template
+  const handleCreateBoard = async (name: string, template: BoardTemplate) => {
+    try {
+      const res = await fetch('/api/boards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, type: template.type, columns: template.columns }),
+      });
+      const newBoard = await res.json();
+      setShowNewBoard(false);
+      await fetchBoards();
+      setActiveBoardId(newBoard.id);
+    } catch (err) { console.error('[boards] create error:', err); }
+  };
+
+  // Drag and drop
+  const onDragStart = (e: DragEvent, cardId: string) => {
+    e.dataTransfer.setData('text/plain', cardId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const onDragOver = (e: DragEvent, col: string) => {
+    e.preventDefault();
+    setDragOverColumn(col);
+  };
+
+  const onDrop = async (e: DragEvent, column: string) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    const cardId = e.dataTransfer.getData('text/plain');
+    if (!cardId || !activeBoardId) return;
+
+    // Optimistic update
+    setActiveBoard(prev => {
+      if (!prev) return prev;
+      return { ...prev, cards: prev.cards.map(c => c.id === cardId ? { ...c, column } : c) };
+    });
+
+    await fetch(`/api/boards/${activeBoardId}/cards/${cardId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ column }),
+    });
+  };
+
+  // Card update handler
+  const handleCardUpdate = (updatedCard: Card) => {
+    setSelectedCard(null);
+    if (activeBoardId) fetchActiveBoard(activeBoardId);
+  };
+
+  // Card delete handler
+  const handleCardDelete = async (cardId: string) => {
+    if (!activeBoardId) return;
+    await fetch(`/api/boards/${activeBoardId}/cards/${cardId}`, { method: 'DELETE' });
+    setSelectedCard(null);
+    fetchActiveBoard(activeBoardId);
+  };
+
+  // Filter cards
+  const cards = activeBoard?.cards || [];
+  const filteredCards = cards.filter(c => {
+    if (filter.search && !c.title.toLowerCase().includes(filter.search.toLowerCase())) return false;
+    if (filter.assignee && c.assignee !== filter.assignee) return false;
+    if (filter.priority && c.priority !== filter.priority) return false;
     return true;
   });
 
-  const onDragStart = (e: DragEvent, id: string) => { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; };
-  const onDragOver = (e: DragEvent, col: string) => { e.preventDefault(); setDragOverColumn(col); };
-  const onDrop = (e: DragEvent, status: string) => { e.preventDefault(); setDragOverColumn(null); const id = e.dataTransfer.getData('text/plain'); if (id) updateStatus(id, status); };
+  const columns = activeBoard?.columns || [];
+  const assignees = [...new Set(cards.map(c => c.assignee).filter(Boolean))] as string[];
 
-  const updateStatus = async (id: string, status: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
-    await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
-  };
-
-  const handleSaveTask = async (task: Task) => {
-    await fetch(`/api/tasks/${task.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: task.title, description: task.description, status: task.status, priority: task.priority,
-        assignedTo: task.assignedTo, sprintId: task.sprintId, storyId: task.storyId, tags: task.tags, notes: task.notes, estimatedHours: task.estimatedHours }) });
-    setSelectedTask(null); fetchTasks();
-  };
-
-  const handleDeleteTask = async (id: string) => { await fetch(`/api/tasks/${id}`, { method: 'DELETE' }); setSelectedTask(null); fetchTasks(); };
-
-  const handleCreateTask = async () => {
-    await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newTask, estimatedHours: newTask.estimatedHours ? parseInt(newTask.estimatedHours) : null }) });
-    setShowCreate(false); setNewTask({ title: '', description: '', priority: 'medium', assignedTo: '', sprintId: '', storyId: '', tags: '', estimatedHours: '' }); fetchTasks();
-  };
-
-  const assignees = [...new Set(tasks.map(t => t.assignedTo).filter(Boolean))] as string[];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-7rem)]">
+        <div className="text-sm text-gray-500">Loading boards...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-3 shrink-0">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-gray-200">Board</h2>
-          <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
-            {(['kanban', 'sprints', 'epics'] as BoardView[]).map(v => (
-              <button key={v} onClick={() => setView(v)} className={`px-2.5 py-1 text-[11px] rounded capitalize ${view === v ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>{v}</button>
-            ))}
+          {/* Board Selector */}
+          <div className="flex items-center gap-1.5">
+            <select
+              value={activeBoardId || ''}
+              onChange={e => setActiveBoardId(e.target.value)}
+              className="px-2.5 py-1.5 bg-[#111113] border border-[#1e1e21] rounded-lg text-sm font-semibold text-gray-200 focus:outline-none focus:border-amber-500 appearance-none cursor-pointer"
+            >
+              {boardsList.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+            {activeBoard && (
+              <span className="text-[10px] text-gray-600 capitalize">{activeBoard.type}</span>
+            )}
           </div>
+
+          {/* Board stats */}
+          {activeBoard && (
+            <div className="flex items-center gap-3 text-[10px] text-gray-600">
+              <span>{cards.length} cards</span>
+              <span>{cards.filter(c => {
+                const doneCol = columns.find(col => /^(done|deployed|resolved|published|closed)$/i.test(col.id));
+                return doneCol && c.column === doneCol.id;
+              }).length} done</span>
+            </div>
+          )}
         </div>
+
         <div className="flex items-center gap-2">
+          {/* Filters */}
           <input type="text" placeholder="Search..." value={filter.search} onChange={e => setFilter({ ...filter, search: e.target.value })}
             className="px-2 py-1 bg-[#111113] border border-[#1e1e21] rounded text-[11px] text-gray-300 w-28 focus:outline-none focus:border-amber-500 placeholder-gray-600" />
           <select value={filter.assignee} onChange={e => setFilter({ ...filter, assignee: e.target.value })}
             className="px-2 py-1 bg-[#111113] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none">
-            <option value="">All</option>{assignees.map(a => <option key={a} value={a}>@{a}</option>)}
+            <option value="">All agents</option>
+            {assignees.map(a => <option key={a} value={a}>{AGENT_EMOJIS[a] || '🤖'} @{a}</option>)}
           </select>
           <select value={filter.priority} onChange={e => setFilter({ ...filter, priority: e.target.value })}
             className="px-2 py-1 bg-[#111113] border border-[#1e1e21] rounded text-[11px] text-gray-300 focus:outline-none">
-            <option value="">Priority</option>{Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            <option value="">Priority</option>
+            {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
-          <button onClick={() => setShowCreate(true)} className="px-3 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">+ New</button>
+          <button onClick={() => setShowNewBoard(true)}
+            className="px-3 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded hover:text-gray-200 border border-[#1e1e21]">
+            + Board
+          </button>
         </div>
       </div>
 
-      {/* KANBAN */}
-      {view === 'kanban' && (
-        <div className="grid grid-cols-4 gap-3 flex-1 min-h-0">
+      {/* Empty state — no boards */}
+      {boardsList.length === 0 && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            <div className="text-4xl">📋</div>
+            <div className="text-sm text-gray-300">No boards yet</div>
+            <div className="text-xs text-gray-600">Create your first board to start tracking work</div>
+            <button onClick={() => setShowNewBoard(true)}
+              className="px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded-lg hover:bg-amber-400">
+              Create Board
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Kanban Board */}
+      {activeBoard && columns.length > 0 && (
+        <div className="grid gap-3 flex-1 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
           {columns.map(col => {
-            const colTasks = filtered.filter(t => t.status === col.id);
+            const colCards = filteredCards.filter(c => c.column === col.id);
+            const isOverWip = col.wipLimit && colCards.length > col.wipLimit;
+
             return (
-              <div key={col.id} className={`bg-[#111113] rounded-lg border border-[#1e1e21] border-t-2 ${col.borderColor} flex flex-col min-h-0 ${dragOverColumn === col.id ? 'ring-1 ring-amber-500/30' : ''}`}
-                onDragOver={e => onDragOver(e, col.id)} onDragLeave={() => setDragOverColumn(null)} onDrop={e => onDrop(e, col.id)}>
+              <div
+                key={col.id}
+                className={`bg-[#111113] rounded-lg border border-[#1e1e21] border-t-2 flex flex-col min-h-0 ${
+                  dragOverColumn === col.id ? 'ring-1 ring-amber-500/30' : ''
+                } ${isOverWip ? 'border-t-red-500' : ''}`}
+                style={{ borderTopColor: isOverWip ? undefined : col.color }}
+                onDragOver={e => onDragOver(e, col.id)}
+                onDragLeave={() => setDragOverColumn(null)}
+                onDrop={e => onDrop(e, col.id)}
+              >
+                {/* Column header */}
                 <div className="px-3 py-2 flex items-center justify-between shrink-0 border-b border-[#1e1e21]">
-                  <div className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${col.dotColor}`} /><span className="text-xs font-medium text-gray-300">{col.label}</span></div>
-                  <span className="text-[10px] text-gray-600">{colTasks.length}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color || '#6b7280' }} />
+                    <span className="text-xs font-medium text-gray-300">{col.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-600">{colCards.length}</span>
+                    {col.wipLimit && (
+                      <span className={`text-[9px] px-1 py-0.5 rounded ${isOverWip ? 'bg-red-500/20 text-red-400' : 'bg-[#1a1a1d] text-gray-600'}`}>
+                        max {col.wipLimit}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Cards */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-                  {colTasks.map(task => (
-                    <div key={task.id} draggable onDragStart={e => onDragStart(e, task.id)}
-                      className={`bg-[#0a0a0b] rounded-lg p-2.5 border-l-2 ${priorityConfig[task.priority]?.border || 'border-l-gray-600'} cursor-pointer hover:bg-[#141416] group/card`}>
-                      <div className="flex items-start justify-between" onClick={() => setSelectedTask(task)}>
-                        <div className="text-[12px] text-gray-200 font-medium leading-tight flex-1">{task.title}</div>
-                        {task.status !== 'done' && task.assignedTo && (
-                          <button onClick={e => { e.stopPropagation(); setSelectedTask(task); setTimeout(() => { const el = document.querySelector('[data-tab="dispatch"]') as HTMLButtonElement; el?.click(); }, 100); }}
+                  {colCards.map(card => (
+                    <div
+                      key={card.id}
+                      draggable
+                      onDragStart={e => onDragStart(e, card.id)}
+                      className={`bg-[#0a0a0b] rounded-lg p-2.5 border-l-2 ${priorityConfig[card.priority]?.border || 'border-l-gray-600'} cursor-pointer hover:bg-[#141416] group/card`}
+                    >
+                      <div className="flex items-start justify-between" onClick={() => setSelectedCard(card)}>
+                        <div className="text-[12px] text-gray-200 font-medium leading-tight flex-1">{card.title}</div>
+                        {card.assignee && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setSelectedCard(card); setTimeout(() => { const el = document.querySelector('[data-tab="dispatch"]') as HTMLButtonElement; el?.click(); }, 100); }}
                             className="opacity-0 group-hover/card:opacity-100 text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded hover:bg-amber-500/30 shrink-0 ml-1"
-                            title="Dispatch to agent">▶</button>
+                            title="Dispatch to agent"
+                          >▶</button>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap" onClick={() => setSelectedTask(task)}>
-                        {task.assignedTo && <span className="flex items-center gap-1 text-[10px] text-amber-500">{AGENT_EMOJIS[task.assignedTo] && <span className="text-xs">{AGENT_EMOJIS[task.assignedTo]}</span>}@{task.assignedTo}</span>}
-                        {task.tags && task.tags.split(',').filter(Boolean).slice(0, 2).map(tag => <span key={tag} className="text-[9px] px-1 py-0.5 bg-[#1a1a1d] text-gray-500 rounded">{tag.trim()}</span>)}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap" onClick={() => setSelectedCard(card)}>
+                        {card.assignee && (
+                          <span className="flex items-center gap-1 text-[10px] text-amber-500">
+                            {AGENT_EMOJIS[card.assignee] && <span className="text-xs">{AGENT_EMOJIS[card.assignee]}</span>}
+                            @{card.assignee}
+                          </span>
+                        )}
+                        {card.labels?.slice(0, 2).map(label => (
+                          <span key={label} className="text-[9px] px-1 py-0.5 bg-[#1a1a1d] text-gray-500 rounded">{label}</span>
+                        ))}
+                        {card.checklist && card.checklist.length > 0 && (
+                          <span className="text-[9px] text-gray-600">
+                            ✓ {card.checklist.filter(c => c.done).length}/{card.checklist.length}
+                          </span>
+                        )}
+                        {card.dueDate && (
+                          <span className="text-[9px] text-gray-600">📅 {new Date(card.dueDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
+                        )}
                       </div>
                     </div>
                   ))}
-                  {colTasks.length === 0 && <div className="text-[10px] text-gray-700 text-center py-8">{dragOverColumn === col.id ? 'Drop here' : 'Empty'}</div>}
+                  {colCards.length === 0 && !dragOverColumn && (
+                    <div className="text-[10px] text-gray-700 text-center py-6">Empty</div>
+                  )}
+                  {dragOverColumn === col.id && colCards.length === 0 && (
+                    <div className="text-[10px] text-amber-500 text-center py-6">Drop here</div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
 
-      {/* SPRINTS */}
-      {view === 'sprints' && (
-        <div className="flex-1 overflow-y-auto space-y-3">
-          {sprintsData.map(sp => {
-            const ids = sp.storyIds || sp.story_ids; const stIds: string[] = ids ? (() => { try { return typeof ids === 'string' ? JSON.parse(ids) : ids; } catch { return []; } })() : [];
-            const st = filtered.filter(t => t.sprintId === sp.id || stIds.includes(t.storyId || ''));
-            const dn = st.filter(t => t.status === 'done').length; const pct = st.length > 0 ? Math.round((dn / st.length) * 100) : 0;
-            return (
-              <div key={sp.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4 group">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-semibold text-gray-200">{sp.name}</div>
-                    <span className="text-[10px] text-gray-600">{sp.startDate || sp.start_date} → {sp.endDate || sp.end_date}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${sp.status === 'done' ? 'bg-green-500/20 text-green-400' : sp.status === 'active' ? 'bg-blue-500/20 text-blue-400' : 'bg-gray-500/20 text-gray-400'}`}>{sp.status}</span>
-                    <span className="text-[10px] text-gray-500">{dn}/{st.length}</span>
-                    <select defaultValue={sp.status} onChange={async (e) => {
-                      await fetch('/api/sprints', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: sp.id, status: e.target.value }) }); fetchTasks();
-                    }} className="opacity-0 group-hover:opacity-100 px-1 py-0.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[9px] text-gray-400 focus:outline-none">
-                      <option value="planning">Planning</option><option value="active">Active</option><option value="done">Done</option>
-                    </select>
-                    <button onClick={async () => { await fetch(`/api/sprints?id=${sp.id}`, { method: 'DELETE' }); fetchTasks(); }}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400" title="Delete sprint">×</button>
-                  </div>
-                </div>
-                <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-3"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5">
-                  {st.map(task => (
-                    <div key={task.id} onClick={() => setSelectedTask(task)} className={`px-2.5 py-1.5 rounded border-l-2 ${priorityConfig[task.priority]?.border || 'border-l-gray-600'} bg-[#0a0a0b] cursor-pointer hover:bg-[#141416]`}>
-                      <div className="text-[11px] text-gray-300 truncate">{task.title}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${task.status === 'done' ? 'bg-green-500' : task.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-600'}`} />
-                        {task.assignedTo && <span className="text-[9px] text-gray-600">@{task.assignedTo}</span>}
-                      </div>
-                    </div>
-                  ))}
+                {/* Add card */}
+                <div className="shrink-0 border-t border-[#1e1e21]">
+                  <NewCardInline columnId={col.id} boardId={activeBoard.id} onCreated={() => fetchActiveBoard(activeBoard.id)} />
                 </div>
               </div>
             );
           })}
-          {/* New Sprint form */}
-          {showNewSprint ? (
-            <div className="bg-[#111113] rounded-lg border border-amber-500/30 p-4 space-y-3">
-              <div className="text-xs font-semibold text-gray-200">New Sprint</div>
-              <input type="text" placeholder="Sprint name" value={newSprint.name} onChange={e => setNewSprint({ ...newSprint, name: e.target.value })}
-                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" autoFocus />
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-gray-500 mb-1">Start Date</label>
-                  <input type="date" value={newSprint.startDate} onChange={e => setNewSprint({ ...newSprint, startDate: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-500 mb-1">End Date</label>
-                  <input type="date" value={newSprint.endDate} onChange={e => setNewSprint({ ...newSprint, endDate: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={handleCreateSprint} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
-                <button onClick={() => setShowNewSprint(false)} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowNewSprint(true)} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
-              + New Sprint
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* EPICS */}
-      {view === 'epics' && (
-        <div className="flex-1 overflow-y-auto space-y-3">
-          {epicsData.map(epic => {
-            const eS = storiesData.filter(s => (s.epicId || s.epic_id) === epic.id);
-            const dS = eS.filter(s => s.status === 'done').length; const pct = eS.length > 0 ? Math.round((dS / eS.length) * 100) : 0;
-            return (
-              <div key={epic.id} className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4 group">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-gray-200">{epic.title}</h3>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${epic.status === 'done' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>{epic.status}</span>
-                    <select defaultValue={epic.status} onChange={async (e) => {
-                      await fetch('/api/epics', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: epic.id, status: e.target.value }) }); fetchTasks();
-                    }} className="opacity-0 group-hover:opacity-100 px-1 py-0.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[9px] text-gray-400 focus:outline-none">
-                      <option value="active">Active</option><option value="done">Done</option><option value="backlog">Backlog</option>
-                    </select>
-                    <button onClick={async () => { await fetch(`/api/epics?id=${epic.id}`, { method: 'DELETE' }); fetchTasks(); }}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-gray-600 hover:text-red-400" title="Delete epic">×</button>
-                  </div>
-                </div>
-                {epic.notes && <p className="text-[10px] text-gray-500 mb-2">{epic.notes}</p>}
-                <div className="h-1 bg-[#1a1a1d] rounded-full overflow-hidden mb-2"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${pct}%` }} /></div>
-                <div className="text-[10px] text-gray-600 mb-3">{dS}/{eS.length} stories</div>
-                <div className="space-y-1">
-                  {eS.map(story => (
-                    <div key={story.id} className="flex items-center gap-2 px-2.5 py-1.5 bg-[#0a0a0b] rounded">
-                      <span className={`w-1.5 h-1.5 rounded-full ${story.status === 'done' ? 'bg-green-500' : 'bg-gray-600'}`} />
-                      <span className="text-[11px] text-gray-300 flex-1 truncate">{story.title}</span>
-                      {story.points && <span className="text-[9px] text-gray-600">{story.points}pt</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {/* New Epic form */}
-          {showNewEpic ? (
-            <div className="bg-[#111113] rounded-lg border border-amber-500/30 p-4 space-y-3">
-              <div className="text-xs font-semibold text-gray-200">New Epic</div>
-              <input type="text" placeholder="Epic title" value={newEpic.title} onChange={e => setNewEpic({ ...newEpic, title: e.target.value })}
-                className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" autoFocus />
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-gray-500 mb-1">Priority</label>
-                  <select value={newEpic.priority} onChange={e => setNewEpic({ ...newEpic, priority: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500">
-                    <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] text-gray-500 mb-1">Notes</label>
-                  <input type="text" placeholder="Optional notes" value={newEpic.notes} onChange={e => setNewEpic({ ...newEpic, notes: e.target.value })}
-                    className="w-full px-3 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={handleCreateEpic} className="px-4 py-1.5 text-[11px] font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
-                <button onClick={() => setShowNewEpic(false)} className="px-4 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowNewEpic(true)} className="w-full p-3 rounded-lg border border-dashed border-[#333] text-xs text-gray-500 hover:text-amber-400 hover:border-amber-500/30">
-              + New Epic
-            </button>
-          )}
         </div>
       )}
 
       {/* Modals */}
-      {selectedTask && <TaskDetailModal task={selectedTask} onClose={() => setSelectedTask(null)} onSave={handleSaveTask} onDelete={handleDeleteTask} />}
+      {selectedCard && activeBoard && (
+        <CardDetailModal
+          card={selectedCard}
+          boardId={activeBoard.id}
+          columns={columns}
+          onClose={() => setSelectedCard(null)}
+          onUpdate={handleCardUpdate}
+          onDelete={handleCardDelete}
+        />
+      )}
 
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setShowCreate(false)}>
-          <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-gray-200">New Task</h3>
-            <input type="text" placeholder="Task title" value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })}
-              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-sm text-gray-200 focus:outline-none focus:border-amber-500" />
-            <textarea placeholder="Description" rows={3} value={newTask.description} onChange={e => setNewTask({ ...newTask, description: e.target.value })}
-              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500 resize-none" />
-            <div className="grid grid-cols-2 gap-2">
-              <select value={newTask.priority} onChange={e => setNewTask({ ...newTask, priority: e.target.value })}
-                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none">
-                {Object.entries(priorityConfig).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-              <input type="text" placeholder="@agent" value={newTask.assignedTo} onChange={e => setNewTask({ ...newTask, assignedTo: e.target.value })}
-                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <input type="text" placeholder="Sprint" value={newTask.sprintId} onChange={e => setNewTask({ ...newTask, sprintId: e.target.value })}
-                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-              <input type="text" placeholder="Story" value={newTask.storyId} onChange={e => setNewTask({ ...newTask, storyId: e.target.value })}
-                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-              <input type="text" placeholder="Hours" value={newTask.estimatedHours} onChange={e => setNewTask({ ...newTask, estimatedHours: e.target.value })}
-                className="px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-            </div>
-            <input type="text" placeholder="Tags (comma sep)" value={newTask.tags} onChange={e => setNewTask({ ...newTask, tags: e.target.value })}
-              className="w-full px-3 py-2 bg-[#0a0a0b] border border-[#1e1e21] rounded text-xs text-gray-200 focus:outline-none focus:border-amber-500" />
-            <div className="flex gap-2 pt-1">
-              <button onClick={handleCreateTask} className="flex-1 px-4 py-2 text-xs font-medium bg-amber-500 text-gray-900 rounded hover:bg-amber-400">Create</button>
-              <button onClick={() => setShowCreate(false)} className="flex-1 px-4 py-2 text-xs text-gray-400 bg-[#1a1a1d] rounded">Cancel</button>
-            </div>
-          </div>
-        </div>
+      {showNewBoard && (
+        <NewBoardModal onClose={() => setShowNewBoard(false)} onCreate={handleCreateBoard} />
       )}
     </div>
   );

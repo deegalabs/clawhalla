@@ -180,7 +180,7 @@ const navSections = [
     label: 'Work',
     links: [
       { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
-      { href: '/tasks', label: 'Tasks', icon: TasksIcon },
+      { href: '/tasks', label: 'Boards', icon: TasksIcon },
       { href: '/projects', label: 'Projects', icon: ProjectsIcon },
       { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
       { href: '/factory', label: 'Factory', icon: PipelineIcon },
