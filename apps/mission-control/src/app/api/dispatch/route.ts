@@ -1,50 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import { db } from '@/lib/db';
-import { tasks, activities, costEvents } from '@/lib/schema';
+import { tasks, cards, cardHistory, activities, costEvents } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { requireAuth, isAuthError } from '@/lib/auth';
+import { broadcastBoardEvent } from '@/lib/events';
 
 // POST /api/dispatch — execute a task by dispatching it to an agent (auth required)
+// Supports both old taskId (tasks table) and new cardId (cards/boards engine)
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   try {
-    const { taskId } = await req.json();
+    const body = await req.json();
+    const { taskId, cardId } = body;
 
-    if (!taskId) {
-      return NextResponse.json({ ok: false, error: 'taskId required' }, { status: 400 });
+    if (!taskId && !cardId) {
+      return NextResponse.json({ ok: false, error: 'taskId or cardId required' }, { status: 400 });
     }
 
-    // 1. Get the task
-    const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
-    if (!task) {
-      return NextResponse.json({ ok: false, error: 'Task not found' }, { status: 404 });
+    // Resolve the work item — card (new) or task (legacy)
+    let title: string;
+    let description: string | null;
+    let priority: string | null;
+    let agentId: string;
+    let tags: string | null = null;
+    let notes: string | null = null;
+    let labels: string[] = [];
+    let resolvedCardId: string | null = null;
+    let resolvedTaskId: string | null = null;
+    let boardId: string | null = null;
+
+    if (cardId) {
+      const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
+      if (!card) {
+        return NextResponse.json({ ok: false, error: 'Card not found' }, { status: 404 });
+      }
+      title = card.title;
+      description = card.description;
+      priority = card.priority;
+      agentId = card.assignee || 'main';
+      labels = card.labels ? JSON.parse(card.labels) : [];
+      boardId = card.boardId;
+      resolvedCardId = cardId;
+    } else {
+      const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get();
+      if (!task) {
+        return NextResponse.json({ ok: false, error: 'Task not found' }, { status: 404 });
+      }
+      title = task.title || '';
+      description = task.description;
+      priority = task.priority;
+      agentId = task.assignedTo || 'main';
+      tags = task.tags;
+      notes = task.notes;
+      resolvedTaskId = taskId;
     }
 
-    const agentId = task.assignedTo || 'main';
+    // Mark as in-progress
+    if (resolvedCardId) {
+      db.update(cards).set({ column: 'doing', updatedAt: new Date() }).where(eq(cards.id, resolvedCardId)).run();
+      await db.insert(cardHistory).values({
+        id: `hist_${Date.now().toString(36)}_disp`,
+        cardId: resolvedCardId,
+        action: 'dispatched',
+        by: 'user',
+        fromValue: null,
+        toValue: agentId,
+        timestamp: new Date(),
+      });
+    } else if (resolvedTaskId) {
+      db.update(tasks).set({ status: 'doing', updatedAt: new Date() }).where(eq(tasks.id, resolvedTaskId)).run();
+    }
 
-    // 2. Update task status to doing
-    db.update(tasks)
-      .set({ status: 'doing', updatedAt: new Date() })
-      .where(eq(tasks.id, taskId))
-      .run();
-
-    // 3. Log activity: task started
+    // Log activity: task started
     db.insert(activities).values({
       id: `act_${Date.now().toString(36)}_start`,
       agentId,
       action: 'task_started',
-      target: task.title,
+      target: title,
       details: `Dispatched to ${agentId}`,
       timestamp: new Date(),
     }).run();
 
-    // 4. Build context prompt for the agent
-    const prompt = buildPrompt(task);
+    // Build context prompt
+    const prompt = buildPrompt({ title, description, priority, tags, notes, labels });
 
-    // 5. Execute via openclaw agent
+    // Execute via openclaw agent
     let output = '';
     let success = false;
     const startTime = Date.now();
@@ -54,8 +97,6 @@ export async function POST(req: NextRequest) {
         `openclaw agent --agent ${agentId} --json -m "${prompt.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`,
         { encoding: 'utf-8', timeout: 120000 }
       );
-
-      // Parse response
       try {
         const parsed = JSON.parse(result);
         output = parsed.result?.content?.[0]?.text || parsed.response || result;
@@ -70,28 +111,55 @@ export async function POST(req: NextRequest) {
 
     const duration = Date.now() - startTime;
 
-    // 6. Update task with result
-    db.update(tasks)
-      .set({
-        status: success ? 'done' : 'blocked',
-        notes: `${task.notes || ''}\n\n--- Dispatch Result (${new Date().toISOString()}) ---\nAgent: ${agentId}\nDuration: ${Math.round(duration / 1000)}s\nStatus: ${success ? 'SUCCESS' : 'FAILED'}\n\n${output}`.trim(),
+    // Update work item with result
+    if (resolvedCardId) {
+      const doneColumn = success ? 'done' : 'blocked';
+      db.update(cards).set({
+        column: doneColumn,
+        description: `${description || ''}\n\n--- Dispatch Result (${new Date().toISOString()}) ---\nAgent: ${agentId}\nDuration: ${Math.round(duration / 1000)}s\nStatus: ${success ? 'SUCCESS' : 'FAILED'}\n\n${output}`.trim(),
         updatedAt: new Date(),
         completedAt: success ? new Date() : null,
-      })
-      .where(eq(tasks.id, taskId))
-      .run();
+      }).where(eq(cards.id, resolvedCardId)).run();
 
-    // 7. Log activity: task completed/blocked
+      await db.insert(cardHistory).values({
+        id: `hist_${Date.now().toString(36)}_res`,
+        cardId: resolvedCardId,
+        action: success ? 'completed' : 'blocked',
+        by: agentId,
+        fromValue: 'doing',
+        toValue: doneColumn,
+        timestamp: new Date(),
+      });
+
+      if (boardId) {
+        broadcastBoardEvent({
+          type: 'card.moved',
+          boardId,
+          cardId: resolvedCardId,
+          by: agentId,
+          data: { from: 'doing', to: doneColumn, title },
+        });
+      }
+    } else if (resolvedTaskId) {
+      db.update(tasks).set({
+        status: success ? 'done' : 'blocked',
+        notes: `${notes || ''}\n\n--- Dispatch Result (${new Date().toISOString()}) ---\nAgent: ${agentId}\nDuration: ${Math.round(duration / 1000)}s\nStatus: ${success ? 'SUCCESS' : 'FAILED'}\n\n${output}`.trim(),
+        updatedAt: new Date(),
+        completedAt: success ? new Date() : null,
+      }).where(eq(tasks.id, resolvedTaskId)).run();
+    }
+
+    // Log activity: task completed/blocked
     db.insert(activities).values({
       id: `act_${Date.now().toString(36)}_end`,
       agentId,
       action: success ? 'task_completed' : 'task_blocked',
-      target: task.title,
+      target: title,
       details: success ? `Completed in ${Math.round(duration / 1000)}s` : output.slice(0, 200),
       timestamp: new Date(),
     }).run();
 
-    // 8. Log cost event (estimate)
+    // Log cost event (estimate)
     const estimatedTokens = Math.round(prompt.length / 4) + Math.round(output.length / 4);
     db.insert(costEvents).values({
       id: `cost_${Date.now().toString(36)}`,
@@ -100,14 +168,15 @@ export async function POST(req: NextRequest) {
       action: 'dispatch',
       inputTokens: Math.round(prompt.length / 4),
       outputTokens: Math.round(output.length / 4),
-      estimatedCost: Math.round(estimatedTokens * 0.003), // rough estimate in cents
-      taskId,
+      estimatedCost: Math.round(estimatedTokens * 0.003),
+      taskId: resolvedTaskId || resolvedCardId,
       timestamp: new Date(),
     }).run();
 
     return NextResponse.json({
       ok: true,
-      taskId,
+      taskId: resolvedTaskId,
+      cardId: resolvedCardId,
       agentId,
       success,
       duration,
@@ -119,22 +188,20 @@ export async function POST(req: NextRequest) {
 }
 
 // Build a rich context prompt for the agent
-function buildPrompt(task: {
-  title: string | null;
+function buildPrompt(item: {
+  title: string;
   description: string | null;
   priority: string | null;
-  notes: string | null;
-  projectId: string | null;
   tags: string | null;
+  notes: string | null;
+  labels: string[];
 }): string {
-  const parts = [
-    `TASK: ${task.title}`,
-  ];
+  const parts = [`TASK: ${item.title}`];
 
-  if (task.description) parts.push(`DESCRIPTION: ${task.description}`);
-  if (task.priority) parts.push(`PRIORITY: ${task.priority}`);
-  if (task.projectId) parts.push(`PROJECT: ${task.projectId}`);
-  if (task.tags) parts.push(`TAGS: ${task.tags}`);
+  if (item.description) parts.push(`DESCRIPTION: ${item.description}`);
+  if (item.priority) parts.push(`PRIORITY: ${item.priority}`);
+  if (item.tags) parts.push(`TAGS: ${item.tags}`);
+  if (item.labels.length > 0) parts.push(`LABELS: ${item.labels.join(', ')}`);
 
   parts.push('');
   parts.push('INSTRUCTIONS:');
@@ -143,9 +210,9 @@ function buildPrompt(task: {
   parts.push('3. List any files created or modified');
   parts.push('4. If you cannot complete it, explain why');
 
-  if (task.notes) {
+  if (item.notes) {
     parts.push('');
-    parts.push(`CONTEXT/NOTES: ${task.notes}`);
+    parts.push(`CONTEXT/NOTES: ${item.notes}`);
   }
 
   return parts.join('\n');
