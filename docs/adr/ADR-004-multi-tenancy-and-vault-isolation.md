@@ -97,16 +97,16 @@ The open source repo IS the product that runs inside each SaaS container. The Sa
 ## Alternatives Considered
 
 ### 1. Single DB with row-level security (Postgres RLS)
-- **Pro:** Lower resource cost, simpler infrastructure
+- **Pro:** Lower resource cost, simpler infrastructure, enables cross-tenant analytics
 - **Con:** Requires migrating from SQLite to Postgres, complex RLS policies, agents can still bypass RLS if they access the DB directly
-- **Rejected:** SQLite is core to ClawHalla's simplicity. RLS doesn't protect against filesystem access.
+- **Deferred:** Not chosen as primary isolation, but may complement container isolation when cross-tenant queries are needed (admin dashboard, global analytics).
 
 ### 2. Database-per-tenant (multiple SQLite files)
 - **Pro:** Lower overhead than full containers
 - **Con:** Agents still share filesystem, gateway, and process. One compromised agent could access another tenant's SQLite file.
-- **Rejected:** Insufficient isolation boundary.
+- **Deferred:** Not sufficient as sole isolation boundary, but could be used within a container if one container serves multiple workspaces (Team plan).
 
 ### 3. Vault proxy (exec endpoint)
 - **Pro:** Agents never see secrets, server-side execution
 - **Con:** Limited flexibility, every integration needs proxy support, maintenance burden
-- **Decision:** Deferred. May implement within containers for defense-in-depth, but container isolation is the primary boundary.
+- **Deferred:** Likely needed in v2+ when agents call external APIs autonomously (DeFi, social). Defense-in-depth within the container, not a replacement for container isolation.
