@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execSync } from 'child_process';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const WORKSPACE = process.env.WORKSPACE_PATH || `${process.env.HOME}/.openclaw/workspace`;
 
@@ -55,6 +56,11 @@ If no recent research exists, note that and recommend what Mimir should research
 
 // POST /api/council/session — start a council session
 export async function POST(req: NextRequest) {
+  const rateLimitError = checkRateLimit('council', { maxConcurrent: 1, maxPerMinute: 3 });
+  if (rateLimitError) {
+    return NextResponse.json({ ok: false, error: rateLimitError }, { status: 429 });
+  }
+
   try {
     const body = await req.json().catch(() => ({}));
     const agentId = body.agentId || 'saga';

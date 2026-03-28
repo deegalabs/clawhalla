@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { boards, cards, cardHistory } from '@/lib/schema';
-import { eq, and, asc, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, asc, isNull, isNotNull, sql } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
 
 function nanoid(prefix = 'card') {
@@ -18,19 +18,19 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   const assignee = url.searchParams.get('assignee');
   const archived = url.searchParams.get('archived') === 'true';
 
-  let query = db
+  const conditions = [
+    eq(cards.boardId, boardId),
+    archived ? isNotNull(cards.archivedAt) : isNull(cards.archivedAt),
+  ];
+  if (column) conditions.push(eq(cards.column, column));
+  if (assignee) conditions.push(eq(cards.assignee, assignee));
+
+  const result = await db
     .select()
     .from(cards)
-    .where(and(
-      eq(cards.boardId, boardId),
-      archived ? isNotNull(cards.archivedAt) : isNull(cards.archivedAt),
-    ))
-    .orderBy(asc(cards.position));
-
-  let result = await query;
-
-  if (column) result = result.filter(c => c.column === column);
-  if (assignee) result = result.filter(c => c.assignee === assignee);
+    .where(and(...conditions))
+    .orderBy(asc(cards.position))
+    .limit(500);
 
   return NextResponse.json(
     result.map(c => ({
@@ -61,12 +61,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const cols = JSON.parse(board.columns);
   const column = body.column || cols[0]?.id || 'backlog';
 
-  // Get max position in column
-  const existing = await db
-    .select()
+  // Get max position in column (single query, not N+1)
+  const maxResult = db.select({ max: sql<number>`coalesce(max(${cards.position}), -1)` })
     .from(cards)
-    .where(and(eq(cards.boardId, boardId), eq(cards.column, column)));
-  const maxPos = existing.reduce((max, c) => Math.max(max, c.position), -1);
+    .where(and(eq(cards.boardId, boardId), eq(cards.column, column)))
+    .get();
+  const maxPos = maxResult?.max ?? -1;
 
   const now = new Date();
   const newCard = {

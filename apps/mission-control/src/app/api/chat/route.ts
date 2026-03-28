@@ -5,6 +5,7 @@ import { join } from 'path';
 import { db } from '@/lib/db';
 import { activities, agents as agentsTable } from '@/lib/schema';
 import { notify } from '@/lib/notify';
+import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
 
 const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
 
@@ -96,11 +97,17 @@ function extractTextFromResponse(raw: string): { text: string; meta?: Record<str
 // POST /api/chat — send message to an agent (or group in party mode)
 // Supports SSE streaming for real-time output
 export async function POST(req: NextRequest) {
+  const rateLimitError = checkRateLimit('chat', { maxConcurrent: 5, maxPerMinute: 20 });
+  if (rateLimitError) {
+    return NextResponse.json({ ok: false, error: rateLimitError }, { status: 429 });
+  }
+
   try {
     const body = await req.json();
     const { agentId, message, mode, agents: groupAgents, topic, model } = body;
 
     if (!message && !topic) {
+      releaseRateLimit('chat');
       return NextResponse.json({ ok: false, error: 'message or topic required' }, { status: 400 });
     }
 
@@ -126,10 +133,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (acceptsStream) {
+      // Release after stream setup (process spawned, not blocking)
+      releaseRateLimit('chat');
       return streamResponse(agent, enrichedMsg, model);
     }
-    return execAgent(agent, enrichedMsg, model);
+    const result = await execAgent(agent, enrichedMsg, model);
+    releaseRateLimit('chat');
+    return result;
   } catch (error) {
+    releaseRateLimit('chat');
     return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
   }
 }

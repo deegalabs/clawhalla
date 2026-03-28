@@ -5,12 +5,18 @@ import { tasks, cards, cardHistory, activities, costEvents } from '@/lib/schema'
 import { eq } from 'drizzle-orm';
 import { requireAuth, isAuthError } from '@/lib/auth';
 import { broadcastBoardEvent } from '@/lib/events';
+import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
 
 // POST /api/dispatch — execute a task by dispatching it to an agent (auth required)
 // Supports both old taskId (tasks table) and new cardId (cards/boards engine)
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
+
+  const rateLimitError = checkRateLimit('dispatch', { maxConcurrent: 3, maxPerMinute: 10 });
+  if (rateLimitError) {
+    return NextResponse.json({ ok: false, error: rateLimitError }, { status: 429 });
+  }
 
   try {
     const body = await req.json();
@@ -62,7 +68,7 @@ export async function POST(req: NextRequest) {
     if (resolvedCardId) {
       db.update(cards).set({ column: 'doing', updatedAt: new Date() }).where(eq(cards.id, resolvedCardId)).run();
       await db.insert(cardHistory).values({
-        id: `hist_${Date.now().toString(36)}_disp`,
+        id: `hist_${crypto.randomUUID()}_disp`,
         cardId: resolvedCardId,
         action: 'dispatched',
         by: 'user',
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     // Log activity: task started
     db.insert(activities).values({
-      id: `act_${Date.now().toString(36)}_start`,
+      id: `act_${crypto.randomUUID()}_start`,
       agentId,
       action: 'task_started',
       target: title,
@@ -134,7 +140,7 @@ export async function POST(req: NextRequest) {
       }).where(eq(cards.id, resolvedCardId)).run();
 
       await db.insert(cardHistory).values({
-        id: `hist_${Date.now().toString(36)}_res`,
+        id: `hist_${crypto.randomUUID()}_res`,
         cardId: resolvedCardId,
         action: success ? 'completed' : 'blocked',
         by: agentId,
@@ -163,7 +169,7 @@ export async function POST(req: NextRequest) {
 
     // Log activity: task completed/blocked
     db.insert(activities).values({
-      id: `act_${Date.now().toString(36)}_end`,
+      id: `act_${crypto.randomUUID()}_end`,
       agentId,
       action: success ? 'task_completed' : 'task_blocked',
       target: title,
@@ -174,7 +180,7 @@ export async function POST(req: NextRequest) {
     // Log cost event (estimate)
     const estimatedTokens = Math.round(prompt.length / 4) + Math.round(output.length / 4);
     db.insert(costEvents).values({
-      id: `cost_${Date.now().toString(36)}`,
+      id: `cost_${crypto.randomUUID()}`,
       agentId,
       model: 'claude-sonnet-4-6',
       action: 'dispatch',
@@ -185,6 +191,7 @@ export async function POST(req: NextRequest) {
       timestamp: new Date(),
     }).run();
 
+    releaseRateLimit('dispatch');
     return NextResponse.json({
       ok: true,
       taskId: resolvedTaskId,
@@ -195,6 +202,7 @@ export async function POST(req: NextRequest) {
       output: output.slice(0, 2000),
     });
   } catch (error) {
+    releaseRateLimit('dispatch');
     return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
   }
 }
