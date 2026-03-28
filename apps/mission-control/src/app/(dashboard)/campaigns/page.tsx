@@ -25,6 +25,7 @@ interface Campaign {
   error: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
   stats?: { total: number; pending: number; sent: number; failed: number };
@@ -441,7 +442,14 @@ export default function CampaignsPage() {
                       <span className="text-xl">{statusIcon(c.status)}</span>
                       <div>
                         <h3 className="text-white font-medium group-hover:text-amber-400 transition-colors">{c.name}</h3>
-                        <p className="text-xs text-zinc-500 mt-0.5">{c.subject}</p>
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          {c.subject}
+                          {c.createdBy !== 'user' && (
+                            <span className="ml-2 px-1.5 py-0.5 bg-blue-900/30 text-blue-400 rounded text-[10px]">
+                              by {c.createdBy}
+                            </span>
+                          )}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -629,6 +637,11 @@ export default function CampaignsPage() {
                   From: {selected.fromName} &lt;{selected.fromEmail}&gt;
                   {selected.replyTo && <> · Reply-To: {selected.replyTo}</>}
                   {' · '}SMTP: <code className="text-zinc-500">{selected.smtpVaultKey}</code>
+                  {selected.createdBy !== 'user' && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-blue-900/30 text-blue-400 rounded text-[10px]">
+                      Created by {selected.createdBy}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>

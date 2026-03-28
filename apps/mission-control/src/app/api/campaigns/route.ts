@@ -21,7 +21,6 @@ function validateSettings(raw: Record<string, unknown>): Record<string, unknown>
   for (const key of allowed) {
     if (raw[key] !== undefined) out[key] = raw[key];
   }
-  // Enforce minimums to prevent anti-spam bypass
   if (typeof out.delayMinDay === 'number') out.delayMinDay = Math.max(30_000, out.delayMinDay);
   if (typeof out.delayMaxDay === 'number') out.delayMaxDay = Math.max(60_000, out.delayMaxDay);
   if (typeof out.delayMinNight === 'number') out.delayMinNight = Math.max(60_000, out.delayMinNight);
@@ -36,11 +35,6 @@ export async function GET(req: NextRequest) {
   const auth = authenticateRequest(req);
   if (isAuthError(auth)) return auth;
 
-  // Agents cannot access campaigns
-  if (auth.type === 'agent') {
-    return NextResponse.json({ ok: false, error: 'Agents cannot access campaigns' }, { status: 403 });
-  }
-
   const result = await db.select().from(campaigns).orderBy(desc(campaigns.updatedAt));
   return NextResponse.json(result);
 }
@@ -49,10 +43,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = authenticateRequest(req);
   if (isAuthError(auth)) return auth;
-
-  if (auth.type === 'agent') {
-    return NextResponse.json({ ok: false, error: 'Agents cannot create campaigns' }, { status: 403 });
-  }
 
   const body = await req.json();
 
@@ -63,7 +53,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate email format
   if (!EMAIL_RE.test(body.fromEmail)) {
     return NextResponse.json({ ok: false, error: 'Invalid fromEmail format' }, { status: 400 });
   }
@@ -71,17 +60,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Invalid replyTo format' }, { status: 400 });
   }
 
-  // Validate SMTP vault key
   const smtpKey = body.smtpVaultKey || 'SMTP_CONNECTION';
   if (!SMTP_KEY_RE.test(smtpKey)) {
     return NextResponse.json({ ok: false, error: 'Invalid smtpVaultKey format (uppercase letters, numbers, underscores only)' }, { status: 400 });
   }
 
+  // Determine creator from auth context
+  const createdBy = auth.type === 'agent' && auth.agentId ? auth.agentId : 'user';
+
   const now = new Date();
   const newCampaign = {
     id: nanoid(),
     name: sanitizeString(body.name),
-    subject: sanitizeString(body.subject, 998), // RFC 2822 limit
+    subject: sanitizeString(body.subject, 998),
     fromName: sanitizeString(body.fromName, 128),
     fromEmail: sanitizeString(body.fromEmail, 254),
     replyTo: body.replyTo ? sanitizeString(body.replyTo, 254) : null,
@@ -96,7 +87,7 @@ export async function POST(req: NextRequest) {
     error: null,
     startedAt: null,
     completedAt: null,
-    createdBy: 'user', // always from auth context, never from body
+    createdBy,
     createdAt: now,
     updatedAt: now,
   };

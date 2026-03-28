@@ -11,10 +11,6 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   const auth = authenticateRequest(req);
   if (isAuthError(auth)) return auth;
 
-  if (auth.type === 'agent') {
-    return NextResponse.json({ ok: false, error: 'Agents cannot access campaign contacts' }, { status: 403 });
-  }
-
   const { id } = await ctx.params;
 
   const result = await db.select({
@@ -28,7 +24,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     .from(campaignContacts)
     .where(eq(campaignContacts.campaignId, id))
     .orderBy(desc(campaignContacts.createdAt))
-    .limit(500); // Paginated — max 500 per request
+    .limit(500);
 
   return NextResponse.json(result);
 }
