@@ -8,12 +8,16 @@ Docker launcher + Mission Control dashboard + 15-agent hierarchy + smart contrac
 
 - **Docker setup** — One-command OpenClaw installation with pre-configured workspace
 - **Mission Control** — 20-screen dashboard for agent orchestration and monitoring
+- **Boards Engine** — Multi-board Kanban with card detail, comments, history, drag-and-drop
+- **Chat Engine** — Multi-agent chat with party mode, voice input, streaming, session persistence
+- **Content Pipelines** — Multi-step agent workflows for content creation and publishing
+- **Autopilot** — Goal-driven autonomous execution with human feedback loop
 - **15 AI agents** — Norse mythology-themed hierarchy across 4 squads
 - **Agent Factory** — Create new agents from the UI with persona templates
 - **Squad Pack system** — Install pre-configured agent teams with one click
 - **Secret Vault** — AES-256-GCM encrypted credential storage
-- **Content Creator** — Draft, preview, and publish to LinkedIn with real-time checklist
-- **Marketplace** — Browse and install agent packs (wallet connect for future NFT licenses)
+- **Notification system** — SSE with auto-reconnect, exponential backoff, sound alerts
+- **Terminal** — Sandboxed shell with command blocklist and cwd restriction
 - **Smart Contracts** — AgentRegistry, LicenseNFT, Marketplace on Base L2
 - **Full-text search** — SQLite FTS5 across 200+ workspace documents
 - **Real-time updates** — SSE + chokidar file watching for live dashboard
@@ -37,7 +41,7 @@ After OpenClaw is running, start Mission Control:
 
 ```bash
 # Inside the container:
-cd ~/mission-control
+cd ~/repos/clawhalla/apps/mission-control
 pnpm install
 pnpm dev --hostname 0.0.0.0 --port 3000
 ```
@@ -48,12 +52,12 @@ Access at `http://localhost:3333`
 
 | Screen | Description |
 |--------|-------------|
-| Dashboard | Agent overview, stats, real-time activity feed (SSE) |
-| Boards | Multi-board Kanban engine with drag-and-drop, card detail modals |
+| Dashboard | System health, agent stats, real-time activity feed (SSE) |
+| Boards | Multi-board Kanban engine with card detail, comments, history |
 | Calendar | Cron jobs and scheduled tasks |
 | Projects | Project cards + Git push/pull panel |
 | Factory | Content pipelines — multi-step agent workflows |
-| Chat | Multi-agent chat with party mode, voice input, session persistence |
+| Chat | Multi-agent chat with party mode, voice input, streaming |
 | Approvals | CEO approval gates and decision history |
 | Memory | Daily journal, long-term memory, FTS5 search |
 | Docs | Searchable document browser with category filters |
@@ -65,6 +69,9 @@ Access at `http://localhost:3333`
 | Autopilot | Goal-driven autonomous execution with feedback loop |
 | Marketplace | Squad packs + wallet connect (Base L2) |
 | Settings | Secret vault (AES-256-GCM) + system configuration |
+| Onboarding | Setup wizard for first-time users |
+| Pipeline | Build status and CI/CD monitoring |
+| Feedback | Continuous learning and agent feedback system |
 
 ### API Routes (40+)
 
@@ -129,21 +136,21 @@ External
 
 ```
 Daniel (CEO, human)
-  └── Claw 🦞 — System Controller
-        ├── Odin 👁️ — CTO
-        │     ├── Thor ⚡ — Tech Lead
-        │     │     ├── Freya ✨ — Senior Developer
-        │     │     ├── Heimdall 👁️‍🗨️ — QA/Observability
-        │     │     └── Völund 🔧 — DevOps/GitHub
-        │     └── Frigg 👑 — Coordinator/PA
-        │           ├── Mimir 🧠 — Knowledge Curator
-        │           ├── Bragi 🎭 — Content Creator
-        │           └── Loki 🦊 — Analytics/Strategy
-        ├── Vidar ⚔️ — Blockchain Architect
-        │     ├── Sindri 🔥 — Solidity Developer
-        │     ├── Skadi ❄️ — Cairo Developer
-        │     └── Tyr ⚖️ — Security Auditor
-        └── Saga 🔮 — CPO (Research Lead)
+  └── Claw 🦞 — System Controller (Opus 4.6)
+        ├── Odin 👁️ — CTO (Sonnet 4.6)
+        │     ├── Thor ⚡ — Tech Lead (Sonnet 4.6)
+        │     │     ├── Freya ✨ — Senior Developer (Sonnet 4.6)
+        │     │     ├── Heimdall 👁️‍🗨️ — QA/Observability (Haiku 4.5)
+        │     │     └── Völund 🔧 — DevOps/GitHub (Sonnet 4.6)
+        │     └── Frigg 👑 — Coordinator/PA (Haiku 4.5)
+        │           ├── Mimir 🧠 — Knowledge Curator (Sonnet 4.6)
+        │           ├── Bragi 🎭 — Content Creator (Sonnet 4.6)
+        │           └── Loki 🦊 — Analytics/Strategy (Sonnet 4.6)
+        ├── Vidar ⚔️ — Blockchain Architect (Sonnet 4.6)
+        │     ├── Sindri 🔥 — Solidity Developer (Sonnet 4.6)
+        │     ├── Skadi ❄️ — Cairo Developer (Sonnet 4.6)
+        │     └── Tyr ⚖️ — Security Auditor (Opus 4.6)
+        └── Saga 🔮 — CPO / Research Lead (Sonnet 4.6)
 ```
 
 ## Smart Contracts (Base L2)
@@ -160,10 +167,10 @@ Audited by Tyr (AI security auditor). All findings resolved.
 
 - **Runtime:** Docker + OpenClaw Gateway
 - **Dashboard:** Next.js 16, TypeScript strict, Tailwind CSS v4
-- **Database:** SQLite + Drizzle ORM + FTS5
+- **Database:** SQLite + Drizzle ORM (23 tables, 11 indexes) + FTS5
 - **Real-time:** SSE + chokidar file watching
+- **Security:** CSP, CORS middleware, rate limiting, XSS prevention, AES-256-GCM vault
 - **Wallet:** wagmi + viem (Base L2, Base Sepolia, Ethereum mainnet)
-- **Encryption:** AES-256-GCM (secret vault)
 - **Contracts:** Solidity 0.8.24, Foundry, Base L2
 - **Search:** SQLite FTS5 with porter stemming
 
@@ -172,12 +179,13 @@ Audited by Tyr (AI security auditor). All findings resolved.
 ```
 clawhalla/
 ├── apps/mission-control/   — Next.js dashboard (20 screens, 40+ API routes)
+├── agents/                 — Agent persona files (SOUL.md, AGENTS.md, skills/)
 ├── contracts/              — Solidity smart contracts (Foundry)
 ├── docker/                 — Docker configuration
 ├── docs/                   — Architecture, roadmap, security docs
 ├── scripts/                — Setup and utility scripts
-├── volumes/                — Docker volume mounts
-├── workspace-template/     — Enterprise workspace structure
+├── squads/                 — Squad templates (dev, blockchain, clop-cabinet)
+├── workspace-template/     — Enterprise workspace structure + AI-AGIL methodology
 ├── Dockerfile
 ├── docker-compose.yml
 └── README.md
@@ -187,7 +195,7 @@ clawhalla/
 
 | Tier | What | Price |
 |------|------|-------|
-| Free (open source) | Docker + MC (12 screens) + 3 agents + workspace template | $0 |
+| Free (open source) | Docker + MC (20 screens) + 3 agents + workspace template | $0 |
 | Pro packs | Squad packs, unlimited agents/projects | $49/mo |
 | Premium skills | Blockchain auditor, DeFi monitor, etc. | $20-100/skill |
 | Marketplace | Agent templates as NFT licenses (Base L2) | Creator-set pricing |
