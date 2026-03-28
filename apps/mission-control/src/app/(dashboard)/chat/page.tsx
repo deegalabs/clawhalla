@@ -159,7 +159,8 @@ function ChatPageInner() {
   const [partyAgents, setPartyAgents] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
-  const [sending, setSending] = useState(false);
+  // Track which sessions are actively streaming (allows parallel chats with different agents)
+  const [sendingSessions, setSendingSessions] = useState<Set<string>>(new Set());
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -219,8 +220,8 @@ function ChatPageInner() {
   // Auto-save to DB when messages change (debounced to avoid saving during streaming)
   useEffect(() => {
     if (messages.length === 0) return;
-    // Don't save while streaming — content may be incomplete
-    if (sending) return;
+    // Don't save while this session is streaming — content may be incomplete
+    if (activeSessionId && sendingSessions.has(activeSessionId)) return;
 
     const sessionId = activeSessionId || `chat_${Date.now().toString(36)}`;
     if (!activeSessionId) setActiveSessionId(sessionId);
@@ -245,7 +246,7 @@ function ChatPageInner() {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, sending]);
+  }, [messages, sendingSessions]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -386,11 +387,13 @@ function ChatPageInner() {
     const msg = input;
     setInput(''); setAttachedFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    setSending(true);
 
     // Save user message immediately so it persists even if user navigates away
     const curSessionId = activeSessionId || `chat_${Date.now().toString(36)}`;
     if (!activeSessionId) setActiveSessionId(curSessionId);
+
+    // Mark THIS session as sending (doesn't block other agents)
+    setSendingSessions(prev => new Set(prev).add(curSessionId));
     const curAgent = selectedAgent;
     const curMode = mode;
     const curPartyAgents = [...partyAgents];
@@ -555,8 +558,13 @@ function ChatPageInner() {
     } catch (e) {
       if (mountedRef.current) addSystemMsg(`Failed: ${String(e)}`);
     }
+    // Clear sending state for THIS session
+    setSendingSessions(prev => {
+      const next = new Set(prev);
+      next.delete(curSessionId);
+      return next;
+    });
     if (mountedRef.current) {
-      setSending(false);
       setCurrentPartyAgent(null);
     }
   };
@@ -609,6 +617,9 @@ function ChatPageInner() {
 
   const agent = agents.find(a => a.id === selectedAgent);
   const prompts = mode === 'party' ? QUICK_PROMPTS.party : (QUICK_PROMPTS[selectedAgent] || QUICK_PROMPTS.default);
+
+  // Derived: is the CURRENT session sending? (other agents can send independently)
+  const sending = activeSessionId ? sendingSessions.has(activeSessionId) : false;
 
   // Sidebar view: 'agents' shows agent picker, 'chats' shows conversation list
   const [sidebarView, setSidebarView] = useState<'chats' | 'agents'>('chats');
