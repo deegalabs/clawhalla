@@ -372,14 +372,11 @@ function ChatPageInner() {
   }, []);
 
   // --- Send Message ---
-  // Abort controller for SSE — allows cleanup on unmount
-  const abortRef = useRef<AbortController | null>(null);
-
-  // Cleanup: abort any in-flight SSE and reset sending state on unmount
+  // Track mount state so background streams can save to DB after unmount
+  const mountedRef = useRef(true);
   useEffect(() => {
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
 
   const sendMessage = async () => {
@@ -392,13 +389,13 @@ function ChatPageInner() {
     setSending(true);
 
     // Save user message immediately so it persists even if user navigates away
-    const sessionId = activeSessionId || `chat_${Date.now().toString(36)}`;
-    if (!activeSessionId) setActiveSessionId(sessionId);
-    saveSessionToDB(sessionId, msg.slice(0, 50), mode === 'party' ? 'party' : selectedAgent, mode, mode === 'party' ? partyAgents : undefined, modelTier, [userMsg]);
-
-    // Create abort controller for this request
-    const abort = new AbortController();
-    abortRef.current = abort;
+    const curSessionId = activeSessionId || `chat_${Date.now().toString(36)}`;
+    if (!activeSessionId) setActiveSessionId(curSessionId);
+    const curAgent = selectedAgent;
+    const curMode = mode;
+    const curPartyAgents = [...partyAgents];
+    const curModelTier = modelTier;
+    saveSessionToDB(curSessionId, msg.slice(0, 50), curMode === 'party' ? 'party' : curAgent, curMode, curMode === 'party' ? curPartyAgents : undefined, curModelTier, [userMsg]);
 
     try {
       let contextPrefix = '';
@@ -408,15 +405,15 @@ function ChatPageInner() {
       if (attachedFiles.length > 0) contextPrefix += `[Attached: ${attachedFiles.map(f => f.name).join(', ')}] `;
       const fullMessage = contextPrefix ? `${contextPrefix}\n\n${msg}` : msg;
 
-      const body = mode === 'party'
-        ? { mode: 'party', agents: partyAgents, topic: fullMessage, model: modelTier }
-        : { agentId: selectedAgent, message: fullMessage, model: modelTier };
+      const body = curMode === 'party'
+        ? { mode: 'party', agents: curPartyAgents, topic: fullMessage, model: curModelTier }
+        : { agentId: curAgent, message: fullMessage, model: curModelTier };
 
+      // NO abort signal — let the stream run even if user navigates away
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
         body: JSON.stringify(body),
-        signal: abort.signal,
       });
 
       if (res.headers.get('content-type')?.includes('text/event-stream') && res.body) {
@@ -426,6 +423,11 @@ function ChatPageInner() {
 
         // Party mode: track per-agent messages
         const partyMsgIds = new Map<string, string>();
+
+        // Helper: save a response message to DB directly (used when component unmounted)
+        const saveResponseToDB = (agentResponseMsg: Message) => {
+          saveSessionToDB(curSessionId, msg.slice(0, 50), curMode === 'party' ? 'party' : curAgent, curMode, curMode === 'party' ? curPartyAgents : undefined, curModelTier, [agentResponseMsg]);
+        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -439,31 +441,41 @@ function ChatPageInner() {
             try {
               const data = JSON.parse(line.slice(6));
 
-              if (mode === 'party') {
+              if (curMode === 'party') {
                 // Party mode SSE events
                 if (data.type === 'agent_start') {
-                  setCurrentPartyAgent(data.agent);
+                  if (mountedRef.current) setCurrentPartyAgent(data.agent);
                   const msgId = `msg_${Date.now()}_${data.agent}`;
                   partyMsgIds.set(data.agent, msgId);
-                  setMessages(prev => [...prev, {
-                    id: msgId, role: 'agent', agentId: data.agent,
-                    content: '', timestamp: new Date().toISOString(), mode: 'party',
-                  }]);
+                  if (mountedRef.current) {
+                    setMessages(prev => [...prev, {
+                      id: msgId, role: 'agent', agentId: data.agent,
+                      content: '', timestamp: new Date().toISOString(), mode: 'party',
+                    }]);
+                  }
                 } else if (data.type === 'chunk' && data.agent) {
-                  const msgId = partyMsgIds.get(data.agent);
-                  if (msgId) {
-                    setMessages(prev => prev.map(m =>
-                      m.id === msgId ? { ...m, content: m.content + data.text } : m
-                    ));
+                  if (mountedRef.current) {
+                    const msgId = partyMsgIds.get(data.agent);
+                    if (msgId) {
+                      setMessages(prev => prev.map(m =>
+                        m.id === msgId ? { ...m, content: m.content + data.text } : m
+                      ));
+                    }
                   }
                 } else if (data.type === 'agent_done' && data.agent) {
                   const msgId = partyMsgIds.get(data.agent);
                   if (msgId && data.response) {
-                    setMessages(prev => prev.map(m =>
-                      m.id === msgId ? { ...m, content: data.response } : m
-                    ));
+                    const agentMsg: Message = {
+                      id: msgId, role: 'agent', agentId: data.agent,
+                      content: data.response, timestamp: new Date().toISOString(), mode: 'party',
+                    };
+                    if (mountedRef.current) {
+                      setMessages(prev => prev.map(m => m.id === msgId ? agentMsg : m));
+                    }
+                    // Always save to DB — even if unmounted
+                    saveResponseToDB(agentMsg);
                   }
-                  setCurrentPartyAgent(null);
+                  if (mountedRef.current) setCurrentPartyAgent(null);
                 } else if (data.type === 'done') {
                   autoTask.agentChat('party', msg);
                 }
@@ -472,36 +484,45 @@ function ChatPageInner() {
                 if (data.type === 'start') {
                   const streamMsgId = `msg_${Date.now()}_resp`;
                   partyMsgIds.set('_single', streamMsgId);
-                  setMessages(prev => [...prev, {
-                    id: streamMsgId, role: 'agent', agentId: selectedAgent,
-                    content: '', timestamp: new Date().toISOString(),
-                  }]);
+                  if (mountedRef.current) {
+                    setMessages(prev => [...prev, {
+                      id: streamMsgId, role: 'agent', agentId: curAgent,
+                      content: '', timestamp: new Date().toISOString(),
+                    }]);
+                  }
                 } else if (data.type === 'chunk') {
-                  // Chunks may be raw JSON fragments from --json mode; skip during streaming
-                  // The final parsed text arrives in 'done' event
-                  const msgId = partyMsgIds.get('_single');
-                  if (msgId) {
-                    // Try to show readable text; if it looks like JSON, show typing indicator instead
-                    const text = data.text || '';
-                    const looksLikeJson = text.trimStart().startsWith('{') || text.trimStart().startsWith('"');
-                    if (!looksLikeJson && text.trim()) {
-                      setMessages(prev => prev.map(m =>
-                        m.id === msgId ? { ...m, content: m.content + text } : m
-                      ));
+                  if (mountedRef.current) {
+                    const msgId = partyMsgIds.get('_single');
+                    if (msgId) {
+                      const text = data.text || '';
+                      const looksLikeJson = text.trimStart().startsWith('{') || text.trimStart().startsWith('"');
+                      if (!looksLikeJson && text.trim()) {
+                        setMessages(prev => prev.map(m =>
+                          m.id === msgId ? { ...m, content: m.content + text } : m
+                        ));
+                      }
                     }
                   }
                 } else if (data.type === 'done') {
                   const msgId = partyMsgIds.get('_single');
-                  if (msgId) {
-                    const finalContent = data.response || 'No response received.';
+                  const finalContent = data.response || 'No response received.';
+                  const agentMsg: Message = {
+                    id: msgId || `msg_${Date.now()}_resp`,
+                    role: data.ok ? 'agent' : 'system',
+                    agentId: curAgent,
+                    content: finalContent,
+                    timestamp: new Date().toISOString(),
+                  };
+
+                  if (mountedRef.current && msgId) {
                     setMessages(prev => prev.map(m =>
-                      m.id === msgId ? { ...m, content: finalContent, role: data.ok ? 'agent' : 'system' } : m
+                      m.id === msgId ? agentMsg : m
                     ));
                   }
-                  if (data.ok) autoTask.agentChat(selectedAgent, msg);
-                } else if (data.type === 'error') {
-                  // Errors during streaming — store them but don't show until done
-                  // They'll be included in the done event's response if the agent fails
+                  // Always save to DB — critical for when user navigated away
+                  saveResponseToDB(agentMsg);
+
+                  if (data.ok) autoTask.agentChat(curAgent, msg);
                 }
               }
             } catch { /* skip malformed SSE */ }
@@ -510,35 +531,34 @@ function ChatPageInner() {
       } else {
         // Non-streaming fallback
         const data = await res.json();
-        if (mode === 'party' && data.responses) {
-          // Add each agent's response as separate message
+        if (curMode === 'party' && data.responses) {
           for (const r of data.responses as { agentId: string; response: string }[]) {
-            setMessages(prev => [...prev, {
+            const agentMsg: Message = {
               id: `msg_${Date.now()}_${r.agentId}`, role: 'agent', agentId: r.agentId,
               content: r.response, timestamp: new Date().toISOString(), mode: 'party',
-            }]);
+            };
+            if (mountedRef.current) setMessages(prev => [...prev, agentMsg]);
+            saveSessionToDB(curSessionId, msg.slice(0, 50), 'party', curMode, curPartyAgents, curModelTier, [agentMsg]);
           }
         } else {
-          setMessages(prev => [...prev, {
+          const agentMsg: Message = {
             id: `msg_${Date.now()}_resp`, role: data.ok ? 'agent' : 'system',
             agentId: data.ok ? data.agentId : undefined,
             content: data.ok ? data.response : `Error: ${data.error}`,
             timestamp: new Date().toISOString(),
-          }]);
+          };
+          if (mountedRef.current) setMessages(prev => [...prev, agentMsg]);
+          saveSessionToDB(curSessionId, msg.slice(0, 50), curAgent, curMode, undefined, curModelTier, [agentMsg]);
         }
-        if (data.ok) autoTask.agentChat(mode === 'party' ? 'party' : selectedAgent, msg);
+        if (data.ok) autoTask.agentChat(curMode === 'party' ? 'party' : curAgent, msg);
       }
     } catch (e) {
-      // Don't show error if user navigated away (abort)
-      if (e instanceof DOMException && e.name === 'AbortError') {
-        // User navigated away — silently stop
-      } else {
-        addSystemMsg(`Failed: ${String(e)}`);
-      }
+      if (mountedRef.current) addSystemMsg(`Failed: ${String(e)}`);
     }
-    abortRef.current = null;
-    setSending(false);
-    setCurrentPartyAgent(null);
+    if (mountedRef.current) {
+      setSending(false);
+      setCurrentPartyAgent(null);
+    }
   };
 
   const loadSession = async (session: ChatSession) => {
