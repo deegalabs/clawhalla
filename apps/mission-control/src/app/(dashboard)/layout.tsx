@@ -77,6 +77,17 @@ function TeamIcon({ className }: { className?: string }) {
   );
 }
 
+function SquadsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="4" r="2" />
+      <circle cx="11" cy="4" r="2" />
+      <circle cx="8" cy="11" r="2" />
+      <path d="M5 6v1.5L8 9M11 6v1.5L8 9" />
+    </svg>
+  );
+}
+
 function ApprovalsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -213,6 +224,7 @@ const navSections = [
   {
     label: 'System',
     links: [
+      { href: '/squads', label: 'Squads', icon: SquadsIcon },
       { href: '/team', label: 'Team', icon: TeamIcon },
       { href: '/office', label: 'Office', icon: OfficeIcon },
       { href: '/terminal', label: 'Terminal', icon: TerminalIcon },
