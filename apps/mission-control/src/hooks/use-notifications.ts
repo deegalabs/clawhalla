@@ -29,6 +29,8 @@ export interface Toast {
 
 const TOAST_DURATION = 5000;
 const TOAST_DURATION_URGENT = 8000;
+const SSE_RECONNECT_BASE = 2000;
+const SSE_RECONNECT_MAX = 30000;
 
 // Notification sound — simple Web Audio API beep
 function playNotificationSound(priority?: string) {
@@ -74,6 +76,13 @@ export function useNotifications() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const eventSourceRef = useRef<EventSource | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const soundEnabledRef = useRef(soundEnabled);
+  const mountedRef = useRef(true);
+
+  // Keep soundEnabledRef in sync without triggering SSE reconnect
+  useEffect(() => { soundEnabledRef.current = soundEnabled; }, [soundEnabled]);
 
   // Fetch notifications from DB
   const fetchNotifications = useCallback(async () => {
@@ -168,67 +177,94 @@ export function useNotifications() {
     }).catch(() => {});
   }, []);
 
-  // SSE listener for real-time notifications
+  // SSE connection with auto-reconnect
   useEffect(() => {
+    mountedRef.current = true;
     fetchNotifications();
 
-    // Close any previous EventSource before creating a new one (prevents leak on remount)
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    function connectSSE() {
+      // Close any previous EventSource
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+
+      if (!mountedRef.current) return;
+
+      try {
+        const es = new EventSource('/api/sse');
+        eventSourceRef.current = es;
+
+        es.onopen = () => {
+          // Reset reconnect attempts on successful connection
+          reconnectAttemptsRef.current = 0;
+        };
+
+        es.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.type === 'notification' && data.event) {
+              const ev = data.event;
+              // Add to local state
+              const notif: Notification = {
+                id: ev.id,
+                type: ev.type,
+                title: ev.title,
+                body: ev.body,
+                icon: ev.icon,
+                href: ev.href,
+                agentId: ev.agentId,
+                priority: ev.priority,
+                read: 0,
+                createdAt: ev.timestamp,
+              };
+              setNotifications(prev => [notif, ...prev].slice(0, 50));
+              setUnreadCount(prev => prev + 1);
+
+              // Show toast
+              addToast({
+                id: ev.id,
+                type: ev.type,
+                title: ev.title,
+                body: ev.body,
+                icon: ev.icon,
+                href: ev.href,
+                priority: ev.priority,
+              });
+
+              // Play sound (read from ref to avoid dependency)
+              if (soundEnabledRef.current && ev.sound !== false) {
+                playNotificationSound(ev.priority);
+              }
+            }
+          } catch { /* ignore parse errors */ }
+        };
+
+        es.onerror = () => {
+          es.close();
+          eventSourceRef.current = null;
+
+          // Auto-reconnect with exponential backoff
+          if (mountedRef.current) {
+            const attempts = reconnectAttemptsRef.current++;
+            const delay = Math.min(SSE_RECONNECT_BASE * Math.pow(2, attempts), SSE_RECONNECT_MAX);
+            reconnectTimerRef.current = setTimeout(connectSSE, delay);
+
+            // Refresh notifications from DB on reconnect (catch up on missed ones)
+            fetchNotifications();
+          }
+        };
+      } catch { /* SSE not available */ }
     }
 
-    try {
-      const es = new EventSource('/api/sse');
-      eventSourceRef.current = es;
-
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'notification' && data.event) {
-            const ev = data.event;
-            // Add to local state
-            const notif: Notification = {
-              id: ev.id,
-              type: ev.type,
-              title: ev.title,
-              body: ev.body,
-              icon: ev.icon,
-              href: ev.href,
-              agentId: ev.agentId,
-              priority: ev.priority,
-              read: 0,
-              createdAt: ev.timestamp,
-            };
-            setNotifications(prev => [notif, ...prev].slice(0, 50));
-            setUnreadCount(prev => prev + 1);
-
-            // Show toast
-            addToast({
-              id: ev.id,
-              type: ev.type,
-              title: ev.title,
-              body: ev.body,
-              icon: ev.icon,
-              href: ev.href,
-              priority: ev.priority,
-            });
-
-            // Play sound
-            if (soundEnabled && ev.sound !== false) {
-              playNotificationSound(ev.priority);
-            }
-          }
-        } catch { /* ignore parse errors */ }
-      };
-
-      es.onerror = () => { es.close(); };
-    } catch { /* SSE not available */ }
+    connectSSE();
 
     return () => {
+      mountedRef.current = false;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (eventSourceRef.current) eventSourceRef.current.close();
     };
-  }, [fetchNotifications, addToast, soundEnabled]);
+  }, [fetchNotifications, addToast]);
 
   return {
     notifications,
