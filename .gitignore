@@ -32,6 +32,10 @@ pnpm-debug.log*
 dist/
 build/
 
+# Solidity build artifacts
+contracts/cache/
+contracts/out/
+
 # Mission Control
 apps/mission-control/node_modules/
 apps/mission-control/.next/
