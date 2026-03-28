@@ -252,7 +252,7 @@ export default function ApprovalsPage() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setShowCreate(false)}>
+        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setShowCreate(false)} role="dialog" aria-modal="true" aria-label="Request Approval">
           <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-gray-200">Request Approval</h3>
             <input type="text" placeholder="What needs approval?" value={newApproval.title} onChange={e => setNewApproval({ ...newApproval, title: e.target.value })}

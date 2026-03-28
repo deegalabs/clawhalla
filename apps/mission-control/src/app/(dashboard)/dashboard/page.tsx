@@ -85,9 +85,11 @@ export default function DashboardPage() {
   const [approvals, setApprovals] = useState<ApprovalData | null>(null);
   const [gatewayOk, setGatewayOk] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
+      setFetchError(null);
       const [healthRes, actRes, boardsRes, usageRes, approvalRes] = await Promise.all([
         fetch('/api/agents/health'),
         fetch('/api/activities?limit=12'),
@@ -146,7 +148,7 @@ export default function DashboardPage() {
 
       if (usageData.ok) setUsage(usageData);
       setApprovals(approvalData);
-    } catch (err) { console.error('[dashboard] fetch error:', err); }
+    } catch (err) { console.error('[dashboard] fetch error:', err); setFetchError(String(err)); }
     setLoading(false);
   }, []);
 
@@ -184,6 +186,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
+      {fetchError && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5 flex items-center justify-between">
+          <span className="text-xs text-red-400">Failed to load some data. Retrying automatically...</span>
+          <button onClick={fetchData} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 bg-red-500/10 rounded">Retry now</button>
+        </div>
+      )}
       {/* Row 1: System Health */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {/* Gateway */}

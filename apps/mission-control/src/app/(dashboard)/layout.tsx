@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNotifications } from '@/hooks/use-notifications';
 import { NotificationBell, ToastStack } from '@/components/ui/notifications';
 
@@ -239,12 +239,29 @@ function GatewayHealthIndicator() {
   );
 }
 
+function HamburgerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function CloseIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const {
     notifications: notifs,
     unreadCount,
@@ -258,73 +275,122 @@ export default function DashboardLayout({
     clearAll,
   } = useNotifications();
 
+  // Close sidebar on route change (mobile)
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
+
+  // Close sidebar on Escape key
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') setSidebarOpen(false);
+  }, []);
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  const sidebarContent = (
+    <>
+      {/* Logo */}
+      <div className="px-5 py-4 border-b border-[#1e1e21] flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="text-xl">🦞</span>
+          <span className="text-sm font-semibold text-gray-100 tracking-tight">Mission Control</span>
+        </Link>
+        {/* Close button — mobile only */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden w-7 h-7 rounded-md flex items-center justify-center text-gray-500 hover:text-gray-300 hover:bg-[#1a1a1d]"
+          aria-label="Close sidebar"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      {/* Search shortcut */}
+      <div className="px-3 py-3">
+        <Link
+          href="/docs"
+          className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 bg-[#1a1a1d] rounded-md border border-[#1e1e21] hover:border-[#333] hover:text-gray-400"
+        >
+          <SearchIcon />
+          <span>Search</span>
+          <kbd className="ml-auto hidden sm:inline">⌘K</kbd>
+        </Link>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 space-y-4 overflow-y-auto py-1" role="navigation" aria-label="Main navigation">
+        {navSections.map((section) => (
+          <div key={section.label}>
+            <div className="px-3 mb-1.5 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
+              {section.label}
+            </div>
+            <div className="space-y-0.5">
+              {section.links.map((link) => {
+                const isActive = pathname === link.href;
+                const Icon = link.icon;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium ${
+                      isActive
+                        ? 'bg-[#1e1e21] text-gray-100'
+                        : 'text-gray-500 hover:bg-[#1a1a1d] hover:text-gray-300'
+                    }`}
+                  >
+                    <Icon className={isActive ? 'text-amber-500' : 'text-gray-600'} />
+                    <span>{link.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div className="px-5 py-3 border-t border-[#1e1e21]">
+        <GatewayHealthIndicator />
+        <div className="text-[10px] text-gray-700 mt-1.5">ClawHalla v1.0</div>
+      </div>
+    </>
+  );
+
   return (
     <div className="flex h-screen bg-[#0a0a0b]">
-      {/* Sidebar */}
-      <aside className="w-56 bg-[#111113] border-r border-[#1e1e21] flex flex-col">
-        {/* Logo */}
-        <div className="px-5 py-4 border-b border-[#1e1e21]">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="text-xl">🦞</span>
-            <span className="text-sm font-semibold text-gray-100 tracking-tight">Mission Control</span>
-          </Link>
-        </div>
-
-        {/* Search shortcut */}
-        <div className="px-3 py-3">
-          <Link
-            href="/docs"
-            className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 bg-[#1a1a1d] rounded-md border border-[#1e1e21] hover:border-[#333] hover:text-gray-400"
-          >
-            <SearchIcon />
-            <span>Search</span>
-            <kbd className="ml-auto">⌘K</kbd>
-          </Link>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 px-3 space-y-4 overflow-y-auto py-1">
-          {navSections.map((section) => (
-            <div key={section.label}>
-              <div className="px-3 mb-1.5 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">
-                {section.label}
-              </div>
-              <div className="space-y-0.5">
-                {section.links.map((link) => {
-                  const isActive = pathname === link.href;
-                  const Icon = link.icon;
-                  return (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium ${
-                        isActive
-                          ? 'bg-[#1e1e21] text-gray-100'
-                          : 'text-gray-500 hover:bg-[#1a1a1d] hover:text-gray-300'
-                      }`}
-                    >
-                      <Icon className={isActive ? 'text-amber-500' : 'text-gray-600'} />
-                      <span>{link.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* Footer */}
-        <div className="px-5 py-3 border-t border-[#1e1e21]">
-          <GatewayHealthIndicator />
-          <div className="text-[10px] text-gray-700 mt-1.5">ClawHalla v1.0</div>
-        </div>
+      {/* Sidebar — desktop (always visible) */}
+      <aside className="hidden lg:flex w-56 bg-[#111113] border-r border-[#1e1e21] flex-col shrink-0">
+        {sidebarContent}
       </aside>
 
+      {/* Sidebar — mobile overlay */}
+      {sidebarOpen && (
+        <>
+          <div
+            className="lg:hidden fixed inset-0 bg-black/60 z-40"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="lg:hidden fixed inset-y-0 left-0 w-64 bg-[#111113] border-r border-[#1e1e21] flex flex-col z-50 shadow-2xl">
+            {sidebarContent}
+          </aside>
+        </>
+      )}
+
       {/* Main content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-12 bg-[#111113] border-b border-[#1e1e21] flex items-center justify-between px-6">
-          <div className="flex items-center gap-2">
+        <header className="h-12 bg-[#111113] border-b border-[#1e1e21] flex items-center justify-between px-4 lg:px-6 shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Hamburger — mobile only */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-gray-300 hover:bg-[#1a1a1d]"
+              aria-label="Open sidebar"
+            >
+              <HamburgerIcon />
+            </button>
             <h2 className="text-sm font-medium text-gray-200">
               {navSections.flatMap(s => s.links).find((l) => l.href === pathname)?.label || 'Dashboard'}
             </h2>
@@ -344,7 +410,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-5">
+        <main className="flex-1 overflow-auto p-3 sm:p-5">
           {children}
         </main>
       </div>

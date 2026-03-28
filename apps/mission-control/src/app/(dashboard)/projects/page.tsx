@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { GridSkeleton } from '@/components/ui/loading';
 import { autoTask } from '@/lib/tasks';
 
 interface Project {
@@ -41,11 +42,11 @@ function ProjectFormModal({ project, onClose, onSave, onDelete }: {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-12 px-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-12 px-4" onClick={onClose} role="dialog" aria-modal="true" aria-label={isNew ? 'New Project' : 'Edit Project'}>
       <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[#1e1e21] flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-200">{isNew ? 'New Project' : 'Edit Project'}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300">×</button>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300" aria-label="Close">×</button>
         </div>
         <div className="px-5 py-4 space-y-3">
           <div>
@@ -188,7 +189,7 @@ function ProjectDetail({ project, onClose, onEdit }: { project: Project; onClose
   const status = statusStyles[project.status] || statusStyles.active;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-12 px-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-12 px-4" onClick={onClose} role="dialog" aria-modal="true" aria-label={project.name}>
       <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-[#1e1e21]">
           <div className="flex items-center justify-between">
@@ -196,7 +197,7 @@ function ProjectDetail({ project, onClose, onEdit }: { project: Project; onClose
             <div className="flex items-center gap-2">
               <span className={`text-[10px] px-2 py-0.5 rounded capitalize ${status.bg} ${status.text}`}>{project.status}</span>
               <button onClick={onEdit} className="text-[10px] text-gray-500 hover:text-amber-400 px-2 py-0.5 bg-[#1a1a1d] rounded">Edit</button>
-              <button onClick={onClose} className="text-gray-500 hover:text-gray-300">×</button>
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-300" aria-label="Close">×</button>
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{project.description}</p>
@@ -250,9 +251,17 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
   const [gitAction, setGitAction] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
-    try { const r = await fetch('/api/projects'); const d = await r.json(); if (d.ok) setProjects(d.projects); } catch {}
+    try {
+      const r = await fetch('/api/projects');
+      const d = await r.json();
+      if (d.ok) { setProjects(d.projects); setError(null); }
+      else setError(d.error || 'Failed to load projects');
+    } catch (e) { setError(String(e)); }
+    setLoading(false);
   }, []);
 
   const fetchGit = useCallback(async () => {
@@ -288,6 +297,29 @@ export default function ProjectsPage() {
   const filtered = statusFilter === 'all' ? projects : projects.filter(p => p.status === statusFilter);
   const activeCount = projects.filter(p => p.status === 'active').length;
   const pausedCount = projects.filter(p => p.status === 'paused').length;
+
+  if (loading) {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-200">Projects</h2>
+        </div>
+        <GridSkeleton cols={3} count={6} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-200">Projects</h2>
+          <button onClick={() => { setLoading(true); fetchProjects(); }} className="px-3 py-1.5 text-[11px] text-gray-400 bg-[#1a1a1d] rounded hover:text-gray-200">Retry</button>
+        </div>
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-400">{error}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

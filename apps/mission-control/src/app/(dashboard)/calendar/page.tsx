@@ -308,7 +308,7 @@ export default function CalendarPage() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setShowCreate(false)}>
+        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setShowCreate(false)} role="dialog" aria-modal="true" aria-label="New Cron Job">
           <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-gray-200">New Cron Job</h3>
             <input type="text" placeholder="Job name" value={newCron.name} onChange={e => setNewCron({ ...newCron, name: e.target.value })}
@@ -368,7 +368,7 @@ export default function CalendarPage() {
       )}
       {/* Edit Modal */}
       {editingCron && (
-        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setEditingCron(null)}>
+        <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={() => setEditingCron(null)} role="dialog" aria-modal="true" aria-label="Edit Cron Job">
           <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-3" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-200">Edit Cron Job</h3>

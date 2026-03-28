@@ -113,7 +113,7 @@ function NewBoardModal({ onClose, onCreate }: {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-start justify-center z-50 pt-16 px-4" onClick={onClose} role="dialog" aria-modal="true" aria-label="New Board">
       <div className="bg-[#111113] rounded-xl border border-[#1e1e21] w-full max-w-lg p-5 space-y-4" onClick={e => e.stopPropagation()}>
         <h3 className="text-sm font-semibold text-gray-200">New Board</h3>
 
@@ -295,7 +295,7 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
   const currentCol = columns.find(c => c.id === form.column);
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 pt-8 px-4 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 pt-8 px-4 overflow-y-auto" onClick={onClose} role="dialog" aria-modal="true" aria-label={`Card: ${form.title}`}>
       <div className="bg-[#18181b] rounded-xl border border-[#27272a] w-full max-w-3xl mb-8 overflow-hidden" onClick={e => e.stopPropagation()}>
 
         {/* Header — column indicator + title */}
@@ -311,7 +311,7 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
               <span className="text-[10px] text-gray-600">{form.id}</span>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 p-1 hover:bg-[#27272a] rounded">
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 p-1 hover:bg-[#27272a] rounded" aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
           </button>
         </div>
