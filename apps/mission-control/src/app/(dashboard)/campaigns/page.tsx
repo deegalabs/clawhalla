@@ -87,6 +87,24 @@ const EMPTY_FORM: CampaignForm = {
   settings: { ...DEFAULT_SETTINGS },
 };
 
+// Sandboxed HTML preview — prevents XSS by rendering in a sandboxed iframe
+function SandboxPreview({ html, className }: { html: string; className?: string }) {
+  const interpolated = html
+    .replace(/\{\{name\}\}/g, 'John Doe')
+    .replace(/\{\{email\}\}/g, 'john@example.com')
+    .replace(/\{\{company\}\}/g, 'Acme Corp');
+
+  return (
+    <iframe
+      sandbox=""
+      srcDoc={interpolated}
+      className={className || 'w-full h-full border-0'}
+      title="Email preview"
+      style={{ background: 'white' }}
+    />
+  );
+}
+
 function fmtMs(ms: number): string {
   if (ms < 60000) return `${Math.round(ms / 1000)}s`;
   return `${(ms / 60000).toFixed(1)}min`;
@@ -551,16 +569,11 @@ export default function CampaignsPage() {
               </div>
               <div>
                 <label className={labelClass}>Preview</label>
-                <div className="bg-white rounded border border-zinc-700 p-4 h-64 overflow-auto">
+                <div className="bg-white rounded border border-zinc-700 h-64 overflow-hidden">
                   {form.templateHtml ? (
-                    <div className="text-sm text-black" dangerouslySetInnerHTML={{
-                      __html: form.templateHtml
-                        .replace(/\{\{name\}\}/g, 'John Doe')
-                        .replace(/\{\{email\}\}/g, 'john@example.com')
-                        .replace(/\{\{company\}\}/g, 'Acme Corp')
-                    }} />
+                    <SandboxPreview html={form.templateHtml} className="w-full h-full border-0" />
                   ) : (
-                    <p className="text-zinc-400 text-sm italic">Write HTML on the left to see a preview...</p>
+                    <p className="text-zinc-400 text-sm italic p-4">Write HTML on the left to see a preview...</p>
                   )}
                 </div>
               </div>
@@ -810,13 +823,8 @@ export default function CampaignsPage() {
                     </div>
                     <div>
                       <label className={labelClass}>Preview</label>
-                      <div className="bg-white rounded border border-zinc-700 p-4 h-80 overflow-auto">
-                        <div className="text-sm text-black" dangerouslySetInnerHTML={{
-                          __html: form.templateHtml
-                            .replace(/\{\{name\}\}/g, 'John Doe')
-                            .replace(/\{\{email\}\}/g, 'john@example.com')
-                            .replace(/\{\{company\}\}/g, 'Acme Corp')
-                        }} />
+                      <div className="bg-white rounded border border-zinc-700 h-80 overflow-hidden">
+                        <SandboxPreview html={form.templateHtml} className="w-full h-full border-0" />
                       </div>
                     </div>
                   </div>
@@ -838,13 +846,8 @@ export default function CampaignsPage() {
                   </div>
                   <div>
                     <label className={labelClass}>Rendered Preview</label>
-                    <div className="bg-white rounded p-4 h-80 overflow-auto border border-zinc-700">
-                      <div className="text-sm text-black" dangerouslySetInnerHTML={{
-                        __html: selected.templateHtml
-                          .replace(/\{\{name\}\}/g, 'John Doe')
-                          .replace(/\{\{email\}\}/g, 'john@example.com')
-                          .replace(/\{\{company\}\}/g, 'Acme Corp')
-                      }} />
+                    <div className="bg-white rounded h-80 overflow-hidden border border-zinc-700">
+                      <SandboxPreview html={selected.templateHtml} className="w-full h-full border-0" />
                     </div>
                   </div>
                 </div>
