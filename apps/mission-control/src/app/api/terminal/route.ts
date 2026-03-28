@@ -14,13 +14,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'command required' }, { status: 400 });
     }
 
-    // Security: block dangerous commands
-    const blocked = ['rm -rf /', 'mkfs', 'dd if=', ':(){', 'fork bomb', '> /dev/sd', 'chmod 777 /', 'curl | sh', 'wget | sh'];
-    if (blocked.some(b => command.includes(b))) {
+    // Security: block dangerous commands (pattern-based, not exact match)
+    const blockedPatterns = [
+      /rm\s+(-[a-zA-Z]*f[a-zA-Z]*\s+)?\//, // rm -rf /, rm -f /*, rm /etc
+      /mkfs/i,
+      /dd\s+if=/i,
+      /:\(\)\s*\{/,                          // fork bomb
+      />\s*\/dev\/sd/,
+      /chmod\s+777\s+\//,
+      /curl\s.*[|&]/, /wget\s.*[|&]/,       // pipe/chain from curl/wget
+      /\bsudo\b/,
+      /\bshutdown\b/, /\breboot\b/,
+      /\bkill\s+-9\s+1\b/,                   // kill init
+      />\s*\/etc\//, />\s*\/boot\//,          // overwrite system files
+    ];
+    if (blockedPatterns.some(p => p.test(command))) {
       return NextResponse.json({ ok: false, error: 'Command blocked for safety', output: '' });
     }
 
+    // Security: restrict cwd to safe directories
+    const allowedPrefixes = [
+      process.env.HOME || '/home/clawdbot',
+      '/tmp',
+    ];
     const workDir = cwd || process.env.HOME || '/home/clawdbot';
+    const resolvedCwd = require('path').resolve(workDir);
+    if (!allowedPrefixes.some(prefix => resolvedCwd.startsWith(prefix))) {
+      return NextResponse.json({ ok: false, error: 'Working directory not allowed' }, { status: 403 });
+    }
     console.log(`[terminal] ${auth.type}${auth.agentId ? `:${auth.agentId}` : ''} executing: ${command.slice(0, 100)}`);
 
     try {

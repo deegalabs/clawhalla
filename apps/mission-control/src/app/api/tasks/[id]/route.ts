@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { tasks } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
 export async function GET(
   _request: NextRequest,
@@ -50,6 +51,8 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = requireAuth(_request);
+  if (isAuthError(auth)) return auth;
   try {
     const { id } = await params;
     await db.delete(tasks).where(eq(tasks.id, id));

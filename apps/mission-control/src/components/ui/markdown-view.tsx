@@ -2,6 +2,25 @@
 
 import { useState } from 'react';
 
+// Escape HTML special characters to prevent XSS
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Validate URL — block javascript: and data: protocols
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:') || trimmed.startsWith('vbscript:')) {
+    return '#';
+  }
+  return url;
+}
+
 // Parse markdown table block into HTML
 function renderTable(block: string): string {
   const lines = block.trim().split('\n');
@@ -17,7 +36,7 @@ function renderTable(block: string): string {
   let html = '<div class="overflow-x-auto my-2"><table class="w-full text-[10px] border-collapse">';
   html += '<thead><tr>';
   for (const h of headers) {
-    html += `<th class="text-left px-2.5 py-1.5 text-gray-400 font-semibold border-b border-[#2a2a2d] bg-[#111113]">${h}</th>`;
+    html += `<th class="text-left px-2.5 py-1.5 text-gray-400 font-semibold border-b border-[#2a2a2d] bg-[#111113]">${escapeHtml(h)}</th>`;
   }
   html += '</tr></thead><tbody>';
   for (const line of dataLines) {
@@ -25,7 +44,7 @@ function renderTable(block: string): string {
     const cells = parseRow(line);
     html += '<tr>';
     for (let i = 0; i < headers.length; i++) {
-      html += `<td class="px-2.5 py-1.5 text-gray-300 border-b border-[#1e1e21]">${cells[i] || ''}</td>`;
+      html += `<td class="px-2.5 py-1.5 text-gray-300 border-b border-[#1e1e21]">${escapeHtml(cells[i] || '')}</td>`;
     }
     html += '</tr>';
   }
@@ -40,9 +59,17 @@ function renderMarkdown(text: string): string {
   let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const idx = codeBlocks.length;
     codeBlocks.push(
-      `<pre class="bg-[#0a0a0b] border border-[#1e1e21] rounded-lg p-3 my-2 overflow-x-auto text-[11px] text-green-400 font-mono relative"><div class="absolute top-1.5 right-2 text-[8px] text-gray-600 uppercase">${lang}</div>${code.replace(/</g, '&lt;')}</pre>`
+      `<pre class="bg-[#0a0a0b] border border-[#1e1e21] rounded-lg p-3 my-2 overflow-x-auto text-[11px] text-green-400 font-mono relative"><div class="absolute top-1.5 right-2 text-[8px] text-gray-600 uppercase">${escapeHtml(lang)}</div>${escapeHtml(code)}</pre>`
     );
     return `%%CODEBLOCK_${idx}%%`;
+  });
+
+  // Extract inline code before escaping (preserve content)
+  const inlineCodes: string[] = [];
+  processed = processed.replace(/`([^`]+)`/g, (_, code) => {
+    const idx = inlineCodes.length;
+    inlineCodes.push(`<code class="bg-[#1a1a1d] text-amber-400 px-1 py-0.5 rounded text-[11px] font-mono">${escapeHtml(code)}</code>`);
+    return `%%INLINECODE_${idx}%%`;
   });
 
   // Extract tables (lines starting with |, at least 2 lines with | separator)
@@ -52,10 +79,11 @@ function renderMarkdown(text: string): string {
     return `%%CODEBLOCK_${idx}%%`;
   });
 
-  // Apply inline formatting
+  // Escape all remaining HTML to prevent XSS
+  processed = escapeHtml(processed);
+
+  // Apply inline formatting (on escaped content — safe to inject trusted HTML)
   processed = processed
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-[#1a1a1d] text-amber-400 px-1 py-0.5 rounded text-[11px] font-mono">$1</code>')
     // Headers
     .replace(/^### (.+)$/gm, '<h3 class="text-xs font-semibold text-gray-200 mt-3 mb-1">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="text-sm font-semibold text-gray-200 mt-3 mb-1">$1</h2>')
@@ -66,8 +94,9 @@ function renderMarkdown(text: string): string {
     .replace(/\*([^*]+)\*/g, '<em class="text-gray-300 italic">$1</em>')
     // Strikethrough
     .replace(/~~([^~]+)~~/g, '<del class="text-gray-500 line-through">$1</del>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-amber-400 underline hover:text-amber-300">$1</a>')
+    // Links (sanitize URL to block javascript: protocol)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
+      `<a href="${sanitizeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-amber-400 underline hover:text-amber-300">${label}</a>`)
     // Checkboxes
     .replace(/^- \[x\] (.+)$/gm, '<div class="flex items-center gap-1.5 ml-2 text-[11px] text-green-400"><span>✅</span><span>$1</span></div>')
     .replace(/^- \[ \] (.+)$/gm, '<div class="flex items-center gap-1.5 ml-2 text-[11px] text-gray-500"><span>☐</span><span>$1</span></div>')
@@ -76,12 +105,17 @@ function renderMarkdown(text: string): string {
     // Ordered lists
     .replace(/^\d+\. (.+)$/gm, '<li class="text-gray-300 ml-4 list-decimal text-[11px] leading-relaxed">$1</li>')
     // Blockquotes
-    .replace(/^> (.+)$/gm, '<blockquote class="border-l-2 border-amber-500/40 pl-3 text-gray-400 italic text-[11px] my-1">$1</blockquote>')
+    .replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-2 border-amber-500/40 pl-3 text-gray-400 italic text-[11px] my-1">$1</blockquote>')
     // Horizontal rules
     .replace(/^---$/gm, '<hr class="border-[#1e1e21] my-3" />')
     // Line breaks
     .replace(/\n\n/g, '<div class="h-2"></div>')
     .replace(/\n/g, '<br/>');
+
+  // Restore inline code
+  for (let i = 0; i < inlineCodes.length; i++) {
+    processed = processed.replace(`%%INLINECODE_${i}%%`, inlineCodes[i]);
+  }
 
   // Restore code blocks and tables
   for (let i = 0; i < codeBlocks.length; i++) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
 const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
 const PROJECTS_FILE = join(WORKSPACE, 'config/projects.json');
@@ -105,6 +106,8 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE /api/projects — delete project
 export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const { searchParams } = new URL(req.url);
     const slug = searchParams.get('slug');

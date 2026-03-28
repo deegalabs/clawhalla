@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { chatSessions, chatMessages } from '@/lib/schema';
 import { eq, desc, sql } from 'drizzle-orm';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
 // Ensure tables exist
 function ensureTables() {
@@ -118,6 +119,8 @@ export async function POST(req: NextRequest) {
 
 // DELETE /api/chat/sessions?id=xxx — delete a session and its messages
 export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     ensureTables();
     const id = req.nextUrl.searchParams.get('id');

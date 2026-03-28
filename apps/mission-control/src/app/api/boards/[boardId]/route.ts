@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { boards, cards } from '@/lib/schema';
 import { eq, asc, isNull, and } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
 type Ctx = { params: Promise<{ boardId: string }> };
 
@@ -66,6 +67,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
 // DELETE /api/boards/:boardId — archive (soft delete) or hard delete
 export async function DELETE(req: NextRequest, ctx: Ctx) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const { boardId } = await ctx.params;
   const url = new URL(req.url);
   const hard = url.searchParams.get('hard') === 'true';

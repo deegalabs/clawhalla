@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSetting } from './settings';
+import { randomBytes } from 'crypto';
 
 // Agent authentication middleware
 // Agents authenticate via Bearer token in Authorization header.
@@ -10,27 +11,36 @@ export interface AuthContext {
   agentId?: string; // set via X-Agent-Id header
 }
 
+// Internal session token — generated once per process, used for MC frontend → API calls.
+// Not guessable from outside, not the same as the gateway token.
+const MC_SESSION_TOKEN = randomBytes(32).toString('hex');
+
+/** Get the session token for frontend to use in X-MC-Internal header */
+export function getMCSessionToken(): string {
+  return MC_SESSION_TOKEN;
+}
+
 export function authenticateRequest(req: NextRequest): AuthContext | NextResponse {
   const authHeader = req.headers.get('authorization');
 
-  // No auth header = browser/user request (trusted, same-origin)
+  // No auth header = browser/user request (trusted same-origin for read-only)
   if (!authHeader) {
     return { type: 'user' };
   }
 
   const token = authHeader.replace(/^Bearer\s+/i, '');
   if (!token) {
-    return NextResponse.json({ error: 'Invalid authorization header' }, { status: 401 });
+    return NextResponse.json({ ok: false, error: 'Invalid authorization header' }, { status: 401 });
   }
 
   // Validate token against stored gateway token
   const gatewayToken = getSetting('gateway_token', process.env.GATEWAY_TOKEN || '');
   if (!gatewayToken) {
-    return NextResponse.json({ error: 'Gateway token not configured' }, { status: 503 });
+    return NextResponse.json({ ok: false, error: 'Gateway token not configured' }, { status: 503 });
   }
 
   if (token !== gatewayToken) {
-    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    return NextResponse.json({ ok: false, error: 'Invalid token' }, { status: 401 });
   }
 
   // Determine if this is gateway or agent
@@ -47,22 +57,19 @@ export function isAuthError(result: AuthContext | NextResponse): result is NextR
   return result instanceof NextResponse;
 }
 
-// Strict auth — requires Bearer token even for browser requests.
-// Use on critical endpoints: vault write, dispatch, terminal, git push.
+// Strict auth — requires Bearer token or internal session token.
+// Use on critical endpoints: vault write, dispatch, terminal, git push, reset, delete.
 export function requireAuth(req: NextRequest): AuthContext | NextResponse {
   const authHeader = req.headers.get('authorization');
 
   if (!authHeader) {
-    // Check for internal MC request via X-MC-Internal header
-    // This is set by MC's own frontend when calling critical endpoints
+    // Check for internal MC session token (crypto-random, per-process)
     const internalToken = req.headers.get('x-mc-internal');
-    const gatewayToken = getSetting('gateway_token', process.env.GATEWAY_TOKEN || '');
-
-    if (internalToken && gatewayToken && internalToken === gatewayToken) {
+    if (internalToken && internalToken === MC_SESSION_TOKEN) {
       return { type: 'user' };
     }
 
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    return NextResponse.json({ ok: false, error: 'Authentication required' }, { status: 401 });
   }
 
   return authenticateRequest(req);

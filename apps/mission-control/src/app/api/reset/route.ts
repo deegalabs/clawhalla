@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireAuth, isAuthError } from '@/lib/auth';
 import {
   agents, tasks, activities, boards, cards, cardComments, cardHistory,
   costEvents, approvals, settings, epics, stories, sprints, projects,
@@ -7,7 +8,11 @@ import {
 
 // POST /api/reset — reset the database to a fresh state
 // Body: { confirm: "RESET" } required to prevent accidental calls
+// Auth required — this is a destructive operation
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+
   try {
     const body = await req.json();
 

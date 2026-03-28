@@ -4,6 +4,7 @@ import { cards, cardHistory } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
 import { notify } from '@/lib/notify';
+import { requireAuth, isAuthError } from '@/lib/auth';
 
 function nanoid(prefix = 'hist') {
   return `${prefix}_${crypto.randomUUID()}`;
@@ -142,6 +143,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
 // DELETE /api/boards/:boardId/cards/:cardId — archive or delete
 export async function DELETE(req: NextRequest, ctx: Ctx) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const { boardId, cardId } = await ctx.params;
   const url = new URL(req.url);
   const hard = url.searchParams.get('hard') === 'true';
