@@ -28,10 +28,10 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   if (!body.name) {
-    return NextResponse.json({ error: 'name is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 });
   }
   if (!body.columns || !Array.isArray(body.columns) || body.columns.length === 0) {
-    return NextResponse.json({ error: 'columns array is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'columns array is required' }, { status: 400 });
   }
 
   const now = new Date();

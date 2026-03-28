@@ -50,11 +50,11 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   // Verify board exists
   const board = db.select().from(boards).where(eq(boards.id, boardId)).get();
   if (!board) {
-    return NextResponse.json({ error: 'Board not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Board not found' }, { status: 404 });
   }
 
   if (!body.title) {
-    return NextResponse.json({ error: 'title is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'title is required' }, { status: 400 });
   }
 
   // Determine column (default to first column)

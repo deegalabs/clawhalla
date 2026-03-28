@@ -52,6 +52,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, id });
   } catch (error) {
     console.error('Error creating approval:', error);
-    return NextResponse.json({ error: 'Failed to create approval' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Failed to create approval' }, { status: 500 });
   }
 }

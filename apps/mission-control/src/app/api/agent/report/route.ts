@@ -12,12 +12,12 @@ export async function POST(req: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   if (!auth.agentId) {
-    return NextResponse.json({ error: 'X-Agent-Id header required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'X-Agent-Id header required' }, { status: 400 });
   }
 
   const body = await req.json();
   if (!body.action) {
-    return NextResponse.json({ error: 'action is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'action is required' }, { status: 400 });
   }
 
   const now = new Date();

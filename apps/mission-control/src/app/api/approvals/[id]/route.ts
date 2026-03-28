@@ -13,7 +13,7 @@ export async function PATCH(
     const { decision, decidedBy } = body;
     
     if (!['approved', 'rejected'].includes(decision)) {
-      return NextResponse.json({ error: 'Invalid decision' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Invalid decision' }, { status: 400 });
     }
     
     await db.update(approvals)
@@ -27,6 +27,6 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Error updating approval:', error);
-    return NextResponse.json({ error: 'Failed to update approval' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Failed to update approval' }, { status: 500 });
   }
 }

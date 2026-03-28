@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 
   const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
   if (!card || card.boardId !== boardId) {
-    return NextResponse.json({ error: 'Card not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Card not found' }, { status: 404 });
   }
 
   const history = await db
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
   const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
   if (!card || card.boardId !== boardId) {
-    return NextResponse.json({ error: 'Card not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Card not found' }, { status: 404 });
   }
 
   const now = new Date();
@@ -148,7 +148,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
   if (!card || card.boardId !== boardId) {
-    return NextResponse.json({ error: 'Card not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Card not found' }, { status: 404 });
   }
 
   if (hard) {

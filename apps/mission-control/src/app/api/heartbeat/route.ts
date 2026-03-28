@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   const agentId = url.searchParams.get('agent_id');
 
   if (!agentId) {
-    return NextResponse.json({ error: 'agent_id required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'agent_id required' }, { status: 400 });
   }
 
   try {
@@ -64,6 +64,7 @@ export async function GET(req: Request) {
   } catch (error) {
     console.error('Heartbeat error:', error);
     return NextResponse.json({
+      ok: false,
       agent_id: agentId,
       timestamp: Date.now(),
       task: null,
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
 
     if (!agent_id || !task_id || !status) {
       return NextResponse.json(
-        { error: 'agent_id, task_id, and status required' },
+        { ok: false, error: 'agent_id, task_id, and status required' },
         { status: 400 }
       );
     }
@@ -115,6 +116,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, status: newStatus });
   } catch (error) {
     console.error('Heartbeat POST error:', error);
-    return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Failed to update task' }, { status: 500 });
   }
 }

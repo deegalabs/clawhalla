@@ -382,6 +382,7 @@ function ChatPageInner() {
 
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
+    if (mode === 'party' && partyAgents.length === 0) return;
     const userMsg: Message = { id: `msg_${Date.now()}`, role: 'user', content: input, timestamp: new Date().toISOString() };
     setMessages(prev => [...prev, userMsg]);
     const msg = input;

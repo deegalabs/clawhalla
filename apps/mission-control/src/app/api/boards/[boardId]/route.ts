@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   const board = db.select().from(boards).where(eq(boards.id, boardId)).get();
 
   if (!board) {
-    return NextResponse.json({ error: 'Board not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Board not found' }, { status: 404 });
   }
 
   const boardCards = await db
@@ -41,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
   const existing = db.select().from(boards).where(eq(boards.id, boardId)).get();
   if (!existing) {
-    return NextResponse.json({ error: 'Board not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Board not found' }, { status: 404 });
   }
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -72,7 +72,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
 
   const existing = db.select().from(boards).where(eq(boards.id, boardId)).get();
   if (!existing) {
-    return NextResponse.json({ error: 'Board not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Board not found' }, { status: 404 });
   }
 
   if (hard) {

@@ -3,7 +3,7 @@ import { getSetting, setSetting } from '@/lib/settings';
 
 export async function GET(req: NextRequest) {
   const key = req.nextUrl.searchParams.get('key');
-  if (!key) return NextResponse.json({ error: 'key required' }, { status: 400 });
+  if (!key) return NextResponse.json({ ok: false, error: 'key required' }, { status: 400 });
   const value = getSetting(key);
   // Never expose token values — only presence
   if (key === 'gateway_token') {
@@ -16,11 +16,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     if (typeof body.key !== 'string' || typeof body.value !== 'string') {
-      return NextResponse.json({ error: 'key and value required' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'key and value required' }, { status: 400 });
     }
     setSetting(body.key, body.value);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
   }
 }

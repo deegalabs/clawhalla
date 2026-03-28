@@ -13,14 +13,14 @@ export async function POST(req: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   if (!auth.agentId) {
-    return NextResponse.json({ error: 'X-Agent-Id header required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'X-Agent-Id header required' }, { status: 400 });
   }
 
   const body = await req.json();
   const { status, details } = body;
 
   if (!status) {
-    return NextResponse.json({ error: 'status is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'status is required' }, { status: 400 });
   }
 
   const now = new Date();
@@ -56,12 +56,12 @@ export async function GET(req: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   if (!auth.agentId) {
-    return NextResponse.json({ error: 'X-Agent-Id header required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'X-Agent-Id header required' }, { status: 400 });
   }
 
   const agent = db.select().from(agents).where(eq(agents.id, auth.agentId)).get();
   if (!agent) {
-    return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Agent not found' }, { status: 404 });
   }
 
   return NextResponse.json({

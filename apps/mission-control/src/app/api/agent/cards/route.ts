@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   if (!auth.agentId) {
-    return NextResponse.json({ error: 'X-Agent-Id header required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'X-Agent-Id header required' }, { status: 400 });
   }
 
   const url = new URL(req.url);
@@ -53,17 +53,17 @@ export async function POST(req: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   if (!auth.agentId) {
-    return NextResponse.json({ error: 'X-Agent-Id header required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'X-Agent-Id header required' }, { status: 400 });
   }
 
   const body = await req.json();
   if (!body.boardId || !body.title) {
-    return NextResponse.json({ error: 'boardId and title are required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'boardId and title are required' }, { status: 400 });
   }
 
   const board = db.select().from(boards).where(eq(boards.id, body.boardId)).get();
   if (!board) {
-    return NextResponse.json({ error: 'Board not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Board not found' }, { status: 404 });
   }
 
   const cols = JSON.parse(board.columns);
@@ -130,17 +130,17 @@ export async function PATCH(req: NextRequest) {
   if (isAuthError(auth)) return auth;
 
   if (!auth.agentId) {
-    return NextResponse.json({ error: 'X-Agent-Id header required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'X-Agent-Id header required' }, { status: 400 });
   }
 
   const body = await req.json();
   if (!body.cardId) {
-    return NextResponse.json({ error: 'cardId is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'cardId is required' }, { status: 400 });
   }
 
   const card = db.select().from(cards).where(eq(cards.id, body.cardId)).get();
   if (!card) {
-    return NextResponse.json({ error: 'Card not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Card not found' }, { status: 404 });
   }
 
   const now = new Date();

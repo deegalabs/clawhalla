@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const { id } = await params;
   const rows = await db.select().from(tasks).where(eq(tasks.id, id));
-  if (rows.length === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (rows.length === 0) return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
   return NextResponse.json(rows[0]);
 }
 
@@ -42,7 +42,7 @@ export async function PATCH(
     return NextResponse.json({ ok: true, task: updated[0] });
   } catch (error) {
     console.error('Failed to update task:', error);
-    return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Failed to update task' }, { status: 500 });
   }
 }
 
@@ -56,6 +56,6 @@ export async function DELETE(
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Failed to delete task:', error);
-    return NextResponse.json({ error: 'Failed to delete task' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Failed to delete task' }, { status: 500 });
   }
 }

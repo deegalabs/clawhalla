@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Activities error:', error);
-    return NextResponse.json([]);
+    return NextResponse.json({ ok: false, error: 'Failed' }, { status: 500 });
   }
 }
 
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
 
     if (!agent_id || !action) {
       return NextResponse.json(
-        { error: 'agent_id and action required' },
+        { ok: false, error: 'agent_id and action required' },
         { status: 400 }
       );
     }
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     if (!validActions.includes(action)) {
       return NextResponse.json(
-        { error: `Invalid action. Valid actions: ${validActions.join(', ')}` },
+        { ok: false, error: `Invalid action. Valid actions: ${validActions.join(', ')}` },
         { status: 400 }
       );
     }
@@ -66,6 +66,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, id });
   } catch (error) {
     console.error('Activities POST error:', error);
-    return NextResponse.json({ error: 'Failed to log activity' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Failed to log activity' }, { status: 500 });
   }
 }

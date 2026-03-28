@@ -29,13 +29,13 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const body = await req.json();
 
   if (!body.content) {
-    return NextResponse.json({ error: 'content is required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'content is required' }, { status: 400 });
   }
 
   // Verify card exists
   const card = db.select().from(cards).where(eq(cards.id, cardId)).get();
   if (!card) {
-    return NextResponse.json({ error: 'Card not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'Card not found' }, { status: 404 });
   }
 
   const now = new Date();

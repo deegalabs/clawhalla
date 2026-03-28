@@ -10,12 +10,12 @@ export async function PATCH(req: Request) {
   const { project = 'clawhalla', taskId, status, agentId } = body;
   
   if (!taskId || !status) {
-    return NextResponse.json({ error: 'taskId and status required' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'taskId and status required' }, { status: 400 });
   }
 
   const tasksPath = join(WORKSPACE, 'projects', project, 'board', 'tasks.yaml');
   if (!existsSync(tasksPath)) {
-    return NextResponse.json({ error: 'tasks.yaml not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'tasks.yaml not found' }, { status: 404 });
   }
 
   const content = readFileSync(tasksPath, 'utf-8');
@@ -23,7 +23,7 @@ export async function PATCH(req: Request) {
   
   const task = tasks.find((t: any) => t.id === taskId);
   if (!task) {
-    return NextResponse.json({ error: 'task not found' }, { status: 404 });
+    return NextResponse.json({ ok: false, error: 'task not found' }, { status: 404 });
   }
 
   task.status = status;
