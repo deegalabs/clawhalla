@@ -21,7 +21,7 @@ setup.sh → Docker containers (gateway + MC)
 - `POST /api/agent/status` — report status
 - `GET/POST/PATCH /api/agent/cards` — manage assigned cards
 - `POST /api/agent/report` — log activity
-- `POST /api/vault/inject` — resolve secret references
+- `POST /api/vault/reveal` — get masked secret value (agents always receive masked)
 
 ### For gateway (authenticated via Bearer token):
 - `GET /api/vault/credentials?provider=anthropic` — get LLM keys

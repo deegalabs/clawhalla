@@ -347,27 +347,7 @@ async function testVaultAndAuth() {
     assertEqual(status, 403, 'agents should be blocked');
   });
 
-  // Vault inject
-  await test('POST /api/vault/inject resolves $SECRET_NAME', async () => {
-    const { data } = await req(
-      'POST', '/api/vault/inject',
-      { text: 'Use $TEST_SECRET to authenticate' },
-      gatewayHeaders(),
-    );
-    assert(data.ok, 'should be ok');
-    assert(data.text.includes('secret123'), 'should resolve the secret');
-    assert(data.injected.includes('TEST_SECRET'), 'should list injected');
-  });
-
-  // Vault inject with unknown secret
-  await test('POST /api/vault/inject with unknown secret lists it as failed', async () => {
-    const { data } = await req(
-      'POST', '/api/vault/inject',
-      { text: 'Use $NONEXISTENT_KEY here' },
-      gatewayHeaders(),
-    );
-    assert(data.failed.includes('NONEXISTENT_KEY'), 'should be in failed list');
-  });
+  // Vault inject removed (ADR-004: agents must not see plaintext secrets)
 
   // Vault DELETE with auth
   await test('DELETE /api/vault with auth succeeds', async () => {

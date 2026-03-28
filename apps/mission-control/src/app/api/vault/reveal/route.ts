@@ -21,8 +21,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Secret not found' }, { status: 404 });
     }
 
-    // Agents get masked by default, user/gateway can request full
-    const showFull = body.full === true || auth.type === 'gateway';
+    // Agents ALWAYS get masked values — only gateway/internal can see full (ADR-004)
+    const isAgent = auth.type === 'agent' || !!auth.agentId;
+    const showFull = !isAgent && (body.full === true || auth.type === 'gateway');
     const masked = secret.value.slice(0, 4) + '...' + secret.value.slice(-4);
 
     console.log(`[vault-reveal] ${auth.type}${auth.agentId ? `:${auth.agentId}` : ''} revealed: ${name} (${showFull ? 'full' : 'masked'})`);

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   // Only gateway can fetch raw credentials
   if (auth.type === 'agent') {
     return NextResponse.json(
-      { ok: false, error: 'Agents cannot access raw credentials. Use /api/vault/inject instead.' },
+      { ok: false, error: 'Agents cannot access raw credentials. Use /api/vault/reveal for masked values.' },
       { status: 403 }
     );
   }
