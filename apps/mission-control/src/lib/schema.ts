@@ -320,6 +320,50 @@ export const autopilotRuns = sqliteTable('autopilot_runs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 
+// ---------------------------------------------------------------------------
+// Campaign Engine — mass email campaigns with anti-spam
+// ---------------------------------------------------------------------------
+
+export const campaigns = sqliteTable('campaigns', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  subject: text('subject').notNull(),
+  fromName: text('from_name').notNull(),
+  fromEmail: text('from_email').notNull(),
+  replyTo: text('reply_to'),
+  templateHtml: text('template_html').notNull(),
+  templateText: text('template_text'), // plaintext fallback
+  smtpVaultKey: text('smtp_vault_key').notNull().default('SMTP_CONNECTION'), // vault secret name for SMTP config
+  status: text('status').notNull().default('draft'), // draft | sending | paused | completed | failed
+  totalContacts: integer('total_contacts').notNull().default(0),
+  sentCount: integer('sent_count').notNull().default(0),
+  failedCount: integer('failed_count').notNull().default(0),
+  settings: text('settings'), // JSON: { delayMinDay, delayMaxDay, delayMinNight, delayMaxNight, pauseStart, pauseEnd, breakEvery, breakDuration }
+  error: text('error'), // last error message
+  startedAt: integer('started_at', { mode: 'timestamp' }),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  createdBy: text('created_by').notNull().default('user'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+}, (table) => [
+  index('idx_campaigns_status').on(table.status),
+]);
+
+export const campaignContacts = sqliteTable('campaign_contacts', {
+  id: text('id').primaryKey(),
+  campaignId: text('campaign_id').notNull(),
+  email: text('email').notNull(),
+  name: text('name'),
+  variables: text('variables'), // JSON object for template interpolation: { company, role, etc. }
+  status: text('status').notNull().default('pending'), // pending | sent | failed | skipped
+  sentAt: integer('sent_at', { mode: 'timestamp' }),
+  error: text('error'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+}, (table) => [
+  index('idx_campaign_contacts_campaign').on(table.campaignId),
+  index('idx_campaign_contacts_status').on(table.campaignId, table.status),
+]);
+
 export const contentPipelines = sqliteTable('content_pipelines', {
   id: text('id').primaryKey(),
   platform: text('platform').notNull(),

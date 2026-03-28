@@ -1,6 +1,6 @@
 # ADR-004: Multi-Tenancy Architecture and Vault Isolation
 
-**Status:** Accepted
+**Status:** Accepted (updated)
 **Date:** 2026-03-28
 **Deciders:** Daniel (CEO), Claude (Chief Orchestrator)
 
@@ -34,12 +34,16 @@ Additionally, the current single-SQLite architecture provides zero isolation bet
 Adopt **container-per-tenant** architecture:
 
 ```
-controls.clawhalla.xyz (private repo — orchestrator)
+controls.clawhalla.xyz
 │
-├── Auth service (login, signup, OAuth, teams)
-├── Billing service (Stripe integration)
-├── Provisioner (creates/destroys tenant containers)
-├── Proxy (routes user123.controls.clawhalla.xyz → container)
+│  Mission Control IS the SaaS product.
+│  Enterprise features (.ee.ts) + infra scripts handle multi-tenancy.
+│  No separate orchestrator app — MC + infra tooling (Terraform/K8s).
+│
+├── Reverse proxy (routes user123.controls.clawhalla.xyz → container)
+├── Billing (Stripe, gated via .ee.ts in MC)
+├── Auth (SSO/SAML/OIDC, gated via .ee.ts in MC)
+├── Provisioner (infra scripts — create/destroy tenant containers)
 └── Monitoring (usage, health, alerts)
 
 Each tenant:
@@ -58,17 +62,69 @@ Each tenant:
 - The orchestrator manages lifecycle (create, suspend, terminate, backup)
 - Tenants cannot access each other's containers or networks
 
-### 3. Open Source vs SaaS Separation
+### 3. Monorepo with Dual License (n8n model)
 
-Follow the **open-core model** (similar to n8n, GitLab, Supabase):
+After evaluating both approaches (2 repos vs monorepo), we chose **single monorepo** with dual licensing. The team is a solo developer + AI agents — maintaining two repos in sync is unnecessary overhead at this stage.
 
-| Layer | Repo | License | What |
-|-------|------|---------|------|
-| **Core** | `deegalabs/clawhalla` | MIT | Docker + MC + agents + workspace + contracts |
-| **SaaS** | `deegalabs/controls` (private) | Proprietary | Orchestrator, billing, auth, provisioner |
-| **Enterprise** | Feature flags in core | Commercial license | SSO, audit logs, team management, SLA |
+**Repository structure:**
 
-The open source repo IS the product that runs inside each SaaS container. The SaaS adds orchestration, not features. Enterprise features can be gated by a license key within the core codebase.
+```
+deegalabs/clawhalla                    # single monorepo
+├── apps/
+│   └── mission-control/               # MIT — the product (self-hosted AND SaaS)
+│       ├── src/
+│       │   ├── app/                   #   UI + API routes
+│       │   ├── lib/
+│       │   │   ├── billing.ee.ts      #   Stripe (enterprise)
+│       │   │   ├── auth-sso.ee.ts     #   SAML/OIDC (enterprise)
+│       │   │   ├── audit.ee.ts        #   Advanced audit (enterprise)
+│       │   │   └── ...                #   Core libs (MIT)
+│       │   └── ...
+├── packages/
+│   ├── agents/                        # MIT — agent personas + skills
+│   ├── squads/                        # MIT — squad configurations
+│   └── shared/                        # MIT — shared utilities
+├── docker/                            # MIT — Dockerfiles
+├── infra/                             # Provisioning scripts (Terraform/K8s)
+├── docs/                              # MIT — documentation + ADRs
+├── LICENSE.md                         # MIT (everything except .ee.ts files)
+└── LICENSE_EE.md                      # Enterprise (.ee.ts files)
+```
+
+Mission Control IS the product in both modes. There is no separate SaaS app.
+- **Self-hosted:** `docker compose up` — MC runs standalone
+- **SaaS:** Same MC image, deployed as one container per tenant via infra scripts
+
+**What's MIT (free, self-hosted):**
+- Mission Control (full UI + all APIs)
+- Gateway integration
+- All agents and squads
+- Vault, boards, campaigns, chat, content, autopilot
+- Docker setup and deployment
+
+**What's Enterprise (LICENSE_EE — `.ee.ts` files inside MC):**
+- Billing (Stripe integration)
+- SSO/SAML/OIDC authentication
+- Advanced audit logs and compliance
+- Team management and RBAC
+- SLA guarantees
+- All gated by license key at runtime — same binary, features unlock with key
+
+**What monetizes:**
+- ClawHalla Cloud (controls.clawhalla.xyz) — hosted SaaS, subscription per tenant
+- Enterprise license — self-hosted with SSO, audit, teams
+- Premium squad packs — advanced personas and skills on marketplace
+
+**Why monorepo over 2 repos:**
+- Solo dev + agents — no overhead of cross-repo sync
+- Atomic PRs that touch core + enterprise
+- Single CI pipeline
+- Enterprise code visible but licensed — value is in execution, brand, and ecosystem (proven by n8n, GitLab, Supabase)
+
+**Enterprise file convention (same as n8n):**
+- Enterprise features use `.ee.ts` suffix: `auth-saml.ee.ts`, `audit-stream.ee.ts`
+- Enterprise directories use `.ee` suffix: `modules/sso.ee/`
+- Runtime gating via license key check — no feature flags needed
 
 ## Consequences
 
@@ -79,6 +135,8 @@ The open source repo IS the product that runs inside each SaaS container. The Sa
 - **Open source integrity** — The self-hosted version IS the full product
 - **SQLite stays** — No need to migrate to Postgres for row-level security
 - **Familiar model** — Same pattern used by n8n Cloud, GitLab SaaS, Supabase
+- **Dev velocity** — One repo, one CI, atomic changes across core + enterprise
+- **No sync overhead** — Solo dev doesn't waste time keeping repos aligned
 
 ### Negative
 
@@ -86,6 +144,7 @@ The open source repo IS the product that runs inside each SaaS container. The Sa
 - **Cold starts** — Suspended containers take seconds to resume
 - **Updates** — Rolling updates across N containers is more complex than updating one shared DB
 - **Cost floor** — Minimum infrastructure cost per tenant is higher than shared DB
+- **Code visibility** — Enterprise code is visible in the public repo (but licensed)
 
 ### Mitigations
 
@@ -93,20 +152,26 @@ The open source repo IS the product that runs inside each SaaS container. The Sa
 - Lightweight base image (node:24-slim, ~180MB)
 - Orchestrator handles rolling updates with health checks
 - Free tier can share containers with namespace isolation (future optimization)
+- LICENSE_EE.md clearly restricts commercial use of enterprise code
 
 ## Alternatives Considered
 
-### 1. Single DB with row-level security (Postgres RLS)
+### 1. Two separate repos (core public + SaaS private)
+- **Pro:** Enterprise code fully hidden from competitors
+- **Con:** Cross-repo sync overhead, duplicate CI, harder to make atomic changes
+- **Deferred:** May reconsider if team grows to 10+ devs where access control matters more.
+
+### 2. Single DB with row-level security (Postgres RLS)
 - **Pro:** Lower resource cost, simpler infrastructure, enables cross-tenant analytics
 - **Con:** Requires migrating from SQLite to Postgres, complex RLS policies, agents can still bypass RLS if they access the DB directly
 - **Deferred:** Not chosen as primary isolation, but may complement container isolation when cross-tenant queries are needed (admin dashboard, global analytics).
 
-### 2. Database-per-tenant (multiple SQLite files)
+### 3. Database-per-tenant (multiple SQLite files)
 - **Pro:** Lower overhead than full containers
 - **Con:** Agents still share filesystem, gateway, and process. One compromised agent could access another tenant's SQLite file.
 - **Deferred:** Not sufficient as sole isolation boundary, but could be used within a container if one container serves multiple workspaces (Team plan).
 
-### 3. Vault proxy (exec endpoint)
+### 4. Vault proxy (exec endpoint)
 - **Pro:** Agents never see secrets, server-side execution
 - **Con:** Limited flexibility, every integration needs proxy support, maintenance burden
 - **Deferred:** Likely needed in v2+ when agents call external APIs autonomously (DeFi, social). Defense-in-depth within the container, not a replacement for container isolation.

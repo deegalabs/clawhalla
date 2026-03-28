@@ -168,6 +168,16 @@ function SettingsIcon({ className }: { className?: string }) {
   );
 }
 
+function CampaignsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 4l7-3 7 3v8l-7 3-7-3z" />
+      <path d="M1 4l7 3 7-3" />
+      <path d="M8 7v8" />
+    </svg>
+  );
+}
+
 function SearchIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -188,6 +198,7 @@ const navSections = [
       { href: '/factory', label: 'Factory', icon: PipelineIcon },
       { href: '/chat', label: 'Chat', icon: ChatIcon },
       { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
+      { href: '/campaigns', label: 'Campaigns', icon: CampaignsIcon },
     ],
   },
   {
