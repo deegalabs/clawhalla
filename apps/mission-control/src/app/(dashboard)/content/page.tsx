@@ -52,12 +52,37 @@ function createPipelineSteps(): PipelineStep[] {
   ];
 }
 
-function loadPipelines(): Pipeline[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('mc_pipelines') || '[]'); } catch { return []; }
+async function fetchPipelines(): Promise<Pipeline[]> {
+  try {
+    const res = await fetch('/api/content/pipelines');
+    const data = await res.json();
+    if (data.ok && data.pipelines) {
+      return data.pipelines.map((p: Record<string, unknown>) => ({
+        id: p.id,
+        platform: p.platform,
+        topic: p.topic,
+        steps: Array.isArray(p.steps) ? p.steps : [],
+        currentStep: p.currentStep || 0,
+        createdAt: p.createdAt ? new Date(p.createdAt as number).toISOString() : new Date().toISOString(),
+        status: p.status || 'active',
+        finalText: p.finalText || undefined,
+        finalHashtags: p.finalHashtags || undefined,
+      }));
+    }
+  } catch { /* fallback */ }
+  return [];
 }
-function savePipelines(p: Pipeline[]) {
-  if (typeof window !== 'undefined') localStorage.setItem('mc_pipelines', JSON.stringify(p.slice(0, 20)));
+async function savePipelineToDB(p: Pipeline) {
+  try {
+    await fetch('/api/content/pipelines', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: p.id, platform: p.platform, topic: p.topic,
+        status: p.status, currentStep: p.currentStep,
+        steps: p.steps, finalText: p.finalText, finalHashtags: p.finalHashtags,
+      }),
+    });
+  } catch { /* ignore */ }
 }
 
 const platforms = {
@@ -97,12 +122,41 @@ interface Draft {
   createdAt: string; taskId?: string;
 }
 
-function loadDrafts(): Draft[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('mc_drafts') || '[]'); } catch { return []; }
+async function fetchDrafts(): Promise<Draft[]> {
+  try {
+    const res = await fetch('/api/content/drafts');
+    const data = await res.json();
+    if (data.ok && data.drafts) {
+      return data.drafts.map((d: Record<string, unknown>) => ({
+        id: d.id,
+        platform: d.platform,
+        text: d.content || '',
+        hashtags: d.hashtags || '',
+        imageUrl: d.mediaUrl || undefined,
+        scheduledFor: d.scheduledAt ? new Date(d.scheduledAt as number).toISOString() : undefined,
+        status: d.status || 'draft',
+        createdAt: d.createdAt ? new Date(d.createdAt as number).toISOString() : new Date().toISOString(),
+      }));
+    }
+  } catch { /* fallback */ }
+  return [];
 }
-function saveDraftsToStorage(drafts: Draft[]) {
-  if (typeof window !== 'undefined') localStorage.setItem('mc_drafts', JSON.stringify(drafts));
+async function saveDraftToDB(draft: Draft): Promise<string> {
+  try {
+    const res = await fetch('/api/content/drafts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: draft.id, platform: draft.platform, text: draft.text,
+        hashtags: draft.hashtags, imageUrl: draft.imageUrl,
+        scheduledFor: draft.scheduledFor, status: draft.status,
+      }),
+    });
+    const data = await res.json();
+    return data.id || draft.id;
+  } catch { return draft.id; }
+}
+async function deleteDraftFromDB(id: string) {
+  try { await fetch(`/api/content/drafts?id=${id}`, { method: 'DELETE' }); } catch { /* ignore */ }
 }
 
 // Agent actions Bragi can perform
@@ -137,7 +191,10 @@ function ContentPageInner() {
   const [pipelinePlatform, setPipelinePlatform] = useState<Platform>('linkedin');
   const [pipelineRunning, setPipelineRunning] = useState(false);
 
-  useEffect(() => { setDrafts(loadDrafts()); setPipelines(loadPipelines()); }, []);
+  useEffect(() => {
+    fetchDrafts().then(setDrafts);
+    fetchPipelines().then(setPipelines);
+  }, []);
 
   useEffect(() => {
     const checkAccounts = async () => {
@@ -181,7 +238,7 @@ function ContentPageInner() {
     setActivePipeline(pipeline);
     const updated = [pipeline, ...pipelines];
     setPipelines(updated);
-    savePipelines(updated);
+    savePipelineToDB(pipeline);
     setPipelineTopic('');
     // Auto-run first step
     runPipelineStep(pipeline, 0);
@@ -191,7 +248,7 @@ function ContentPageInner() {
     setActivePipeline({ ...pipeline });
     const updated = pipelines.map(p => p.id === pipeline.id ? pipeline : p);
     setPipelines(updated);
-    savePipelines(updated);
+    savePipelineToDB(pipeline);
   };
 
   const callAgent = async (agent: string, prompt: string): Promise<string> => {
@@ -307,7 +364,7 @@ function ContentPageInner() {
     setTab('create');
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     const draft: Draft = {
       id: `draft_${Date.now().toString(36)}`, platform, text, hashtags,
       imageUrl: imageUrl || undefined, scheduledFor: scheduledFor || undefined,
@@ -315,14 +372,14 @@ function ContentPageInner() {
     };
     const updated = [draft, ...drafts];
     setDrafts(updated);
-    saveDraftsToStorage(updated);
+    await saveDraftToDB(draft);
     setPublishResult({ ok: true, message: scheduledFor ? `Scheduled for ${new Date(scheduledFor).toLocaleString()}` : 'Draft saved' });
   };
 
-  const handleDeleteDraft = (id: string) => {
+  const handleDeleteDraft = async (id: string) => {
     const updated = drafts.filter(d => d.id !== id);
     setDrafts(updated);
-    saveDraftsToStorage(updated);
+    await deleteDraftFromDB(id);
   };
 
   const handleLoadDraft = (draft: Draft) => {

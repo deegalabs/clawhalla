@@ -202,3 +202,97 @@ export const cardHistory = sqliteTable('card_history', {
   toValue: text('to_value'),
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Chat Engine — persistent chat sessions and messages
+// ---------------------------------------------------------------------------
+
+export const chatSessions = sqliteTable('chat_sessions', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  agentId: text('agent_id').notNull(), // primary agent or 'party'
+  mode: text('mode').notNull().default('single'), // single | party
+  participants: text('participants'), // JSON array of agent IDs (party mode)
+  model: text('model'), // model tier used
+  messageCount: integer('message_count').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  archivedAt: integer('archived_at', { mode: 'timestamp' }),
+});
+
+export const chatMessages = sqliteTable('chat_messages', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull(),
+  role: text('role').notNull(), // user | agent | system
+  agentId: text('agent_id'), // which agent responded (null for user/system)
+  content: text('content').notNull(),
+  toolCalls: text('tool_calls'), // JSON array of { name, input, output } for tool use rendering
+  thinkingContent: text('thinking_content'), // extended thinking block
+  artifacts: text('artifacts'), // JSON array of { type, title, content }
+  attachments: text('attachments'), // JSON array of { name, type, url }
+  model: text('model'), // model used for this response
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  durationMs: integer('duration_ms'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// Content Engine — drafts and pipelines
+// ---------------------------------------------------------------------------
+
+export const contentDrafts = sqliteTable('content_drafts', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  platform: text('platform').notNull(), // linkedin | twitter | instagram | blog | newsletter
+  status: text('status').notNull().default('draft'), // draft | approved | scheduled | published
+  hashtags: text('hashtags'), // comma-separated
+  mediaUrl: text('media_url'),
+  scheduledAt: integer('scheduled_at', { mode: 'timestamp' }),
+  publishedAt: integer('published_at', { mode: 'timestamp' }),
+  agentId: text('agent_id'), // which agent created it
+  pipelineId: text('pipeline_id'), // link to content pipeline
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// Autopilot Engine — goals and autonomous run history
+// ---------------------------------------------------------------------------
+
+export const autopilotGoals = sqliteTable('autopilot_goals', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  description: text('description').notNull().default(''),
+  priority: text('priority').notNull().default('high'), // critical | high | medium | low
+  status: text('status').notNull().default('active'), // active | achieved | paused
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const autopilotRuns = sqliteTable('autopilot_runs', {
+  id: text('id').primaryKey(),
+  goalId: text('goal_id'),
+  agentId: text('agent_id').notNull(),
+  taskTitle: text('task_title').notNull().default(''),
+  taskDescription: text('task_description'),
+  status: text('status').notNull().default('pending'), // pending | running | done | failed | rejected
+  result: text('result'),
+  feedback: text('feedback'), // approved | rejected | adjusted
+  feedbackNote: text('feedback_note'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+export const contentPipelines = sqliteTable('content_pipelines', {
+  id: text('id').primaryKey(),
+  platform: text('platform').notNull(),
+  topic: text('topic').notNull(),
+  status: text('status').notNull().default('active'), // active | paused | done | cancelled
+  currentStep: integer('current_step').notNull().default(0),
+  steps: text('steps').notNull(), // JSON array of pipeline steps with status/output
+  finalText: text('final_text'),
+  finalHashtags: text('final_hashtags'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+});

@@ -44,43 +44,74 @@ const priorityColors = {
   low: 'bg-gray-500/20 text-gray-400 border-gray-500/20',
 };
 
-// Settings-backed persistence with localStorage cache
-async function loadFromSettings(key: string): Promise<unknown[]> {
+// DB-backed persistence via API
+async function fetchGoals(): Promise<Goal[]> {
   try {
-    const res = await fetch(`/api/settings?key=${key}`);
+    const res = await fetch('/api/autopilot/goals');
     const data = await res.json();
-    if (data.value) {
-      const parsed = JSON.parse(data.value);
-      if (typeof window !== 'undefined') localStorage.setItem(key, data.value);
-      return parsed;
+    if (data.ok && data.goals) {
+      return data.goals.map((g: Record<string, unknown>) => ({
+        id: g.id,
+        title: g.title,
+        description: g.description || '',
+        priority: g.priority || 'high',
+        status: g.status || 'active',
+        createdAt: g.createdAt ? new Date(g.createdAt as number).toISOString() : new Date().toISOString(),
+      }));
     }
-  } catch { /* fallback to localStorage */ }
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+  } catch { /* ignore */ }
+  return [];
 }
 
-function saveToSettings(key: string, data: unknown[]) {
-  const json = JSON.stringify(data);
-  if (typeof window !== 'undefined') localStorage.setItem(key, json);
-  fetch('/api/settings', {
+async function fetchRuns(): Promise<AutopilotRun[]> {
+  try {
+    const res = await fetch('/api/autopilot/runs');
+    const data = await res.json();
+    if (data.ok && data.runs) {
+      return data.runs.map((r: Record<string, unknown>) => ({
+        id: r.id,
+        timestamp: r.createdAt ? new Date(r.createdAt as number).toISOString() : new Date().toISOString(),
+        goalId: r.goalId || null,
+        taskTitle: r.taskTitle || '',
+        taskDescription: r.taskDescription || '',
+        agentId: r.agentId || 'main',
+        status: r.status || 'pending',
+        result: r.result || undefined,
+        feedback: r.feedback || undefined,
+        feedbackNote: r.feedbackNote || undefined,
+      }));
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+async function saveGoalToDB(goal: Goal) {
+  await fetch('/api/autopilot/goals', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, value: json }),
+    body: JSON.stringify({
+      id: goal.id, title: goal.title, description: goal.description,
+      priority: goal.priority, status: goal.status,
+    }),
   }).catch(() => {});
 }
 
-function loadGoalsCache(): Goal[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('mc_autopilot_goals') || '[]'); } catch { return []; }
+async function deleteGoalFromDB(id: string) {
+  await fetch(`/api/autopilot/goals?id=${id}`, { method: 'DELETE' }).catch(() => {});
 }
 
-function loadRunsCache(): AutopilotRun[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('mc_autopilot_runs') || '[]'); } catch { return []; }
+async function saveRunToDB(run: AutopilotRun) {
+  await fetch('/api/autopilot/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: run.id, goalId: run.goalId, agentId: run.agentId,
+      taskTitle: run.taskTitle, taskDescription: run.taskDescription,
+      status: run.status, result: run.result,
+      feedback: run.feedback, feedbackNote: run.feedbackNote,
+    }),
+  }).catch(() => {});
 }
-
-function saveGoals(g: Goal[]) { saveToSettings('mc_autopilot_goals', g); }
-function saveRuns(r: AutopilotRun[]) { saveToSettings('mc_autopilot_runs', r.slice(0, 50)); }
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -106,10 +137,8 @@ function AutopilotPageInner() {
   const [feedbackNote, setFeedbackNote] = useState('');
 
   useEffect(() => {
-    // Load from localStorage cache immediately, then sync from settings API
-    setGoals(loadGoalsCache()); setRuns(loadRunsCache());
-    loadFromSettings('mc_autopilot_goals').then(g => { if (Array.isArray(g) && g.length > 0) setGoals(g as Goal[]); });
-    loadFromSettings('mc_autopilot_runs').then(r => { if (Array.isArray(r) && r.length > 0) setRuns(r as AutopilotRun[]); });
+    fetchGoals().then(g => setGoals(g));
+    fetchRuns().then(r => setRuns(r));
   }, []);
 
   // Fetch crons
@@ -128,9 +157,10 @@ function AutopilotPageInner() {
   const handleSaveGoal = () => {
     if (!goalForm.title.trim()) return;
     if (editingGoal) {
-      const updated = goals.map(g => g.id === editingGoal ? { ...g, ...goalForm } : g);
+      const updatedGoal = { ...goals.find(g => g.id === editingGoal)!, ...goalForm };
+      const updated = goals.map(g => g.id === editingGoal ? updatedGoal : g);
       setGoals(updated);
-      saveGoals(updated);
+      saveGoalToDB(updatedGoal);
       setEditingGoal(null);
     } else {
       const goal: Goal = {
@@ -139,24 +169,25 @@ function AutopilotPageInner() {
         status: 'active',
         createdAt: new Date().toISOString(),
       };
-      const updated = [goal, ...goals];
-      setGoals(updated);
-      saveGoals(updated);
+      setGoals([goal, ...goals]);
+      saveGoalToDB(goal);
     }
     setGoalForm({ title: '', description: '', priority: 'high' });
     setShowGoalForm(false);
   };
 
   const handleDeleteGoal = (id: string) => {
-    const updated = goals.filter(g => g.id !== id);
-    setGoals(updated);
-    saveGoals(updated);
+    setGoals(goals.filter(g => g.id !== id));
+    deleteGoalFromDB(id);
   };
 
   const handleToggleGoal = (id: string) => {
-    const updated = goals.map(g => g.id === id ? { ...g, status: g.status === 'active' ? 'paused' as const : 'active' as const } : g);
+    const goal = goals.find(g => g.id === id);
+    if (!goal) return;
+    const newStatus = goal.status === 'active' ? 'paused' as const : 'active' as const;
+    const updated = goals.map(g => g.id === id ? { ...g, status: newStatus } : g);
     setGoals(updated);
-    saveGoals(updated);
+    saveGoalToDB({ ...goal, status: newStatus });
   };
 
   // Run autopilot NOW
@@ -174,7 +205,7 @@ function AutopilotPageInner() {
     };
     const updatedRuns = [newRun, ...runs];
     setRuns(updatedRuns);
-    saveRuns(updatedRuns);
+    saveRunToDB(newRun);
 
     try {
       const goalsText = activeGoals.map((g, i) => `${i + 1}. [${g.priority.toUpperCase()}] ${g.title}: ${g.description}`).join('\n');
@@ -224,27 +255,29 @@ DETAILS: [what was accomplished, what changed, what's next]`;
 
         const finalRuns = [completedRun, ...runs];
         setRuns(finalRuns);
-        saveRuns(finalRuns);
+        saveRunToDB(completedRun);
       } else {
         const failedRun: AutopilotRun = { ...newRun, status: 'failed', result: data.error || 'Failed' };
         const finalRuns = [failedRun, ...runs];
         setRuns(finalRuns);
-        saveRuns(finalRuns);
+        saveRunToDB(failedRun);
       }
     } catch (err) {
       const failedRun: AutopilotRun = { ...newRun, status: 'failed', result: String(err) };
       const finalRuns = [failedRun, ...runs];
       setRuns(finalRuns);
-      saveRuns(finalRuns);
+      saveRunToDB(failedRun);
     }
     setRunning(false);
   };
 
   // Feedback on a run
   const handleFeedback = (runId: string, type: 'approved' | 'rejected' | 'adjusted') => {
-    const updated = runs.map(r => r.id === runId ? { ...r, feedback: type, feedbackNote: feedbackNote || undefined } : r);
+    const run = runs.find(r => r.id === runId);
+    const updatedRun = { ...run!, feedback: type, feedbackNote: feedbackNote || undefined };
+    const updated = runs.map(r => r.id === runId ? updatedRun : r);
     setRuns(updated);
-    saveRuns(updated);
+    saveRunToDB(updatedRun);
     setFeedbackRunId(null);
     setFeedbackNote('');
   };
