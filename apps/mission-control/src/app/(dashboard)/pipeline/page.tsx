@@ -18,6 +18,12 @@ interface AgentHealth {
   state: 'active' | 'idle' | 'stalled' | 'stuck' | 'offline';
   idleMinutes: number | null;
   model: string | null;
+  sessionCount: number;
+}
+
+interface UsageData {
+  today: { totalCostUsd: string; events: number; inputTokens: number; outputTokens: number };
+  byAgent: Record<string, { input: number; output: number; cost: number; count: number }>;
 }
 
 interface Activity {
@@ -49,21 +55,29 @@ function timeAgo(dateStr?: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function fmtTokens(n: number): string {
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(1)}k`;
+}
+
 export default function PipelinePage() {
   const [cards, setCards] = useState<Card[]>([]);
   const [agents, setAgents] = useState<AgentHealth[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [usage, setUsage] = useState<UsageData | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [boardsRes, healthRes, actRes] = await Promise.all([
+      const [boardsRes, healthRes, actRes, usageRes] = await Promise.all([
         fetch('/api/boards'),
         fetch('/api/agents/health'),
         fetch('/api/activities?limit=10'),
+        fetch('/api/usage'),
       ]);
       const boardsData = await boardsRes.json();
       const healthData = await healthRes.json();
       const actData = await actRes.json();
+      const usageData = await usageRes.json();
 
       // Fetch cards from all boards
       if (boardsData.ok && boardsData.boards) {
@@ -81,6 +95,7 @@ export default function PipelinePage() {
       }
       if (healthData.ok) setAgents(healthData.agents);
       if (Array.isArray(actData)) setActivities(actData);
+      if (usageData.ok) setUsage(usageData);
     } catch (err) { console.error('[pipeline] fetch error:', err); }
   }, []);
 
@@ -126,7 +141,7 @@ export default function PipelinePage() {
   return (
     <div className="space-y-5">
       {/* Delivery Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
           <div className="flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-400">✓</span>
@@ -158,6 +173,13 @@ export default function PipelinePage() {
           <div className="text-2xl font-bold text-gray-300">
             {avgPipelineMs > 0 ? `${avgHours}h ${avgMins}m` : '—'}
           </div>
+        </div>
+        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+          <div className="text-[10px] text-gray-500 uppercase">Cost Today</div>
+          <div className="text-2xl font-bold text-amber-400">${usage?.today.totalCostUsd || '0.00'}</div>
+          {usage && usage.today.events > 0 && (
+            <div className="text-[10px] text-gray-600 mt-0.5">{fmtTokens(usage.today.inputTokens)} in / {fmtTokens(usage.today.outputTokens)} out</div>
+          )}
         </div>
       </div>
 
@@ -272,25 +294,55 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* Live Activity Feed */}
-      <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xs">⚡</span>
-          <span className="text-xs font-medium text-gray-300">Build Activity</span>
+      {/* Bottom: Utilization + Activity */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Agent Utilization */}
+        <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+          <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-3">Agent Utilization</div>
+          <div className="space-y-2">
+            {agents.filter(a => a.state !== 'offline').map(agent => {
+              const cost = usage?.byAgent?.[agent.id];
+              const utilPct = agent.state === 'active' ? 100 : agent.state === 'stalled' ? 75 : cost ? Math.min(50, cost.count * 10) : 0;
+              const dotColor = agent.state === 'active' ? 'bg-green-500' : agent.state === 'stalled' ? 'bg-amber-500' : 'bg-gray-500';
+              const textColor = agent.state === 'active' ? 'text-green-400' : agent.state === 'stalled' ? 'text-amber-400' : 'text-gray-500';
+              return (
+                <div key={agent.id} className="flex items-center gap-2">
+                  <span className="text-xs w-5">{AGENT_EMOJIS[agent.id] || '🤖'}</span>
+                  <span className="text-[10px] text-gray-400 w-14 truncate capitalize">{agent.id}</span>
+                  <div className="flex-1 h-1.5 bg-[#1a1a1d] rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${dotColor}`} style={{ width: `${utilPct}%` }} />
+                  </div>
+                  <span className={`text-[9px] w-8 text-right ${textColor}`}>{utilPct > 0 ? `${utilPct}%` : '—'}</span>
+                  {cost && <span className="text-[9px] text-amber-400/50 w-12 text-right">${(cost.cost / 100).toFixed(2)}</span>}
+                </div>
+              );
+            })}
+            {agents.filter(a => a.state !== 'offline').length === 0 && (
+              <div className="text-xs text-gray-700 text-center py-3">No agents online</div>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1.5">
-          {activities.slice(0, 8).map(act => (
-            <div key={act.id} className="flex items-center gap-1.5 text-[11px]">
-              <span>{AGENT_EMOJIS[act.agentId] || '🤖'}</span>
-              <span className="text-gray-400 capitalize">{act.agentId}</span>
-              <span className="text-gray-600">•</span>
-              <span className="text-gray-500">{act.target || act.action}</span>
-              <span className="text-gray-700">{timeAgo(act.timestamp)}</span>
-            </div>
-          ))}
-          {activities.length === 0 && (
-            <div className="text-xs text-gray-700">No recent activity</div>
-          )}
+
+        {/* Activity Feed */}
+        <div className="md:col-span-2 bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs">⚡</span>
+            <span className="text-xs font-medium text-gray-300">Activity</span>
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-1.5">
+            {activities.slice(0, 8).map(act => (
+              <div key={act.id} className="flex items-center gap-1.5 text-[11px]">
+                <span>{AGENT_EMOJIS[act.agentId] || '🤖'}</span>
+                <span className="text-gray-400 capitalize">{act.agentId}</span>
+                <span className="text-gray-600">•</span>
+                <span className="text-gray-500">{act.target || act.action}</span>
+                <span className="text-gray-700">{timeAgo(act.timestamp)}</span>
+              </div>
+            ))}
+            {activities.length === 0 && (
+              <div className="text-xs text-gray-700">No recent activity</div>
+            )}
+          </div>
         </div>
       </div>
     </div>

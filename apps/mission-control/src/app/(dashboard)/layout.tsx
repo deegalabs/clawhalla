@@ -206,7 +206,7 @@ const navSections = [
       { href: '/tasks', label: 'Boards', icon: TasksIcon },
       { href: '/projects', label: 'Projects', icon: ProjectsIcon },
       { href: '/calendar', label: 'Calendar', icon: CalendarIcon },
-      { href: '/factory', label: 'Factory', icon: PipelineIcon },
+      { href: '/pipeline', label: 'Pipeline', icon: PipelineIcon },
       { href: '/chat', label: 'Chat', icon: ChatIcon },
       { href: '/approvals', label: 'Approvals', icon: ApprovalsIcon },
       { href: '/campaigns', label: 'Campaigns', icon: CampaignsIcon },
@@ -225,8 +225,6 @@ const navSections = [
     label: 'System',
     links: [
       { href: '/squads', label: 'Squads', icon: SquadsIcon },
-      { href: '/team', label: 'Team', icon: TeamIcon },
-      { href: '/office', label: 'Office', icon: OfficeIcon },
       { href: '/terminal', label: 'Terminal', icon: TerminalIcon },
       { href: '/feedback', label: 'Autopilot', icon: FeedbackIcon },
       { href: '/settings', label: 'Settings', icon: SettingsIcon },
