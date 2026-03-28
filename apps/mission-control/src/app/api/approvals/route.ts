@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { approvals } from '@/lib/schema';
 import { desc, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
+import { notify } from '@/lib/notify';
 
 export async function GET() {
   try {
@@ -36,6 +37,18 @@ export async function POST(req: Request) {
       createdAt: new Date(),
     });
     
+    // Notify about pending approval
+    notify({
+      type: 'approval',
+      title: 'Approval Required',
+      body: `${requestedBy || 'Agent'} requests: ${title}`,
+      icon: '⭐',
+      href: '/approvals',
+      agentId: requestedBy,
+      priority: 'high',
+      sound: true,
+    });
+
     return NextResponse.json({ ok: true, id });
   } catch (error) {
     console.error('Error creating approval:', error);

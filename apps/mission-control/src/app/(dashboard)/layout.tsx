@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { useNotifications } from '@/hooks/use-notifications';
+import { NotificationBell, ToastStack } from '@/components/ui/notifications';
 
 // Minimal SVG icons (16x16)
 function DashboardIcon({ className }: { className?: string }) {
@@ -243,6 +245,18 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const {
+    notifications: notifs,
+    unreadCount,
+    toasts,
+    soundEnabled,
+    setSoundEnabled,
+    markRead,
+    markAllRead,
+    dismiss,
+    dismissToast,
+    clearAll,
+  } = useNotifications();
 
   return (
     <div className="flex h-screen bg-[#0a0a0b]">
@@ -315,7 +329,17 @@ export default function DashboardLayout({
               {navSections.flatMap(s => s.links).find((l) => l.href === pathname)?.label || 'Dashboard'}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <NotificationBell
+              notifications={notifs}
+              unreadCount={unreadCount}
+              soundEnabled={soundEnabled}
+              onToggleSound={() => setSoundEnabled(!soundEnabled)}
+              onMarkRead={markRead}
+              onMarkAllRead={markAllRead}
+              onDismiss={dismiss}
+              onClearAll={clearAll}
+            />
           </div>
         </header>
 
@@ -324,6 +348,9 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+
+      {/* Toast notifications */}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

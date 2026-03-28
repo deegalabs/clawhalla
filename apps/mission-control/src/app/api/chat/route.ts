@@ -4,6 +4,7 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { db } from '@/lib/db';
 import { activities, agents as agentsTable } from '@/lib/schema';
+import { notify } from '@/lib/notify';
 
 const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
 
@@ -402,5 +403,24 @@ function logActivity(agent: string, prompt: string, response: string, ok: boolea
       details: `${response.length} chars`,
       timestamp: new Date(),
     }).run();
+
+    // Broadcast notification for chat responses
+    if (ok && agent !== 'main' && agent !== 'claw') {
+      // Get agent info for display
+      const agentRow = db.select().from(agentsTable).where(
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('drizzle-orm').eq(agentsTable.id, agent)
+      ).get();
+
+      notify({
+        type: 'chat',
+        title: agentRow ? `${agentRow.emoji} ${agentRow.name}` : agent,
+        body: response.slice(0, 120) + (response.length > 120 ? '...' : ''),
+        icon: agentRow?.emoji || '💬',
+        href: '/chat',
+        agentId: agent,
+        priority: 'normal',
+      });
+    }
   } catch { /* ignore */ }
 }

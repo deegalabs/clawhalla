@@ -258,6 +258,24 @@ export const contentDrafts = sqliteTable('content_drafts', {
 });
 
 // ---------------------------------------------------------------------------
+// Notification Engine — persistent notifications
+// ---------------------------------------------------------------------------
+
+export const notifications = sqliteTable('notifications', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(), // chat | approval | task | agent | system | autopilot
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  icon: text('icon'), // emoji
+  href: text('href'), // navigation target
+  agentId: text('agent_id'),
+  priority: text('priority').notNull().default('normal'), // low | normal | high | urgent
+  read: integer('read').notNull().default(0), // 0 = unread, 1 = read
+  dismissed: integer('dismissed').notNull().default(0),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Autopilot Engine — goals and autonomous run history
 // ---------------------------------------------------------------------------
 

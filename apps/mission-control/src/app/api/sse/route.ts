@@ -1,5 +1,5 @@
 import { workspaceWatcher } from '@/lib/watcher';
-import { subscribeBoardEvents } from '@/lib/events';
+import { subscribeBoardEvents, subscribeNotifications } from '@/lib/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,7 @@ export async function GET() {
   const encoder = new TextEncoder();
   let unsubFile: (() => void) | null = null;
   let unsubBoard: (() => void) | null = null;
+  let unsubNotif: (() => void) | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -39,6 +40,11 @@ export async function GET() {
         send({ type: 'board_event', event });
       });
 
+      // Subscribe to notification events
+      unsubNotif = subscribeNotifications((event) => {
+        send({ type: 'notification', event });
+      });
+
       // Heartbeat every 30s to keep connection alive
       const heartbeat = setInterval(() => {
         send({ type: 'ping', timestamp: Date.now() });
@@ -54,6 +60,7 @@ export async function GET() {
     cancel() {
       if (unsubFile) unsubFile();
       if (unsubBoard) unsubBoard();
+      if (unsubNotif) unsubNotif();
     },
   });
 
