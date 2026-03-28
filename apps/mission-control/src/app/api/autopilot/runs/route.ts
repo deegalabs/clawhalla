@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { autopilotRuns } from '@/lib/schema';
 import { eq, desc } from 'drizzle-orm';
+import { notify } from '@/lib/notify';
 
 function ensureTable() {
   const sqlite = (db as unknown as { $client: { exec: (s: string) => void } }).$client;
@@ -69,6 +70,32 @@ export async function POST(req: NextRequest) {
         feedbackNote: feedbackNote || null,
         createdAt: now,
       });
+    }
+
+    // Notify on run completion or failure (only on updates with terminal status)
+    if (existing && status && status !== existing.status) {
+      if (status === 'done') {
+        notify({
+          type: 'autopilot',
+          title: 'Autopilot Run Complete',
+          body: taskTitle || 'Task completed successfully',
+          icon: '🚀',
+          href: '/feedback',
+          agentId,
+          priority: 'normal',
+        });
+      } else if (status === 'failed') {
+        notify({
+          type: 'autopilot',
+          title: 'Autopilot Run Failed',
+          body: taskTitle || 'Task execution failed',
+          icon: '⚠️',
+          href: '/feedback',
+          agentId,
+          priority: 'high',
+          sound: true,
+        });
+      }
     }
 
     return NextResponse.json({ ok: true, id: runId });

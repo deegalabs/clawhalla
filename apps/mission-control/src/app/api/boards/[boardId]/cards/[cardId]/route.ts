@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { cards, cardHistory } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
+import { notify } from '@/lib/notify';
 
 function nanoid(prefix = 'hist') {
   return `${prefix}_${Math.random().toString(36).substring(2, 8)}${Date.now().toString(36)}`;
@@ -111,6 +112,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   // Auto-set completedAt when moved to a "done"-like column
   if (body.column && /^(done|deployed|resolved|published|closed)$/i.test(body.column)) {
     updates.completedAt = now;
+
+    notify({
+      type: 'task',
+      title: 'Task Completed',
+      body: `"${card.title}" moved to ${body.column}${card.assignee ? ` by @${card.assignee}` : ''}`,
+      icon: '✅',
+      href: '/tasks',
+      agentId: card.assignee || by,
+      priority: 'low',
+    });
   }
 
   db.update(cards).set(updates).where(eq(cards.id, cardId)).run();

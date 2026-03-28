@@ -372,6 +372,16 @@ function ChatPageInner() {
   }, []);
 
   // --- Send Message ---
+  // Abort controller for SSE — allows cleanup on unmount
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Cleanup: abort any in-flight SSE and reset sending state on unmount
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, []);
+
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
     const userMsg: Message = { id: `msg_${Date.now()}`, role: 'user', content: input, timestamp: new Date().toISOString() };
@@ -380,6 +390,15 @@ function ChatPageInner() {
     setInput(''); setAttachedFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
+
+    // Save user message immediately so it persists even if user navigates away
+    const sessionId = activeSessionId || `chat_${Date.now().toString(36)}`;
+    if (!activeSessionId) setActiveSessionId(sessionId);
+    saveSessionToDB(sessionId, msg.slice(0, 50), mode === 'party' ? 'party' : selectedAgent, mode, mode === 'party' ? partyAgents : undefined, modelTier, [userMsg]);
+
+    // Create abort controller for this request
+    const abort = new AbortController();
+    abortRef.current = abort;
 
     try {
       let contextPrefix = '';
@@ -397,6 +416,7 @@ function ChatPageInner() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
         body: JSON.stringify(body),
+        signal: abort.signal,
       });
 
       if (res.headers.get('content-type')?.includes('text/event-stream') && res.body) {
@@ -509,8 +529,14 @@ function ChatPageInner() {
         if (data.ok) autoTask.agentChat(mode === 'party' ? 'party' : selectedAgent, msg);
       }
     } catch (e) {
-      addSystemMsg(`Failed: ${String(e)}`);
+      // Don't show error if user navigated away (abort)
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        // User navigated away — silently stop
+      } else {
+        addSystemMsg(`Failed: ${String(e)}`);
+      }
     }
+    abortRef.current = null;
     setSending(false);
     setCurrentPartyAgent(null);
   };

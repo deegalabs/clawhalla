@@ -404,14 +404,17 @@ function logActivity(agent: string, prompt: string, response: string, ok: boolea
       timestamp: new Date(),
     }).run();
 
-    // Broadcast notification for chat responses
-    if (ok && agent !== 'main' && agent !== 'claw') {
-      // Get agent info for display
-      const agentRow = db.select().from(agentsTable).where(
+    // Get agent info for display
+    let agentRow: { name: string; emoji: string | null } | undefined;
+    try {
+      agentRow = db.select().from(agentsTable).where(
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         require('drizzle-orm').eq(agentsTable.id, agent)
       ).get();
+    } catch { /* ignore */ }
 
+    if (ok && agent !== 'main' && agent !== 'claw') {
+      // Notify on successful chat responses from named agents
       notify({
         type: 'chat',
         title: agentRow ? `${agentRow.emoji} ${agentRow.name}` : agent,
@@ -420,6 +423,18 @@ function logActivity(agent: string, prompt: string, response: string, ok: boolea
         href: '/chat',
         agentId: agent,
         priority: 'normal',
+      });
+    } else if (!ok) {
+      // Notify on agent errors
+      notify({
+        type: 'agent',
+        title: `Agent Error${agentRow ? ` — ${agentRow.name}` : ''}`,
+        body: response.slice(0, 120) + (response.length > 120 ? '...' : ''),
+        icon: '⚠️',
+        href: '/chat',
+        agentId: agent,
+        priority: 'high',
+        sound: true,
       });
     }
   } catch { /* ignore */ }

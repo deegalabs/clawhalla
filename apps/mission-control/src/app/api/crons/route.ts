@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execSync } from 'child_process';
+import { notify } from '@/lib/notify';
 
 function oc(cmd: string): string {
   return execSync(`openclaw cron ${cmd}`, { encoding: 'utf-8', timeout: 15000 }).trim();
@@ -55,8 +56,29 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true, action: 'disabled' });
     }
     if (action === 'run') {
-      oc(`run ${id}`);
-      return NextResponse.json({ ok: true, action: 'triggered' });
+      try {
+        oc(`run ${id}`);
+        notify({
+          type: 'system',
+          title: 'Cron Executed',
+          body: `Job "${name || id}" triggered successfully`,
+          icon: '⏰',
+          href: '/calendar',
+          priority: 'normal',
+        });
+        return NextResponse.json({ ok: true, action: 'triggered' });
+      } catch (err) {
+        notify({
+          type: 'system',
+          title: 'Cron Failed',
+          body: `Job "${name || id}" failed: ${String(err).slice(0, 100)}`,
+          icon: '⚠️',
+          href: '/calendar',
+          priority: 'urgent',
+          sound: true,
+        });
+        return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
+      }
     }
 
     // Edit fields
