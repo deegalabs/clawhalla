@@ -67,6 +67,19 @@
 - [x] Tyr security audit (12 findings, all resolved)
 - [x] Pause mechanism, two-step ownership, zero address checks
 
+### v1.0.1 — Mission Control Hardening
+- [x] Boards Engine — multi-board Kanban with card detail, comments, history
+- [x] Chat Engine — multi-agent chat, party mode, voice input, session persistence
+- [x] Content pipelines — multi-step agent workflows
+- [x] Council sessions — automated R&D memos
+- [x] Autopilot — goal-driven autonomous execution
+- [x] Notification system — SSE + auto-reconnect + exponential backoff
+- [x] P0 Security — XSS prevention, auth on destructive endpoints, terminal blocklist, CSP
+- [x] P1 Stability — rate limiting, N+1 query fix, pagination, crypto IDs
+- [x] P2 UX — responsive sidebar, loading/error states, modal accessibility (ARIA)
+- [x] P3 Infra — production Dockerfile + HEALTHCHECK, DB indexes, CORS middleware
+- [x] 40+ API endpoints (up from 19), 20 screens (up from 12), 20+ DB tables
+
 ## In Progress
 
 ### v1.1 — Contract Deployment

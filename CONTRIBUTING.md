@@ -52,4 +52,4 @@ Please include:
 
 ## Questions?
 
-Open a [Discussion](https://github.com/YOUR_ORG/clawhalla/discussions) on GitHub.
+Open a [Discussion](https://github.com/deegalabs/clawhalla/discussions) on GitHub.

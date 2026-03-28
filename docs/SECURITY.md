@@ -72,6 +72,26 @@ Always set a strong gateway token.
 - The container runs as a non-root user (`clawdbot`).
 - The entrypoint fixes ownership on the mounted volume.
 
+## Mission Control Security
+
+### API Protection
+
+- **Authentication** — Per-process crypto session token on all destructive endpoints
+- **Rate limiting** — In-memory limiter with concurrent + per-minute caps (dispatch: 3/10, chat: 5/20)
+- **CORS** — Middleware blocks unknown origins on `/api/*` routes
+- **CSP** — Content-Security-Policy header on all responses (`unsafe-eval` only in dev)
+
+### Input Sanitization
+
+- **XSS prevention** — HTML escaping + URL sanitization in markdown renderer
+- **Terminal** — Regex-based command blocklist (rm -rf, sudo, mkfs, etc.) + cwd restricted to home/tmp
+- **API limits** — All paginated endpoints capped (100-500 max), crypto.randomUUID() for all IDs
+
+### Data
+
+- **Vault** — AES-256-GCM encryption with scrypt key derivation
+- **DB** — SQLite with parameterized queries via Drizzle ORM (no SQL injection)
+
 ## Reporting security issues
 
 If you discover a vulnerability:

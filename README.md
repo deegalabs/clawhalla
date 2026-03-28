@@ -7,7 +7,7 @@ Docker launcher + Mission Control dashboard + 15-agent hierarchy + smart contrac
 ## What's Included
 
 - **Docker setup** — One-command OpenClaw installation with pre-configured workspace
-- **Mission Control** — 12-screen dashboard for agent orchestration and monitoring
+- **Mission Control** — 20-screen dashboard for agent orchestration and monitoring
 - **15 AI agents** — Norse mythology-themed hierarchy across 4 squads
 - **Agent Factory** — Create new agents from the UI with persona templates
 - **Squad Pack system** — Install pre-configured agent teams with one click
@@ -49,43 +49,80 @@ Access at `http://localhost:3333`
 | Screen | Description |
 |--------|-------------|
 | Dashboard | Agent overview, stats, real-time activity feed (SSE) |
-| Tasks | Kanban board with auto-dispatch + SSE live updates |
+| Boards | Multi-board Kanban engine with drag-and-drop, card detail modals |
 | Calendar | Cron jobs and scheduled tasks |
-| Projects | Project cards + Git push panel |
-| Memory | Daily journal, long-term memory, FTS5 search |
-| Docs | Searchable document browser with 11 category filters |
-| Team | Org chart by tier + Agent Factory (create agents from UI) |
-| Content | Post editor with LinkedIn integration + checklist |
-| Marketplace | Squad packs + wallet connect (Base L2) |
+| Projects | Project cards + Git push/pull panel |
+| Factory | Content pipelines — multi-step agent workflows |
+| Chat | Multi-agent chat with party mode, voice input, session persistence |
 | Approvals | CEO approval gates and decision history |
-| Settings | Secret vault (AES-256-GCM encrypted storage) |
+| Memory | Daily journal, long-term memory, FTS5 search |
+| Docs | Searchable document browser with category filters |
+| Content | Post editor with LinkedIn integration + checklist |
+| Council | R&D council sessions — automated research memos |
+| Team | Org chart by tier + Agent Factory (create agents from UI) |
+| Office | Live agent status and session monitoring |
+| Terminal | Sandboxed terminal with command blocklist |
+| Autopilot | Goal-driven autonomous execution with feedback loop |
+| Marketplace | Squad packs + wallet connect (Base L2) |
+| Settings | Secret vault (AES-256-GCM) + system configuration |
 
-### API Routes (19)
+### API Routes (40+)
 
 ```
-GET  /api/health            — Health check
-GET  /api/gateway/sessions  — Live agent sessions
-GET  /api/gateway/crons     — Cron job list
-GET  /api/org-structure     — Agent hierarchy from YAML
-GET  /api/sse               — Server-Sent Events stream
-GET  /api/search?q=query    — FTS5 full-text search
-POST /api/search            — Trigger re-index
-CRUD /api/tasks             — Task management
-GET  /api/board/sync        — YAML board reader
-PATCH/api/board/update      — YAML board writer
-GET  /api/activities        — Activity log
-GET  /api/memory            — Memory entries
-GET  /api/docs              — Document scanner
-CRUD /api/vault             — Secret vault (encrypted)
-POST /api/vault/reveal      — Decrypt secret (masked/full)
-GET  /api/git               — Git repo status
-POST /api/git               — Git push/pull
-CRUD /api/agents/factory    — Agent Factory
-CRUD /api/packs             — Squad Pack installer
-GET  /api/agents/coverage   — Multi-role skill matching
-POST /api/feedback          — Continuous learning system
-GET  /api/linkedin           — LinkedIn connection status
-POST /api/linkedin           — Publish LinkedIn post
+Core
+  GET  /api/health              — Gateway health check (debounced)
+  GET  /api/sse                 — Server-Sent Events stream
+  GET  /api/search?q=query      — FTS5 full-text search
+
+Boards Engine
+  CRUD /api/boards              — Board management
+  CRUD /api/boards/:id/cards    — Card CRUD with SQL-level filtering
+  GET  /api/boards/:id/cards/:id/comments — Card comments
+  GET  /api/boards/:id/cards/:id/history  — Card history
+
+Tasks & Projects
+  CRUD /api/tasks               — Legacy task management
+  CRUD /api/projects            — Project management
+  CRUD /api/epics               — Epic tracking
+  GET  /api/sprints             — Sprint management
+
+Chat & AI
+  POST /api/chat                — Streaming chat (rate-limited)
+  CRUD /api/chat/sessions       — Chat session persistence
+  POST /api/dispatch            — Agent task dispatch (rate-limited)
+  POST /api/council/session     — R&D council sessions
+
+Content & Knowledge
+  GET  /api/activities          — Activity log (paginated)
+  GET  /api/memory              — Memory entries
+  GET  /api/docs                — Document scanner (capped)
+  CRUD /api/content/drafts      — Content drafts
+  CRUD /api/content/pipelines   — Content pipelines
+  GET  /api/notifications       — Notification system
+
+Agents & System
+  GET  /api/agents/health       — Agent health status
+  CRUD /api/agents/factory      — Agent Factory
+  GET  /api/org-structure       — Agent hierarchy (YAML)
+  CRUD /api/packs               — Squad Pack installer
+  GET  /api/gateway/sessions    — Live agent sessions
+  GET  /api/gateway/crons       — Cron job list
+  CRUD /api/crons               — Cron management
+
+Security & Config
+  CRUD /api/vault               — Secret vault (AES-256-GCM)
+  POST /api/vault/reveal        — Decrypt secret
+  POST /api/terminal            — Sandboxed terminal
+  CRUD /api/settings            — System settings
+  POST /api/reset               — System reset (auth required)
+  GET  /api/auth/session        — Session token
+
+External
+  GET  /api/git                 — Git repo status
+  POST /api/git                 — Git push/pull
+  CRUD /api/linkedin            — LinkedIn integration
+  POST /api/feedback            — Continuous learning
+  CRUD /api/approvals           — Approval workflow
 ```
 
 ## Agent Hierarchy
@@ -122,7 +159,7 @@ Audited by Tyr (AI security auditor). All findings resolved.
 ## Tech Stack
 
 - **Runtime:** Docker + OpenClaw Gateway
-- **Dashboard:** Next.js 15, TypeScript strict, Tailwind CSS v4
+- **Dashboard:** Next.js 16, TypeScript strict, Tailwind CSS v4
 - **Database:** SQLite + Drizzle ORM + FTS5
 - **Real-time:** SSE + chokidar file watching
 - **Wallet:** wagmi + viem (Base L2, Base Sepolia, Ethereum mainnet)
@@ -134,7 +171,7 @@ Audited by Tyr (AI security auditor). All findings resolved.
 
 ```
 clawhalla/
-├── apps/mission-control/   — Next.js dashboard (12 screens, 19 API routes)
+├── apps/mission-control/   — Next.js dashboard (20 screens, 40+ API routes)
 ├── contracts/              — Solidity smart contracts (Foundry)
 ├── docker/                 — Docker configuration
 ├── docs/                   — Architecture, roadmap, security docs

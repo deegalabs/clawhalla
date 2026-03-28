@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mission Control
 
-## Getting Started
+ClawHalla's agent orchestration dashboard — 20 screens, 40+ API routes, real-time updates.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, Turbopack)
+- **TypeScript** (strict mode)
+- **Tailwind CSS v4**
+- **SQLite** + Drizzle ORM (20+ tables, indexed)
+- **SSE** for real-time updates
+
+## Quick Start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+pnpm dev --hostname 0.0.0.0 --port 3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Access at `http://localhost:3333` (proxied via Docker Compose).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Docker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Development
+docker build -f Dockerfile.dev -t mc-dev .
+docker run -p 3000:3000 -v ./data:/app/data mc-dev
 
-## Learn More
+# Production (multi-stage, standalone)
+docker build -t mc .
+docker run -p 3000:3000 -v ./data:/app/data mc
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/
+│   ├── (dashboard)/     — 20 page routes (dashboard, boards, chat, etc.)
+│   └── api/             — 40+ API routes
+├── components/ui/       — Shared UI (markdown, loading, notifications)
+├── hooks/               — Custom hooks (notifications, agents)
+└── lib/                 — Core (schema, auth, db, rate-limit, vault, events)
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Key Features
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Boards Engine** — Multi-board Kanban with card detail, comments, drag-and-drop
+- **Chat** — Multi-agent chat with party mode, voice input, streaming, session persistence
+- **Content Pipelines** — Multi-step agent workflows for content creation
+- **Autopilot** — Goal-driven autonomous execution with human feedback loop
+- **Notifications** — SSE with auto-reconnect, exponential backoff, sound alerts
+- **Terminal** — Sandboxed shell with command blocklist and cwd restriction
+- **Vault** — AES-256-GCM encrypted secret storage
+- **CORS + Rate Limiting** — Middleware-level protection on all API routes

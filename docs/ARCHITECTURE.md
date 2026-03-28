@@ -26,14 +26,19 @@ Host Machine
 
 ### Dual Data Model (ADR-003)
 ```
-SQLite (MC-created)          YAML (Agent-created)
-├── tasks                    ├── projects/*/board/tasks.yaml
-├── activities               ├── projects/*/board/stories.yaml
-├── approvals                ├── projects/*/board/sprints.yaml
-├── secrets (AES-256)        └── projects/*/board/epics.yaml
+SQLite (MC-created, 20+ tables)      YAML (Agent-created)
+├── boards, cards, cardHistory       ├── projects/*/board/tasks.yaml
+├── chatSessions, chatMessages       ├── projects/*/board/stories.yaml
+├── tasks, activities, approvals     ├── projects/*/board/sprints.yaml
+├── notifications, costEvents        └── projects/*/board/epics.yaml
+├── contentDrafts, contentPipelines
+├── autopilotGoals, autopilotRuns
+├── secrets (AES-256-GCM)
+├── agents, projects, settings
 └── search_index (FTS5)
 
-Merged via /api/board/sync → Tasks Kanban page
+Indexed: cards(boardId, column, assignee), activities(agentId, timestamp),
+         notifications(read, dismissed), chatMessages(sessionId), etc.
 ```
 
 ### Real-time Pipeline
@@ -74,7 +79,7 @@ Tier 3 — Execution (8 agents)
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 15 (App Router, Turbopack) |
+| Framework | Next.js 16 (App Router, Turbopack) |
 | Language | TypeScript (strict mode) |
 | Styling | Tailwind CSS v4 + Inter font |
 | Database | SQLite + Drizzle ORM |
@@ -122,6 +127,13 @@ Browser ──→ MC API Routes ──→ OpenClaw Gateway
 - No ports exposed by default
 - Gateway bound to 127.0.0.1 only
 - Secrets encrypted with AES-256-GCM in SQLite
+- Per-process crypto session token (replaces spoofable headers)
+- Content Security Policy (CSP) on all responses
+- CORS middleware blocks unknown origins on /api/* routes
+- Rate limiting on dispatch (3 concurrent/10 per min), chat (5/20), council (1/3)
+- XSS prevention via HTML escaping + URL sanitization in markdown renderer
+- Terminal command blocklist (regex-based) + cwd restriction
+- Auth required on all destructive endpoints (DELETE, reset)
 - Smart contracts audited (12 findings resolved)
 - Two-step ownership transfer on all contracts
 - Pause mechanism for emergency stops
