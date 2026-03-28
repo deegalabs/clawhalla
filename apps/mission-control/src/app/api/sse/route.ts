@@ -11,6 +11,7 @@ export async function GET() {
   let unsubFile: (() => void) | null = null;
   let unsubBoard: (() => void) | null = null;
   let unsubNotif: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
 
   const stream = new ReadableStream({
     start(controller) {
@@ -46,18 +47,12 @@ export async function GET() {
       });
 
       // Heartbeat every 30s to keep connection alive
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         send({ type: 'ping', timestamp: Date.now() });
       }, 30000);
-
-      // Cleanup heartbeat when stream closes
-      const origCancel = stream.cancel;
-      stream.cancel = (reason) => {
-        clearInterval(heartbeat);
-        return origCancel?.call(stream, reason);
-      };
     },
     cancel() {
+      if (heartbeat) clearInterval(heartbeat);
       if (unsubFile) unsubFile();
       if (unsubBoard) unsubBoard();
       if (unsubNotif) unsubNotif();

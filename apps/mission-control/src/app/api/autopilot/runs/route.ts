@@ -21,7 +21,7 @@ function ensureTable() {
 export async function GET(req: NextRequest) {
   try {
     ensureTable();
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50');
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 100);
     const runs = await db.select().from(autopilotRuns)
       .orderBy(desc(autopilotRuns.createdAt))
       .limit(limit);
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const runId = id || `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const runId = id || `run_${crypto.randomUUID()}`;
 
     const existing = id ? db.select().from(autopilotRuns).where(eq(autopilotRuns.id, id)).get() : null;
 

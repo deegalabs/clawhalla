@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   try {
     ensureTable();
     const status = req.nextUrl.searchParams.get('status');
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50');
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 100);
 
     const drafts = status
       ? await db.select().from(contentDrafts).where(eq(contentDrafts.status, status)).orderBy(desc(contentDrafts.updatedAt)).limit(limit)
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const draftId = id || `draft_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const draftId = id || `draft_${crypto.randomUUID()}`;
 
     const existing = id ? db.select().from(contentDrafts).where(eq(contentDrafts.id, id)).get() : null;
 

@@ -4,7 +4,7 @@ import { tasks } from '@/lib/schema';
 import { desc } from 'drizzle-orm';
 
 function nanoid() {
-  return 'task_' + Math.random().toString(36).substring(2, 8) + Date.now().toString(36);
+  return `task_${crypto.randomUUID()}`;
 }
 
 export async function GET() {

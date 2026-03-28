@@ -6,7 +6,7 @@ import { broadcastBoardEvent } from '@/lib/events';
 import { notify } from '@/lib/notify';
 
 function nanoid(prefix = 'hist') {
-  return `${prefix}_${Math.random().toString(36).substring(2, 8)}${Date.now().toString(36)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
 }
 
 type Ctx = { params: Promise<{ boardId: string; cardId: string }> };

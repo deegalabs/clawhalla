@@ -172,6 +172,12 @@ export function useNotifications() {
   useEffect(() => {
     fetchNotifications();
 
+    // Close any previous EventSource before creating a new one (prevents leak on remount)
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
     try {
       const es = new EventSource('/api/sse');
       eventSourceRef.current = es;

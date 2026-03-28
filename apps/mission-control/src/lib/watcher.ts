@@ -82,7 +82,7 @@ class WorkspaceWatcher {
 
     try {
       db.insert(activities).values({
-        id: `act_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        id: `act_${crypto.randomUUID()}`,
         agentId,
         action: detailedAction,
         target: fileName,

@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '20'), 100);
   const agentId = url.searchParams.get('agent_id');
 
   try {
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const id = `act_${Date.now().toString(36)}`;
+    const id = `act_${crypto.randomUUID()}`;
     
     await db.insert(activities).values({
       id,

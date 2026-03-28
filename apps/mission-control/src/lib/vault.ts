@@ -8,6 +8,9 @@ const AUTH_TAG_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
   const passphrase = process.env.VAULT_KEY || process.env.GATEWAY_TOKEN || 'clawhalla-default-vault-key-change-me';
+  if (passphrase === 'clawhalla-default-vault-key-change-me') {
+    console.warn('[VAULT] WARNING: Using default vault key. Set VAULT_KEY env var for production use.');
+  }
   return scryptSync(passphrase, 'clawhalla-vault-salt', 32);
 }
 
@@ -116,7 +119,7 @@ export const vault = {
     await this.ensureTable();
     const { encrypted, iv } = encrypt(value);
     const now = new Date();
-    const id = `sec_${Date.now().toString(36)}`;
+    const id = `sec_${crypto.randomUUID()}`;
 
     // Upsert
     const existing = await db.select({ id: secrets.id }).from(secrets).where(eq(secrets.name, name));

@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const goalId = id || `goal_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const goalId = id || `goal_${crypto.randomUUID()}`;
 
     const existing = id ? db.select().from(autopilotGoals).where(eq(autopilotGoals.id, id)).get() : null;
 

@@ -27,7 +27,7 @@ function ensureTables() {
 export async function GET(req: NextRequest) {
   try {
     ensureTables();
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '30');
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '30'), 100);
     const sessions = await db.select().from(chatSessions)
       .orderBy(desc(chatSessions.updatedAt))
       .limit(limit);
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     // Upsert messages — update content if message already exists (streaming sends empty content first)
     if (msgs && Array.isArray(msgs)) {
       for (const msg of msgs) {
-        const msgId = msg.id || `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+        const msgId = msg.id || `msg_${crypto.randomUUID()}`;
         const existing = db.select().from(chatMessages).where(eq(chatMessages.id, msgId)).get();
         if (existing) {
           // Only update if new content is non-empty (don't overwrite with empty)

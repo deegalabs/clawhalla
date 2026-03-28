@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const now = new Date();
 
   db.insert(activities).values({
-    id: `act_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+    id: `act_${crypto.randomUUID()}`,
     agentId: auth.agentId,
     action: body.action,
     target: body.target || null,

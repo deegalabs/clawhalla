@@ -5,7 +5,7 @@ import { eq, asc } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
 
 function nanoid(prefix = 'cmt') {
-  return `${prefix}_${Math.random().toString(36).substring(2, 8)}${Date.now().toString(36)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
 }
 
 type Ctx = { params: Promise<{ boardId: string; cardId: string }> };

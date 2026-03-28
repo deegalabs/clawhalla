@@ -20,7 +20,7 @@ function ensureTable() {
 export async function GET(req: NextRequest) {
   try {
     ensureTable();
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50');
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '50'), 100);
     const unreadOnly = req.nextUrl.searchParams.get('unread') === 'true';
 
     const where = unreadOnly

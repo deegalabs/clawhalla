@@ -42,7 +42,7 @@ export function subscribeBoardEvents(listener: Listener): () => void {
 export function broadcastNotification(event: Omit<NotificationEvent, 'id' | 'timestamp'>) {
   const full: NotificationEvent = {
     ...event,
-    id: `notif_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+    id: `notif_${crypto.randomUUID()}`,
     timestamp: Date.now(),
   };
   for (const listener of notifListeners) {

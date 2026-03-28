@@ -21,7 +21,7 @@ function ensureTable() {
 export async function GET(req: NextRequest) {
   try {
     ensureTable();
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '30');
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '30'), 100);
     const pipelines = await db.select().from(contentPipelines)
       .orderBy(desc(contentPipelines.updatedAt))
       .limit(limit);
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const pipelineId = id || `pipe_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const pipelineId = id || `pipe_${crypto.randomUUID()}`;
     const stepsJson = typeof steps === 'string' ? steps : JSON.stringify(steps || []);
 
     const existing = id ? db.select().from(contentPipelines).where(eq(contentPipelines.id, id)).get() : null;

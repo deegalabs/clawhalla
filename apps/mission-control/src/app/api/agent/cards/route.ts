@@ -6,7 +6,7 @@ import { authenticateRequest, isAuthError } from '@/lib/auth';
 import { broadcastBoardEvent } from '@/lib/events';
 
 function nanoid(prefix = 'card') {
-  return `${prefix}_${Math.random().toString(36).substring(2, 8)}${Date.now().toString(36)}`;
+  return `${prefix}_${crypto.randomUUID()}`;
 }
 
 // GET /api/agent/cards — get cards assigned to this agent
