@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 export const agents = sqliteTable('agents', {
   id: text('id').primaryKey(),
@@ -91,7 +91,10 @@ export const costEvents = sqliteTable('cost_events', {
   estimatedCost: integer('estimated_cost_cents').notNull().default(0), // in cents
   taskId: text('task_id'),
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
-});
+}, (table) => [
+  index('idx_cost_events_agent').on(table.agentId),
+  index('idx_cost_events_timestamp').on(table.timestamp),
+]);
 
 export const activities = sqliteTable('activities', {
   id: text('id').primaryKey(),
@@ -100,7 +103,10 @@ export const activities = sqliteTable('activities', {
   target: text('target'),
   details: text('details'),
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull()
-});
+}, (table) => [
+  index('idx_activities_agent').on(table.agentId),
+  index('idx_activities_timestamp').on(table.timestamp),
+]);
 
 export const approvals = sqliteTable('approvals', {
   id: text('id').primaryKey(),
@@ -183,7 +189,11 @@ export const cards = sqliteTable('cards', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
   completedAt: integer('completed_at', { mode: 'timestamp' }),
   archivedAt: integer('archived_at', { mode: 'timestamp' }),
-});
+}, (table) => [
+  index('idx_cards_board').on(table.boardId),
+  index('idx_cards_board_column').on(table.boardId, table.column),
+  index('idx_cards_assignee').on(table.assignee),
+]);
 
 export const cardComments = sqliteTable('card_comments', {
   id: text('id').primaryKey(),
@@ -191,7 +201,9 @@ export const cardComments = sqliteTable('card_comments', {
   author: text('author').notNull(), // agent_id | 'user'
   content: text('content').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
+}, (table) => [
+  index('idx_card_comments_card').on(table.cardId),
+]);
 
 export const cardHistory = sqliteTable('card_history', {
   id: text('id').primaryKey(),
@@ -201,7 +213,9 @@ export const cardHistory = sqliteTable('card_history', {
   fromValue: text('from_value'),
   toValue: text('to_value'),
   timestamp: integer('timestamp', { mode: 'timestamp' }).notNull(),
-});
+}, (table) => [
+  index('idx_card_history_card').on(table.cardId),
+]);
 
 // ---------------------------------------------------------------------------
 // Chat Engine — persistent chat sessions and messages
@@ -235,7 +249,9 @@ export const chatMessages = sqliteTable('chat_messages', {
   outputTokens: integer('output_tokens'),
   durationMs: integer('duration_ms'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
+}, (table) => [
+  index('idx_chat_messages_session').on(table.sessionId),
+]);
 
 // ---------------------------------------------------------------------------
 // Content Engine — drafts and pipelines
@@ -273,7 +289,9 @@ export const notifications = sqliteTable('notifications', {
   read: integer('read').notNull().default(0), // 0 = unread, 1 = read
   dismissed: integer('dismissed').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-});
+}, (table) => [
+  index('idx_notifications_read').on(table.read, table.dismissed),
+]);
 
 // ---------------------------------------------------------------------------
 // Autopilot Engine — goals and autonomous run history
