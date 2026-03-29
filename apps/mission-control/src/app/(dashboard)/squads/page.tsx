@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 // ---------------------------------------------------------------------------
-// Types (mirrors workspace.ts)
+// Types
 // ---------------------------------------------------------------------------
 
 interface AgentManifest {
@@ -38,30 +38,26 @@ interface Squad {
   agents: Agent[];
 }
 
-interface BoardTask {
-  id: string;
-  title: string;
-  column: string;
-  assignee?: string;
-  points?: number;
-  priority?: string;
-  epic?: string;
-  status: string;
-  metadata: Record<string, string>;
-}
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
-interface SquadBoard {
-  squadId: string;
-  sprintName?: string;
-  sprintDates?: string;
-  velocity?: string;
-  epic?: string;
-  squadMembers?: string;
-  columns: { name: string; tasks: BoardTask[] }[];
-}
+const MODELS = [
+  { id: 'claude-opus-4-6', label: 'Opus 4.6', tier: 'opus' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', tier: 'sonnet' },
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', tier: 'haiku' },
+];
+
+const SQUAD_TEMPLATES = [
+  { id: 'dev', label: 'Dev Squad', desc: 'Full-stack development team', agents: 4 },
+  { id: 'personal', label: 'Personal', desc: 'PA, research, content', agents: 3 },
+  { id: 'hackathon', label: 'Hackathon', desc: 'Fast-paced sprint team', agents: 3 },
+  { id: 'social', label: 'Social', desc: 'Content and community', agents: 3 },
+  { id: 'support', label: 'Support', desc: 'QA, monitoring, triage', agents: 4 },
+];
 
 // ---------------------------------------------------------------------------
-// Model badge colors
+// Helpers
 // ---------------------------------------------------------------------------
 
 function modelColor(model: string): string {
@@ -78,22 +74,6 @@ function modelLabel(model: string): string {
   if (model.includes('sonnet-4-5')) return 'Sonnet 4.5';
   if (model.includes('haiku')) return 'Haiku 4.5';
   return model.split('/').pop() || model;
-}
-
-function priorityColor(p?: string): string {
-  if (p === 'critical') return 'text-red-400';
-  if (p === 'high') return 'text-orange-400';
-  if (p === 'medium') return 'text-yellow-400';
-  if (p === 'low') return 'text-gray-500';
-  return 'text-gray-500';
-}
-
-function statusDot(status: string): string {
-  if (status === 'done') return 'bg-green-500';
-  if (status === 'doing') return 'bg-blue-500';
-  if (status === 'review') return 'bg-purple-500';
-  if (status === 'blocked') return 'bg-red-500';
-  return 'bg-gray-600';
 }
 
 // ---------------------------------------------------------------------------
@@ -156,7 +136,6 @@ function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => void }) 
         onClick={e => e.stopPropagation()}
       >
         <div className="p-6">
-          {/* Header */}
           <div className="flex items-start gap-4 mb-4">
             <span className="text-4xl">{m.emoji}</span>
             <div className="flex-1">
@@ -172,7 +151,6 @@ function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => void }) 
             <button onClick={onClose} className="text-gray-600 hover:text-gray-400 text-lg">✕</button>
           </div>
 
-          {/* Vibe */}
           {id.vibe && (
             <div className="mb-4">
               <h3 className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Vibe</h3>
@@ -180,7 +158,6 @@ function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => void }) 
             </div>
           )}
 
-          {/* Mythology */}
           {id.mythology && (
             <div className="mb-4">
               <h3 className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Mythology</h3>
@@ -188,7 +165,6 @@ function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => void }) 
             </div>
           )}
 
-          {/* Domain */}
           {m.domain.length > 0 && (
             <div className="mb-4">
               <h3 className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Domain</h3>
@@ -202,7 +178,6 @@ function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => void }) 
             </div>
           )}
 
-          {/* Capabilities */}
           {caps.length > 0 && (
             <div className="mb-4">
               <h3 className="text-[10px] uppercase tracking-widest text-gray-600 mb-1">Capabilities</h3>
@@ -217,7 +192,6 @@ function AgentDetail({ agent, onClose }: { agent: Agent; onClose: () => void }) 
             </div>
           )}
 
-          {/* Meta */}
           <div className="border-t border-[#2a2a2d] pt-3 mt-4 space-y-1">
             {m.reportsTo && (
               <p className="text-xs text-gray-600">Reports to: <span className="text-gray-400">{m.reportsTo}</span></p>
@@ -269,64 +243,246 @@ function SquadCard({ squad, onSelect }: { squad: Squad; onSelect: () => void }) 
   );
 }
 
-function TaskCard({ task }: { task: BoardTask }) {
-  return (
-    <div className="bg-[#111113] border border-[#2a2a2d] rounded-md p-3 hover:border-[#3a3a3d] transition-colors">
-      <div className="flex items-start gap-2">
-        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusDot(task.status)}`} />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-gray-300 leading-snug">{task.title}</p>
-          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-            <span className="text-[10px] font-mono text-gray-600">{task.id}</span>
-            {task.assignee && (
-              <span className="text-[10px] text-blue-400">{task.assignee}</span>
-            )}
-            {task.priority && (
-              <span className={`text-[10px] ${priorityColor(task.priority)}`}>{task.priority}</span>
-            )}
-            {task.points !== undefined && (
-              <span className="text-[10px] text-gray-600">{task.points}pts</span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ---------------------------------------------------------------------------
+// Create Squad Modal
+// ---------------------------------------------------------------------------
 
-function BoardView({ board }: { board: SquadBoard }) {
-  return (
-    <div>
-      {/* Sprint header */}
-      {board.sprintName && (
-        <div className="mb-4 px-1">
-          <h3 className="text-sm font-semibold text-gray-200">{board.sprintName}</h3>
-          <div className="flex gap-3 mt-1 text-xs text-gray-500">
-            {board.sprintDates && <span>{board.sprintDates}</span>}
-            {board.velocity && <span>{board.velocity}</span>}
-            {board.epic && <span className="text-amber-600">{board.epic}</span>}
-          </div>
-        </div>
-      )}
+function CreateSquadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [mode, setMode] = useState<'template' | 'custom'>('template');
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
-      {/* Kanban columns */}
-      <div className="flex gap-3 overflow-x-auto pb-4">
-        {board.columns.map(col => (
-          <div key={col.name} className="min-w-[260px] flex-1">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{col.name}</h4>
-              <span className="text-[10px] text-gray-600 bg-[#1a1a1d] px-1.5 py-0.5 rounded">{col.tasks.length}</span>
+  // Custom squad fields
+  const [customName, setCustomName] = useState('');
+  const [customAgents, setCustomAgents] = useState<{ name: string; role: string; model: string; emoji: string }[]>([
+    { name: '', role: '', model: 'claude-sonnet-4-6', emoji: '' },
+  ]);
+
+  const addAgent = () => {
+    if (customAgents.length >= 10) return;
+    setCustomAgents([...customAgents, { name: '', role: '', model: 'claude-sonnet-4-6', emoji: '' }]);
+  };
+
+  const removeAgent = (i: number) => {
+    if (customAgents.length <= 1) return;
+    setCustomAgents(customAgents.filter((_, idx) => idx !== i));
+  };
+
+  const updateAgent = (i: number, field: string, value: string) => {
+    const updated = [...customAgents];
+    updated[i] = { ...updated[i], [field]: value };
+    setCustomAgents(updated);
+  };
+
+  const handleCreateTemplate = async () => {
+    if (!selectedTemplate) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/squads/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ squadId: selectedTemplate }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to create squad');
+      setSuccess(true);
+      setTimeout(() => { onCreated(); onClose(); }, 1000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    }
+    setCreating(false);
+  };
+
+  const handleCreateCustom = async () => {
+    if (!customName.trim()) { setError('Squad name is required'); return; }
+    const validAgents = customAgents.filter(a => a.name.trim() && a.role.trim());
+    if (validAgents.length === 0) { setError('At least one agent with name and role is required'); return; }
+
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          squadId: customName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+          agents: validAgents.map((a, i) => ({
+            name: a.name.trim(),
+            role: a.role.trim(),
+            model: a.model,
+            emoji: a.emoji || '🤖',
+            tier: i === 0 ? 0 : 2,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to create squad');
+      setSuccess(true);
+      setTimeout(() => { onCreated(); onClose(); }, 1000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unknown error');
+    }
+    setCreating(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="bg-[#111113] border border-[#2a2a2d] rounded-xl w-full max-w-xl max-h-[85vh] overflow-y-auto mx-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold text-gray-100">Create Squad</h2>
+            <button onClick={onClose} className="text-gray-600 hover:text-gray-400 text-lg">✕</button>
+          </div>
+
+          {success ? (
+            <div className="text-center py-8">
+              <span className="text-3xl">✓</span>
+              <p className="text-sm text-green-400 mt-2">Squad created successfully</p>
             </div>
-            <div className="space-y-2">
-              {col.tasks.map(task => (
-                <TaskCard key={task.id} task={task} />
-              ))}
-              {col.tasks.length === 0 && (
-                <p className="text-xs text-gray-700 text-center py-4">No tasks</p>
+          ) : (
+            <>
+              {/* Mode toggle */}
+              <div className="flex gap-1 mb-5 bg-[#0a0a0b] rounded-lg p-1">
+                <button
+                  onClick={() => setMode('template')}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    mode === 'template' ? 'bg-[#1a1a1d] text-gray-100' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  From Template
+                </button>
+                <button
+                  onClick={() => setMode('custom')}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    mode === 'custom' ? 'bg-[#1a1a1d] text-gray-100' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+
+              {/* Template mode */}
+              {mode === 'template' && (
+                <div className="space-y-3">
+                  {SQUAD_TEMPLATES.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTemplate(t.id)}
+                      className={`w-full text-left p-4 rounded-lg border transition-colors ${
+                        selectedTemplate === t.id
+                          ? 'border-amber-500 bg-amber-500/5'
+                          : 'border-[#2a2a2d] hover:border-[#3a3a3d] bg-[#0a0a0b]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-200">{t.label}</span>
+                        <span className="text-[10px] text-gray-600">{t.agents} agents</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">{t.desc}</p>
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={handleCreateTemplate}
+                    disabled={!selectedTemplate || creating}
+                    className="w-full py-2.5 rounded-lg text-sm font-medium bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {creating ? 'Creating...' : 'Create Squad'}
+                  </button>
+                </div>
               )}
-            </div>
-          </div>
-        ))}
+
+              {/* Custom mode */}
+              {mode === 'custom' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-gray-500 mb-1 block">Squad Name</label>
+                    <input
+                      value={customName}
+                      onChange={e => setCustomName(e.target.value)}
+                      placeholder="e.g. Research Team"
+                      className="w-full px-3 py-2 text-sm bg-[#0a0a0b] border border-[#2a2a2d] rounded-lg text-gray-200 placeholder:text-gray-700 focus:border-amber-500/50 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-[10px] uppercase tracking-widest text-gray-500">Agents</label>
+                      <button
+                        onClick={addAgent}
+                        disabled={customAgents.length >= 10}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 disabled:text-gray-700"
+                      >
+                        + Add Agent
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {customAgents.map((agent, i) => (
+                        <div key={i} className="bg-[#0a0a0b] border border-[#2a2a2d] rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] text-gray-600">Agent {i + 1}{i === 0 ? ' (Chief)' : ''}</span>
+                            {customAgents.length > 1 && (
+                              <button onClick={() => removeAgent(i)} className="text-[10px] text-red-400 hover:text-red-300">Remove</button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              value={agent.name}
+                              onChange={e => updateAgent(i, 'name', e.target.value)}
+                              placeholder="Name"
+                              className="px-2.5 py-1.5 text-xs bg-[#111113] border border-[#2a2a2d] rounded text-gray-200 placeholder:text-gray-700 focus:border-amber-500/50 focus:outline-none"
+                            />
+                            <input
+                              value={agent.role}
+                              onChange={e => updateAgent(i, 'role', e.target.value)}
+                              placeholder="Role"
+                              className="px-2.5 py-1.5 text-xs bg-[#111113] border border-[#2a2a2d] rounded text-gray-200 placeholder:text-gray-700 focus:border-amber-500/50 focus:outline-none"
+                            />
+                            <select
+                              value={agent.model}
+                              onChange={e => updateAgent(i, 'model', e.target.value)}
+                              className="px-2.5 py-1.5 text-xs bg-[#111113] border border-[#2a2a2d] rounded text-gray-200 focus:border-amber-500/50 focus:outline-none"
+                            >
+                              {MODELS.map(m => (
+                                <option key={m.id} value={m.id}>{m.label}</option>
+                              ))}
+                            </select>
+                            <input
+                              value={agent.emoji}
+                              onChange={e => updateAgent(i, 'emoji', e.target.value)}
+                              placeholder="Emoji"
+                              maxLength={4}
+                              className="px-2.5 py-1.5 text-xs bg-[#111113] border border-[#2a2a2d] rounded text-gray-200 placeholder:text-gray-700 focus:border-amber-500/50 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleCreateCustom}
+                    disabled={creating}
+                    className="w-full py-2.5 rounded-lg text-sm font-medium bg-amber-500 text-black hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {creating ? 'Creating...' : 'Create Custom Squad'}
+                  </button>
+                </div>
+              )}
+
+              {error && (
+                <p className="text-xs text-red-400 mt-3">{error}</p>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -345,26 +501,20 @@ export default function SquadsPage() {
   const [view, setView] = useState<View>('overview');
   const [selectedSquad, setSelectedSquad] = useState<Squad | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [board, setBoard] = useState<SquadBoard | null>(null);
-  const [boardLoading, setBoardLoading] = useState(false);
-  const [tab, setTab] = useState<'agents' | 'board'>('agents');
+  const [showCreate, setShowCreate] = useState(false);
 
-  useEffect(() => {
+  const loadSquads = useCallback(() => {
     fetch('/api/squads')
       .then(r => r.json())
       .then(d => { setSquads(d.data || []); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
+  useEffect(() => { loadSquads(); }, [loadSquads]);
+
   const selectSquad = (squad: Squad) => {
     setSelectedSquad(squad);
     setView('squad');
-    setTab('agents');
-    setBoardLoading(true);
-    fetch(`/api/squads/${squad.id}/board`)
-      .then(r => r.json())
-      .then(d => { setBoard(d.data || null); setBoardLoading(false); })
-      .catch(() => { setBoard(null); setBoardLoading(false); });
   };
 
   if (loading) {
@@ -396,6 +546,12 @@ export default function SquadsPage() {
               {squads.length} squads &middot; {totalAgents} agents
             </p>
           </div>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-4 py-2 text-xs font-medium bg-amber-500 text-black rounded-lg hover:bg-amber-400 transition-colors"
+          >
+            + Create Squad
+          </button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -408,9 +564,16 @@ export default function SquadsPage() {
           <div className="text-center py-16">
             <p className="text-gray-500 text-sm">No squads found in workspace</p>
             <p className="text-gray-700 text-xs mt-1">
-              Add squad directories with manifest.yaml files to your workspace/squads/ folder
+              Create a squad from a template or build a custom one
             </p>
           </div>
+        )}
+
+        {showCreate && (
+          <CreateSquadModal
+            onClose={() => setShowCreate(false)}
+            onCreated={loadSquads}
+          />
         )}
       </div>
     );
@@ -420,78 +583,33 @@ export default function SquadsPage() {
   if (view === 'squad' && selectedSquad) {
     return (
       <div className="max-w-6xl mx-auto">
-        {/* Back + header */}
-        <div className="flex items-center gap-3 mb-5">
-          <button
-            onClick={() => { setView('overview'); setSelectedSquad(null); setBoard(null); }}
-            className="text-gray-500 hover:text-gray-300 text-sm"
-          >
-            &larr; Back
-          </button>
-          <div>
-            <h1 className="text-lg font-bold text-gray-100 capitalize">
-              {selectedSquad.id.replace(/-/g, ' ')} Squad
-            </h1>
-            <p className="text-xs text-gray-500">{selectedSquad.agents.length} agents</p>
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setView('overview'); setSelectedSquad(null); }}
+              className="text-gray-500 hover:text-gray-300 text-sm"
+            >
+              &larr; Back
+            </button>
+            <div>
+              <h1 className="text-lg font-bold text-gray-100 capitalize">
+                {selectedSquad.id.replace(/-/g, ' ')} Squad
+              </h1>
+              <p className="text-xs text-gray-500">{selectedSquad.agents.length} agents</p>
+            </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-5 border-b border-[#2a2a2d]">
-          <button
-            onClick={() => setTab('agents')}
-            className={`px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-              tab === 'agents'
-                ? 'border-amber-500 text-gray-100'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            Agents ({selectedSquad.agents.length})
-          </button>
-          <button
-            onClick={() => setTab('board')}
-            className={`px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors ${
-              tab === 'board'
-                ? 'border-amber-500 text-gray-100'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            Board
-          </button>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {selectedSquad.agents.map(agent => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              onClick={() => setSelectedAgent(agent)}
+            />
+          ))}
         </div>
 
-        {/* Agents tab */}
-        {tab === 'agents' && (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {selectedSquad.agents.map(agent => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                onClick={() => setSelectedAgent(agent)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Board tab */}
-        {tab === 'board' && (
-          boardLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : board ? (
-            <BoardView board={board} />
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-gray-500 text-sm">No board found for this squad</p>
-              <p className="text-gray-700 text-xs mt-1">
-                Create a board.md at workspace/boards/squads/{selectedSquad.id}/board.md
-              </p>
-            </div>
-          )
-        )}
-
-        {/* Agent detail modal */}
         {selectedAgent && (
           <AgentDetail agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
         )}

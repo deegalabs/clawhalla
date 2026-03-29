@@ -1,0 +1,161 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
+import { db } from '@/lib/db';
+import { agents, activities } from '@/lib/schema';
+import { authenticateRequest, isAuthError } from '@/lib/auth';
+
+const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/;
+const SQUAD_RE = /^[a-z][a-z0-9-]{0,31}$/;
+const MODEL_RE = /^claude-(opus|sonnet|haiku)-\d+-\d+$/;
+
+interface AgentInput {
+  name: string;
+  role: string;
+  model: string;
+  emoji: string;
+  tier: number;
+}
+
+function sanitize(s: string, maxLen = 128): string {
+  return s.replace(/[\r\n]/g, '').trim().slice(0, maxLen);
+}
+
+// POST /api/agents/create — create agents for a squad (user or agent)
+export async function POST(req: NextRequest) {
+  const auth = authenticateRequest(req);
+  if (isAuthError(auth)) return auth;
+
+  try {
+    const body = await req.json();
+    const { squadId, agents: agentList } = body;
+
+    if (!squadId || typeof squadId !== 'string') {
+      return NextResponse.json({ ok: false, error: 'squadId required' }, { status: 400 });
+    }
+    if (!SQUAD_RE.test(squadId)) {
+      return NextResponse.json({ ok: false, error: 'Invalid squadId (lowercase, alphanumeric, dashes)' }, { status: 400 });
+    }
+    if (!Array.isArray(agentList) || agentList.length === 0) {
+      return NextResponse.json({ ok: false, error: 'agents array required (min 1)' }, { status: 400 });
+    }
+    if (agentList.length > 10) {
+      return NextResponse.json({ ok: false, error: 'Maximum 10 agents per squad' }, { status: 400 });
+    }
+
+    const validAgents: AgentInput[] = [];
+    for (const a of agentList) {
+      if (!a.name || !NAME_RE.test(a.name)) {
+        return NextResponse.json({ ok: false, error: `Invalid agent name: ${a.name}` }, { status: 400 });
+      }
+      if (!a.role || typeof a.role !== 'string') {
+        return NextResponse.json({ ok: false, error: `Role required for agent: ${a.name}` }, { status: 400 });
+      }
+      const model = a.model || 'claude-sonnet-4-6';
+      if (!MODEL_RE.test(model)) {
+        return NextResponse.json({ ok: false, error: `Invalid model: ${model}` }, { status: 400 });
+      }
+      validAgents.push({
+        name: sanitize(a.name, 32),
+        role: sanitize(a.role),
+        model,
+        emoji: a.emoji || '🤖',
+        tier: typeof a.tier === 'number' ? Math.max(0, Math.min(5, a.tier)) : 2,
+      });
+    }
+
+    const now = new Date();
+    const createdBy = auth.type === 'agent' && auth.agentId ? auth.agentId : 'user';
+    const created: { name: string; role: string; emoji: string }[] = [];
+
+    for (const agent of validAgents) {
+      const agentId = agent.name.toLowerCase();
+
+      // Register in DB
+      await db.insert(agents).values({
+        id: agentId,
+        name: agent.name,
+        role: agent.role,
+        tier: agent.tier,
+        squad: squadId,
+        model: agent.model,
+        status: 'idle',
+        emoji: agent.emoji,
+        reportsTo: agent.tier === 0 ? null : validAgents[0]?.name.toLowerCase() || null,
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoUpdate({
+        target: agents.id,
+        set: { squad: squadId, role: agent.role, model: agent.model, emoji: agent.emoji, updatedAt: now },
+      });
+
+      // Generate workspace persona files
+      try {
+        await generatePersonaFiles(squadId, agent);
+      } catch (err) {
+        console.warn(`[agents/create] Failed to generate persona for ${agent.name}:`, err);
+      }
+
+      // Log activity
+      await db.insert(activities).values({
+        id: `act_${crypto.randomUUID()}`,
+        agentId: createdBy,
+        action: 'agent_created',
+        target: `${agent.name} (${squadId})`,
+        details: `Role: ${agent.role}, Model: ${agent.model}`,
+        timestamp: now,
+      });
+
+      created.push({ name: agent.name, role: agent.role, emoji: agent.emoji });
+    }
+
+    return NextResponse.json({ ok: true, squadId, agents: created }, { status: 201 });
+  } catch (error) {
+    console.error('[agents/create] Error:', error);
+    return NextResponse.json({ ok: false, error: 'Failed to create agents' }, { status: 500 });
+  }
+}
+
+// Generate minimal persona files in the workspace
+async function generatePersonaFiles(squadId: string, agent: AgentInput) {
+  const workspaceBase = process.env.OPENCLAW_WORKSPACE || '/home/clawdbot/.openclaw/workspace';
+  const agentDir = join(workspaceBase, 'squads', squadId, agent.name.toLowerCase());
+
+  await mkdir(agentDir, { recursive: true });
+
+  const identity = `# IDENTITY — ${agent.name}
+
+- **Name:** ${agent.name}
+- **Role:** ${agent.role} — ${squadId} squad
+- **Model:** \`${agent.model}\`
+- **Emoji:** ${agent.emoji}
+- **Tier:** ${agent.tier}
+
+## Squad Position
+
+${agent.tier === 0
+  ? `As Chief (Tier 0), ${agent.name} manages all agents in the ${squadId} squad.`
+  : `Reports to the squad chief. Receives tasks via board cards or direct dispatch.`
+}
+
+---
+_Generated by ClawHalla on ${new Date().toISOString().split('T')[0]}_
+`;
+
+  const manifest = `name: ${agent.name.toLowerCase()}
+displayName: ${agent.name}
+title: ${agent.role}
+squad: ${squadId}
+model: ${agent.model}
+emoji: "${agent.emoji}"
+role: ${agent.role.toLowerCase().replace(/\s+/g, '-')}
+domain: []
+capabilities: []
+reportsTo: ${agent.tier === 0 ? 'claw' : (agent.name.toLowerCase() === 'claw' ? 'daniel' : 'chief')}
+failureLimit: 3
+executionModes: [autonomous, interactive]
+`;
+
+  await writeFile(join(agentDir, 'IDENTITY.md'), identity, 'utf-8');
+  await writeFile(join(agentDir, 'manifest.yaml'), manifest, 'utf-8');
+}
