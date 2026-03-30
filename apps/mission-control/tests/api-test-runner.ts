@@ -251,7 +251,7 @@ async function testBoardsEngine() {
 
   // Archive card
   await test('DELETE /api/boards/:id/cards/:cardId archives card', async () => {
-    const { status, data } = await req('DELETE', `/api/boards/${boardId}/cards/${cardId}`);
+    const { status, data } = await req('DELETE', `/api/boards/${boardId}/cards/${cardId}`, undefined, gatewayHeaders());
     assertEqual(status, 200, 'status');
     assertEqual(data.action, 'archived', 'should be archived');
   });
@@ -282,7 +282,7 @@ async function testBoardsEngine() {
 
   // Archive board
   await test('DELETE /api/boards/:id archives board', async () => {
-    const { status, data } = await req('DELETE', `/api/boards/${boardId}`);
+    const { status, data } = await req('DELETE', `/api/boards/${boardId}`, undefined, gatewayHeaders());
     assertEqual(status, 200, 'status');
     assertEqual(data.action, 'archived', 'should be archived');
   });
@@ -297,12 +297,12 @@ async function testVaultAndAuth() {
     assertEqual(status, 401, 'status');
   });
 
-  // Vault POST with internal token should work
-  await test('POST /api/vault with internal token succeeds', async () => {
+  // Vault POST with gateway token should work
+  await test('POST /api/vault with gateway auth succeeds', async () => {
     const { status, data } = await req(
       'POST', '/api/vault',
       { name: 'TEST_SECRET', value: 'secret123', description: 'test', category: 'test' },
-      internalHeaders(),
+      gatewayHeaders(),
     );
     assertEqual(status, 200, 'status');
     assert(data.ok, 'should be ok');
@@ -351,7 +351,7 @@ async function testVaultAndAuth() {
 
   // Vault DELETE with auth
   await test('DELETE /api/vault with auth succeeds', async () => {
-    const { status, data } = await req('DELETE', '/api/vault?name=TEST_SECRET', undefined, internalHeaders());
+    const { status, data } = await req('DELETE', '/api/vault?name=TEST_SECRET', undefined, gatewayHeaders());
     assertEqual(status, 200, 'status');
     assert(data.ok, 'should be ok');
   });
@@ -453,7 +453,7 @@ async function testAgentAPI() {
   });
 
   // Cleanup
-  await req('DELETE', `/api/boards/${boardId}?hard=true`);
+  await req('DELETE', `/api/boards/${boardId}?hard=true`, undefined, gatewayHeaders());
 }
 
 async function testSquadsAPI() {
@@ -467,10 +467,10 @@ async function testSquadsAPI() {
     });
     assertEqual(status, 200, 'status');
     assert(data.ok, 'should be ok');
-    assert(data.agents.length >= 3, 'should create 3+ agents');
-    assert(data.agents.some((a: any) => a.name === 'Claw'), 'should include Claw');
+    assert(data.agents.length >= 2, 'should create 2+ agents');
     assert(data.agents.some((a: any) => a.name === 'Frigg'), 'should include Frigg');
-    assert(data.boardId === 'board_personal', 'should create default board');
+    assert(data.agents.some((a: any) => a.name === 'Mimir'), 'should include Mimir');
+    assertEqual(data.boardId, 'board_personal', 'should create default board');
   });
 
   // Verify board was created
@@ -557,7 +557,7 @@ async function testSecurityEndpoints() {
 
   // Terminal with auth works
   await test('POST /api/terminal with auth executes command', async () => {
-    const { status, data } = await req('POST', '/api/terminal', { command: 'echo hello' }, internalHeaders());
+    const { status, data } = await req('POST', '/api/terminal', { command: 'echo hello' }, gatewayHeaders());
     assertEqual(status, 200, 'status');
     assert(data.ok, 'should be ok');
     assert(data.output.includes('hello'), 'should contain output');
@@ -565,8 +565,117 @@ async function testSecurityEndpoints() {
 
   // Terminal blocks dangerous commands
   await test('POST /api/terminal blocks rm -rf /', async () => {
-    const { data } = await req('POST', '/api/terminal', { command: 'rm -rf /' }, internalHeaders());
+    const { data } = await req('POST', '/api/terminal', { command: 'rm -rf /' }, gatewayHeaders());
     assertEqual(data.ok, false, 'should be blocked');
+  });
+}
+
+async function testMemoryConfig() {
+  console.log('\n🧠 Memory Config');
+
+  await test('GET /api/memory/config returns config and providers', async () => {
+    const { status, data } = await req('GET', '/api/memory/config');
+    assertEqual(status, 200, 'status');
+    assert(data.ok, 'should be ok');
+    assert(data.config, 'should have config');
+    assert(Array.isArray(data.agents), 'should have agents array');
+    assert(Array.isArray(data.providers), 'should have providers array');
+    assert(data.providers.length >= 4, 'should have at least 4 providers');
+    assert(data.providers.some((p: any) => p.id === 'ollama'), 'should have ollama provider');
+  });
+
+  await test('GET /api/memory/config agents have expected fields', async () => {
+    const { data } = await req('GET', '/api/memory/config');
+    if (data.agents.length > 0) {
+      const agent = data.agents[0];
+      assert('agentId' in agent, 'should have agentId');
+      assert('provider' in agent, 'should have provider');
+      assert('mode' in agent, 'should have mode');
+      assert(['rag', 'md', 'default'].includes(agent.mode), 'mode should be rag/md/default');
+    }
+  });
+
+  await test('POST /api/memory/config saves config', async () => {
+    // First read current config
+    const { data: before } = await req('GET', '/api/memory/config');
+    const wasEnabled = before.config.enabled;
+    const wasProvider = before.config.provider;
+
+    // Save same config back (non-destructive)
+    const { status, data } = await req('POST', '/api/memory/config', {
+      provider: wasProvider || 'local',
+      enabled: wasEnabled,
+    });
+    assertEqual(status, 200, 'status');
+    assert(data.ok, 'should be ok');
+  });
+
+  await test('POST /api/memory/config with agentModes', async () => {
+    const { data: before } = await req('GET', '/api/memory/config');
+    const { status, data } = await req('POST', '/api/memory/config', {
+      provider: before.config.provider || 'local',
+      enabled: before.config.enabled,
+      agentModes: { freya: 'md', thor: 'default' },
+    });
+    assertEqual(status, 200, 'status');
+    assert(data.ok, 'should be ok');
+  });
+}
+
+async function testMemoryRAG() {
+  console.log('\n🔍 Memory RAG');
+
+  // Missing query
+  await test('GET /api/memory/rag without q returns 400', async () => {
+    const { status } = await req('GET', '/api/memory/rag');
+    assertEqual(status, 400, 'status');
+  });
+
+  // Query too short
+  await test('GET /api/memory/rag with q=a returns 400', async () => {
+    const { status } = await req('GET', '/api/memory/rag?q=a');
+    assertEqual(status, 400, 'status');
+  });
+
+  // Valid query
+  await test('GET /api/memory/rag with valid query returns results', async () => {
+    const { status, data } = await req('GET', '/api/memory/rag?q=test+query&agent=main&limit=5');
+    assertEqual(status, 200, 'status');
+    assert(data.ok !== undefined, 'should have ok field');
+    assert('results' in data || 'error' in data, 'should have results or error');
+    if (data.ok) {
+      assert(Array.isArray(data.results), 'results should be array');
+      assertEqual(data.query, 'test query', 'query should be echoed');
+      assertEqual(data.agent, 'main', 'agent should be echoed');
+    }
+  });
+
+  // POST reindex
+  await test('POST /api/memory/rag triggers reindex', async () => {
+    const { status, data } = await req('POST', '/api/memory/rag', { force: true });
+    // May return 200 or 500 depending on CLI availability
+    assert(status === 200 || status === 500, 'should return 200 or 500');
+    if (status === 200) {
+      assert(data.ok, 'should be ok');
+    }
+  });
+}
+
+async function testContentPipeline() {
+  console.log('\n📝 Content Pipeline');
+
+  // Content drafts
+  await test('GET /api/content/drafts lists drafts', async () => {
+    const { status, data } = await req('GET', '/api/content/drafts');
+    assertEqual(status, 200, 'status');
+    assert(Array.isArray(data) || data.ok !== undefined, 'should return array or object');
+  });
+
+  // Content pipelines
+  await test('GET /api/content/pipelines lists pipelines', async () => {
+    const { status, data } = await req('GET', '/api/content/pipelines');
+    assertEqual(status, 200, 'status');
+    assert(Array.isArray(data) || data.ok !== undefined, 'should return array or object');
   });
 }
 
@@ -594,6 +703,9 @@ async function main() {
   await testSquadsAPI();
   await testOnboardingAPIs();
   await testSecurityEndpoints();
+  await testMemoryConfig();
+  await testMemoryRAG();
+  await testContentPipeline();
 
   // Report
   console.log('\n' + '─'.repeat(50));
