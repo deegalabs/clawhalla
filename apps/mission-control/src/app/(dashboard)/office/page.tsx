@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { AGENT_EMOJIS } from '@/lib/agents';
+import { useSquad } from '@/hooks/use-squad';
 
 interface AgentHealth {
   id: string; state: 'active' | 'idle' | 'stalled' | 'stuck' | 'offline';
@@ -46,7 +47,8 @@ function timeAgo(dateStr: string): string {
 }
 
 function OfficePageInner() {
-  const [agents, setAgents] = useState<AgentHealth[]>([]);
+  const { activeSquad } = useSquad();
+  const [allAgents, setAllAgents] = useState<AgentHealth[]>([]);
   const [orgAgents, setOrgAgents] = useState<OrgAgent[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -58,11 +60,17 @@ function OfficePageInner() {
         fetch('/api/agents/health'), fetch('/api/org-structure'), fetch('/api/activities?limit=20'),
       ]);
       const [healthData, orgData, actData] = await Promise.all([healthRes.json(), orgRes.json(), actRes.json()]);
-      if (healthData.ok) setAgents(healthData.agents);
+      if (healthData.ok) setAllAgents(healthData.agents);
       if (orgData.ok) setOrgAgents(orgData.org.agents);
       if (Array.isArray(actData)) setActivities(actData);
     } catch (err) { console.error('[office] fetch error:', err); }
   }, []);
+
+  // Filter agents by active squad (show all if no squad selected)
+  const squadAgentIds = activeSquad
+    ? new Set(orgAgents.filter(a => a.squad === activeSquad || a.id === 'claw' || a.id === 'main').map(a => a.id))
+    : null;
+  const agents = squadAgentIds ? allAgents.filter(a => squadAgentIds.has(a.id)) : allAgents;
 
   useEffect(() => { fetchData(); const i = setInterval(fetchData, 10000); return () => clearInterval(i); }, [fetchData]);
   useEffect(() => {
@@ -268,8 +276,8 @@ function OfficePageInner() {
                     <a href="/tasks" className="px-3 py-1.5 text-[9px] font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200 border border-[#1e1e21]">
                       📋 Tasks
                     </a>
-                    <a href="/factory" className="px-3 py-1.5 text-[9px] font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200 border border-[#1e1e21]">
-                      ⚙️ Factory
+                    <a href="/pipeline" className="px-3 py-1.5 text-[9px] font-medium bg-[#1a1a1d] text-gray-400 rounded hover:text-gray-200 border border-[#1e1e21]">
+                      ⚙️ Pipeline
                     </a>
                   </div>
                 </div>

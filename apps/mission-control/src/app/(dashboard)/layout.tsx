@@ -5,6 +5,10 @@ import { usePathname } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { useNotifications } from '@/hooks/use-notifications';
 import { NotificationBell, ToastStack } from '@/components/ui/notifications';
+import { SQUADS, UNIVERSAL_NAV_HREFS } from '@/lib/squads';
+import type { SquadDefinition } from '@/lib/squads';
+import { SquadContext, useSquadProvider } from '@/hooks/use-squad';
+import type { SquadInfo } from '@/hooks/use-squad';
 
 // Minimal SVG icons (16x16)
 function DashboardIcon({ className }: { className?: string }) {
@@ -66,16 +70,6 @@ function DocsIcon({ className }: { className?: string }) {
   );
 }
 
-function TeamIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="6" cy="5" r="2.5" />
-      <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
-      <circle cx="11.5" cy="4.5" r="2" />
-      <path d="M11.5 9c1.5 0 3 1 3.5 3" />
-    </svg>
-  );
-}
 
 function SquadsIcon({ className }: { className?: string }) {
   return (
@@ -152,12 +146,12 @@ function FeedbackIcon({ className }: { className?: string }) {
   );
 }
 
-function MarketplaceIcon({ className }: { className?: string }) {
+
+function LogsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M1 6l2-4h10l2 4" />
-      <rect x="1" y="6" width="14" height="8" rx="1" />
-      <path d="M6 6v8M10 6v8" />
+      <rect x="2" y="1" width="12" height="14" rx="1.5" />
+      <path d="M5 4.5h6M5 7.5h6M5 10.5h4" />
     </svg>
   );
 }
@@ -198,7 +192,12 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-const navSections = [
+// Derived from lib/squads.ts — single source of truth
+const SQUADS_BY_ID: Record<string, SquadDefinition> =
+  Object.fromEntries(SQUADS.map(s => [s.id, s]));
+
+// All possible nav links (no duplicates — factory and team removed)
+const ALL_NAV_SECTIONS = [
   {
     label: 'Work',
     links: [
@@ -225,12 +224,94 @@ const navSections = [
     label: 'System',
     links: [
       { href: '/squads', label: 'Squads', icon: SquadsIcon },
+      { href: '/office', label: 'Office', icon: OfficeIcon },
+      { href: '/logs', label: 'Logs', icon: LogsIcon },
       { href: '/terminal', label: 'Terminal', icon: TerminalIcon },
       { href: '/feedback', label: 'Autopilot', icon: FeedbackIcon },
       { href: '/settings', label: 'Settings', icon: SettingsIcon },
     ],
   },
 ];
+
+// SquadInfo type and useSquadProvider are imported from @/hooks/use-squad
+
+function buildNavSections(activeSquad: string | null) {
+  const allowed = new Set(UNIVERSAL_NAV_HREFS);
+  if (activeSquad) {
+    const def = SQUADS_BY_ID[activeSquad];
+    if (def) {
+      for (const href of def.modules) allowed.add(href);
+    }
+  }
+  return ALL_NAV_SECTIONS
+    .map(section => ({
+      ...section,
+      links: section.links.filter(link => allowed.has(link.href)),
+    }))
+    .filter(section => section.links.length > 0);
+}
+
+function SquadSwitcher({ squads, activeSquad, onSwitch }: {
+  squads: SquadInfo[];
+  activeSquad: string | null;
+  onSwitch: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = squads.find(s => s.id === activeSquad);
+
+  if (squads.length === 0) return null;
+
+  // Single squad — just show label, no dropdown
+  if (squads.length === 1) {
+    return (
+      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#1a1a1d] border border-[#1e1e21] text-xs text-gray-400">
+        <span>{active?.emoji}</span>
+        <span className="font-medium">{active?.label}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1a1a1d] border border-[#1e1e21] text-xs text-gray-300 hover:border-[#333] hover:text-gray-200 transition-colors"
+      >
+        <span>{active?.emoji}</span>
+        <span className="font-medium">{active?.label}</span>
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 w-40 bg-[#1a1a1d] border border-[#2a2a2d] rounded-lg shadow-xl z-50 py-1">
+            {squads.map(squad => (
+              <button
+                key={squad.id}
+                onClick={() => { onSwitch(squad.id); setOpen(false); }}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                  squad.id === activeSquad
+                    ? 'text-amber-400 bg-amber-500/10'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-[#222]'
+                }`}
+              >
+                <span>{squad.emoji}</span>
+                <span className="font-medium">{squad.label}</span>
+                {squad.id === activeSquad && (
+                  <svg className="ml-auto w-3 h-3 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function GatewayHealthIndicator() {
   const [healthy, setHealthy] = useState<boolean | null>(null);
@@ -283,6 +364,9 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const squadCtx = useSquadProvider();
+  const { squads, activeSquad, switchSquad } = squadCtx;
+  const navSections = buildNavSections(activeSquad);
   const {
     notifications: notifs,
     unreadCount,
@@ -417,6 +501,7 @@ export default function DashboardLayout({
             </h2>
           </div>
           <div className="flex items-center gap-2">
+            <SquadSwitcher squads={squads} activeSquad={activeSquad} onSwitch={switchSquad} />
             <NotificationBell
               notifications={notifs}
               unreadCount={unreadCount}
@@ -432,7 +517,9 @@ export default function DashboardLayout({
 
         {/* Page content */}
         <main className="flex-1 overflow-auto p-3 sm:p-5">
-          {children}
+          <SquadContext.Provider value={squadCtx}>
+            {children}
+          </SquadContext.Provider>
         </main>
       </div>
 

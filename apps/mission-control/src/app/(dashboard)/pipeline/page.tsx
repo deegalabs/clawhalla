@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { AGENT_EMOJIS } from '@/lib/agents';
+import { useSquad } from '@/hooks/use-squad';
 
 interface Card {
   id: string;
@@ -61,6 +62,7 @@ function fmtTokens(n: number): string {
 }
 
 export default function PipelinePage() {
+  const { activeSquad } = useSquad();
   const [cards, setCards] = useState<Card[]>([]);
   const [agents, setAgents] = useState<AgentHealth[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -68,8 +70,9 @@ export default function PipelinePage() {
 
   const fetchData = useCallback(async () => {
     try {
+      const boardsUrl = activeSquad ? `/api/boards?squad=${activeSquad}` : '/api/boards';
       const [boardsRes, healthRes, actRes, usageRes] = await Promise.all([
-        fetch('/api/boards'),
+        fetch(boardsUrl),
         fetch('/api/agents/health'),
         fetch('/api/activities?limit=10'),
         fetch('/api/usage'),
@@ -97,7 +100,7 @@ export default function PipelinePage() {
       if (Array.isArray(actData)) setActivities(actData);
       if (usageData.ok) setUsage(usageData);
     } catch (err) { console.error('[pipeline] fetch error:', err); }
-  }, []);
+  }, [activeSquad]);
 
   useEffect(() => {
     fetchData();
@@ -182,6 +185,39 @@ export default function PipelinePage() {
           )}
         </div>
       </div>
+
+      {/* Agent Status Strip (consolidated from Office view) */}
+      {(() => {
+        const activeAgents = agents.filter(a => a.state === 'active');
+        const idleAgents = agents.filter(a => a.state === 'idle');
+        const stalledAgents = agents.filter(a => a.state === 'stalled');
+        const stuckAgents = agents.filter(a => a.state === 'stuck');
+        const rooms = [
+          { label: 'Working', agents: activeAgents, dot: 'bg-green-500', text: 'text-green-400', border: 'border-green-500/20' },
+          { label: 'Idle', agents: idleAgents, dot: 'bg-gray-500', text: 'text-gray-400', border: 'border-[#1e1e21]' },
+          { label: 'Stalled', agents: stalledAgents, dot: 'bg-amber-500 animate-pulse', text: 'text-amber-400', border: 'border-amber-500/20' },
+          { label: 'Blocked', agents: stuckAgents, dot: 'bg-red-500 animate-pulse', text: 'text-red-400', border: 'border-red-500/20' },
+        ].filter(r => r.agents.length > 0);
+        return rooms.length > 0 ? (
+          <div className="flex gap-3 flex-wrap">
+            {rooms.map(room => (
+              <div key={room.label} className={`bg-[#111113] rounded-lg border ${room.border} px-3 py-2 flex items-center gap-2`}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${room.dot}`} />
+                  <span className={`text-[10px] font-medium ${room.text}`}>{room.label}</span>
+                  <span className="text-[9px] text-gray-600">({room.agents.length})</span>
+                </div>
+                <div className="flex -space-x-1">
+                  {room.agents.slice(0, 8).map(a => (
+                    <span key={a.id} title={a.id} className="text-sm">{AGENT_EMOJIS[a.id] || '🤖'}</span>
+                  ))}
+                  {room.agents.length > 8 && <span className="text-[9px] text-gray-600 ml-1">+{room.agents.length - 8}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null;
+      })()}
 
       {/* Pipeline header */}
       <div className="flex items-center justify-between">

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { PageLoading } from '@/components/ui/loading';
 import { AGENT_EMOJIS } from '@/lib/agents';
+import { useSquad } from '@/hooks/use-squad';
 
 interface AgentHealth {
   id: string;
@@ -69,7 +70,7 @@ function timeAgo(ms: number | string): string {
 const quickNav = [
   { href: '/tasks', label: 'Boards', icon: '✓', desc: 'Kanban boards' },
   { href: '/pipeline', label: 'Pipeline', icon: '⚡', desc: 'Build status' },
-  { href: '/team', label: 'Team', icon: '👥', desc: 'Agent hierarchy' },
+  { href: '/squads', label: 'Squads', icon: '👥', desc: 'Agent hierarchy' },
   { href: '/office', label: 'Office', icon: '🏢', desc: 'Live agents' },
   { href: '/memory', label: 'Memory', icon: '🧠', desc: 'Knowledge base' },
   { href: '/content', label: 'Content', icon: '✍️', desc: 'Create posts' },
@@ -78,6 +79,7 @@ const quickNav = [
 ];
 
 export default function DashboardPage() {
+  const { activeSquad } = useSquad();
   const [agents, setAgents] = useState<AgentHealth[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [board, setBoard] = useState<BoardData | null>(null);
@@ -90,10 +92,11 @@ export default function DashboardPage() {
   const fetchData = useCallback(async () => {
     try {
       setFetchError(null);
+      const boardsUrl = activeSquad ? `/api/boards?squad=${activeSquad}` : '/api/boards';
       const [healthRes, actRes, boardsRes, usageRes, approvalRes] = await Promise.all([
         fetch('/api/agents/health'),
         fetch('/api/activities?limit=12'),
-        fetch('/api/boards'),
+        fetch(boardsUrl),
         fetch('/api/usage'),
         fetch('/api/approvals'),
       ]);
@@ -150,7 +153,7 @@ export default function DashboardPage() {
       setApprovals(approvalData);
     } catch (err) { console.error('[dashboard] fetch error:', err); setFetchError(String(err)); }
     setLoading(false);
-  }, []);
+  }, [activeSquad]);
 
   useEffect(() => {
     fetchData();
