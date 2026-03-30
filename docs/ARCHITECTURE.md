@@ -10,7 +10,7 @@ Host Machine
         ├── Workspace (/home/clawdbot/.openclaw/workspace/)
         │     ├── company/          — Org structure, policies, governance
         │     ├── projects/         — Board (YAML), memory, ADRs
-        │     ├── personas/         — 15 agent persona templates
+        │     ├── personas/         — 9 agent persona templates
         │     ├── skills/           — Domain-specific knowledge (28 files)
         │     ├── squads/           — Squad workspaces (dev, blockchain, clop, product)
         │     ├── methodology/      — AI-AGIL, operational cycle
@@ -53,26 +53,51 @@ File change (YAML, MD)
       → Memory/Docs: search results update
 ```
 
-## Agent Hierarchy (4 Tiers)
+### Memory & RAG System
+```
+SQLite per-agent storage           Embedding providers
+├── FTS5 full-text search          ├── Ollama (local, Docker)
+├── Vector embeddings              ├── Node GGUF (node-llama-cpp)
+└── Chunk-level indexing           ├── OpenAI (text-embedding-3-small)
+                                   ├── Google Gemini (text-embedding-004)
+                                   ├── Voyage AI (voyage-3-lite)
+                                   └── Mistral (mistral-embed)
+
+Per-agent modes:
+  RAG    — Full semantic search (vector + FTS5)
+  .md    — File-based memory only (no embeddings)
+  Default — Inherits from global config
+
+Config: agents.defaults.memorySearch (global)
+        agents.list[n].memorySearch (per-agent override)
+```
+
+### Content Pipeline
+```
+Draft → Platform Adapters → Approval → Publish
+  │         │                   │          │
+  │    LinkedIn, Twitter,   Telegram    API calls
+  │    Instagram, Blog      inline      to platforms
+  │                         buttons
+  └── Saga (strategy) + Bragi (creation)
+```
+
+## Agent Hierarchy (9 Agents)
 
 ```
-Tier 0 — Platform (1 agent)
-  Claw 🦞 (sonnet-4-5) — System controller, never codes
-
-Tier 1 — Executive (3 agents)
-  Odin 👁️ (sonnet-4-6) — CTO, dev squad chief
-  Vidar ⚔️ (sonnet-4-6) — Blockchain architect, blockchain squad chief
-  Saga 🔮 (sonnet-4-6) — CPO, product squad chief
-
-Tier 2 — Management (3 agents)
-  Thor ⚡ (sonnet-4-5) — Tech lead, coordinates dev team
-  Frigg 👑 (haiku-4-5) — Coordinator/PA, manages clop cabinet
-  Tyr ⚖️ (opus-4-6) — Security auditor (ONLY opus user)
-
-Tier 3 — Execution (8 agents)
-  Freya ✨, Heimdall 👁️‍🗨️, Völund 🔧 — Dev squad
-  Sindri 🔥, Skadi ❄️ — Blockchain squad
-  Mimir 🧠, Bragi 🎭, Loki 🦊 — Clop cabinet (social media)
+Daniel (CEO, human)
+  └── Claw 🦞 — Chief Orchestrator (Opus 4.6)
+        ├── Dev Squad
+        │     ├── Thor ⚡ — Tech Lead (Sonnet 4.6)
+        │     ├── Freya ✨ — Senior Developer (Sonnet 4.6)
+        │     └── Tyr ⚖️ — Security Auditor (Sonnet 4.6)
+        ├── Personal Squad
+        │     ├── Frigg 👑 — Coordinator/PA (Sonnet 4.6)
+        │     └── Mimir 🧠 — Knowledge Curator (Sonnet 4.6)
+        ├── Social Squad
+        │     ├── Saga 🔮 — Content Strategist (Sonnet 4.6)
+        │     └── Bragi 🎭 — Content Creator (Sonnet 4.6)
+        └── Vidar ⚔️ — Blockchain Architect (Sonnet 4.6)
 ```
 
 ## Mission Control Stack
@@ -119,6 +144,10 @@ Browser ──→ MC API Routes ──→ OpenClaw Gateway
                 ├── /api/git           — Git operations
                 ├── /api/linkedin      — LinkedIn API
                 ├── /api/feedback      — Learning system
+                ├── /api/content/*    — Content pipeline + publishing
+                ├── /api/telegram/*   — Telegram webhook + approvals
+                ├── /api/memory/*     — RAG config + semantic search
+                ├── /api/squads/*     — Squad creation
                 └── /api/sse           — Real-time events
 ```
 
