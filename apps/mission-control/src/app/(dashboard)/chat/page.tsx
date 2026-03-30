@@ -686,8 +686,62 @@ function ChatPageInner() {
   // Derived: is the CURRENT session sending? (other agents can send independently)
   const sending = activeSessionId ? sendingSessions.has(activeSessionId) : false;
 
-  // Sidebar view: 'agents' shows agent picker, 'chats' shows conversation list
-  const [sidebarView, setSidebarView] = useState<'chats' | 'agents'>('chats');
+  // Gateway sessions (live view)
+  const [gatewaySessions, setGatewaySessions] = useState<Array<{ key: string; agentId: string; channel: string; updatedAt: number; model: string; totalTokens: number; status: string; messages?: Array<{ role: string; content: unknown }> }>>([]);
+  const [viewingGatewaySession, setViewingGatewaySession] = useState<string | null>(null);
+
+  // Load gateway sessions
+  useEffect(() => {
+    const loadGw = () => {
+      fetch('/api/gateway/sessions').then(r => r.json()).then(data => {
+        if (data.ok && data.sessions?.sessions) {
+          const parsed = data.sessions.sessions.map((s: Record<string, unknown>) => {
+            const parts = (s.key as string).split(':');
+            const agentId = parts.length >= 2 ? parts[1] : 'unknown';
+            const channel = parts.length >= 3 ? parts[2] : 'unknown';
+            return { ...s, agentId, channel };
+          });
+          parsed.sort((a: { updatedAt: number }, b: { updatedAt: number }) => b.updatedAt - a.updatedAt);
+          setGatewaySessions(parsed);
+        }
+      }).catch(() => {});
+    };
+    loadGw();
+    const interval = setInterval(loadGw, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadGatewaySession = async (key: string) => {
+    try {
+      const res = await fetch(`/api/gateway/sessions?key=${encodeURIComponent(key)}&messages=20`);
+      const data = await res.json();
+      if (data.ok && data.session) {
+        const s = data.session;
+        const parts = key.split(':');
+        const agentId = parts[1] || 'main';
+        const gwMsgs: Message[] = (s.messages || []).map((m: Record<string, unknown>, i: number) => {
+          let content = '';
+          if (typeof m.content === 'string') content = m.content;
+          else if (Array.isArray(m.content)) content = (m.content as Array<{ type: string; text?: string }>).filter(c => c.type === 'text').map(c => c.text).join('\n');
+          return {
+            id: `gw_${i}`,
+            role: m.role as string,
+            agentId: m.role === 'assistant' ? agentId : undefined,
+            content,
+            timestamp: new Date(s.updatedAt).toISOString(),
+          };
+        });
+        setMessages(gwMsgs);
+        setSelectedAgent(agentId);
+        setMode('single');
+        setActiveSessionId(null);
+        setViewingGatewaySession(key);
+      }
+    } catch {}
+  };
+
+  // Sidebar view: 'agents' shows agent picker, 'chats' shows conversation list, 'sessions' shows gateway sessions
+  const [sidebarView, setSidebarView] = useState<'chats' | 'agents' | 'sessions'>('chats');
 
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-3">
@@ -702,6 +756,8 @@ function ChatPageInner() {
           <div className="flex gap-0.5 bg-[#0a0a0b] rounded p-0.5">
             <button onClick={() => setSidebarView('chats')}
               className={`flex-1 py-1 text-[10px] rounded ${sidebarView === 'chats' ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500'}`}>Chats</button>
+            <button onClick={() => setSidebarView('sessions')}
+              className={`flex-1 py-1 text-[10px] rounded ${sidebarView === 'sessions' ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500'}`}>Sessions</button>
             <button onClick={() => setSidebarView('agents')}
               className={`flex-1 py-1 text-[10px] rounded ${sidebarView === 'agents' ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500'}`}>Agents</button>
           </div>
@@ -740,6 +796,45 @@ function ChatPageInner() {
                     className="px-2 text-gray-700 hover:text-red-400 opacity-0 group-hover:opacity-100 text-[10px]">×</button>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* Gateway sessions view */}
+        {sidebarView === 'sessions' && (
+          <div className="flex-1 overflow-y-auto">
+            {gatewaySessions.length === 0 ? (
+              <div className="text-center py-6 text-[10px] text-gray-700">No gateway sessions</div>
+            ) : (
+              gatewaySessions.map(s => {
+                const channelIcon = s.channel === 'telegram' ? '\u{1F4F1}' : s.channel === 'cron' ? '\u23F0' : '\u{1F4AC}';
+                const isActive = viewingGatewaySession === s.key;
+                const timeAgo = (() => {
+                  const diff = Date.now() - s.updatedAt;
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 1) return 'now';
+                  if (mins < 60) return `${mins}m`;
+                  return `${Math.floor(mins / 60)}h`;
+                })();
+                return (
+                  <button key={s.key} onClick={() => loadGatewaySession(s.key)}
+                    className={`w-full text-left px-3 py-2 border-b border-[#1e1e21] hover:bg-[#1a1a1d] ${isActive ? 'bg-[#1a1a1d]' : ''}`}>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-[10px]">{channelIcon}</span>
+                      <span className="text-[10px]">{agentEmoji(s.agentId)}</span>
+                      <span className={`text-[10px] truncate ${isActive ? 'text-gray-100 font-medium' : 'text-gray-300'}`}>
+                        {s.agentId}
+                      </span>
+                      <span className={`ml-auto text-[8px] px-1 py-px rounded ${s.status === 'running' ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/10 text-gray-600'}`}>
+                        {s.status === 'running' ? 'live' : timeAgo}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-gray-600 truncate">
+                      {s.channel}{s.channel === 'telegram' ? '' : ''} · {s.model?.replace('claude-', '')} · {(s.totalTokens / 1000).toFixed(1)}k tok
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         )}

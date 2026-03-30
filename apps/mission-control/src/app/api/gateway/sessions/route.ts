@@ -19,9 +19,22 @@ async function invokeGateway(tool: string, args: Record<string, unknown> = {}) {
   return text ? JSON.parse(text) : null;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const sessions = await invokeGateway('sessions_list', { messageLimit: 0 });
+    const url = new URL(req.url);
+    const sessionKey = url.searchParams.get('key');
+    const messageLimit = parseInt(url.searchParams.get('messages') || '0');
+
+    const sessions = await invokeGateway('sessions_list', { messageLimit: sessionKey ? 20 : messageLimit });
+
+    if (sessionKey && sessions?.sessions) {
+      const session = sessions.sessions.find((s: { key: string }) => s.key === sessionKey);
+      if (!session) {
+        return NextResponse.json({ ok: false, error: 'Session not found' }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, session });
+    }
+
     return NextResponse.json({ ok: true, sessions });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Unknown error';
