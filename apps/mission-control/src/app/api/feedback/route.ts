@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE } from '@/lib/paths';
 const FEEDBACK_DIR = join(WORKSPACE, 'company/knowledge_base/feedback');
 
 interface FeedbackEntry {

@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import { SQUADS } from '@/lib/squads';
+import type { SquadDefinition } from '@/lib/squads';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -10,15 +12,6 @@ import dynamic from 'next/dynamic';
 
 type Provider = 'anthropic' | 'google' | 'ollama' | 'skip';
 type Channel = 'mc' | 'telegram';
-
-interface SquadTemplate {
-  id: string;
-  name: string;
-  emoji: string;
-  tier: 'free' | 'pro';
-  description: string;
-  agents: { name: string; role: string; emoji: string }[];
-}
 
 interface TestResult {
   ok: boolean;
@@ -28,67 +21,6 @@ interface TestResult {
 }
 
 const TOTAL_STEPS = 9;
-
-const SQUAD_TEMPLATES: SquadTemplate[] = [
-  {
-    id: 'personal',
-    name: 'Personal',
-    emoji: '🧘',
-    tier: 'free',
-    description: 'Personal assistant, research, and memory management',
-    agents: [
-      { name: 'Frigg', role: 'Personal Assistant', emoji: '👑' },
-      { name: 'Mimir', role: 'Research Agent', emoji: '🧠' },
-    ],
-  },
-  {
-    id: 'hackathon',
-    name: 'Hackathon',
-    emoji: '⚡',
-    tier: 'free',
-    description: 'Fast prototyping with code and security review',
-    agents: [
-      { name: 'Thor', role: 'Tech Lead', emoji: '⚡' },
-      { name: 'Tyr', role: 'Security Auditor', emoji: '⚖️' },
-    ],
-  },
-  {
-    id: 'social',
-    name: 'Social',
-    emoji: '📣',
-    tier: 'free',
-    description: 'Content creation, community, and brand presence',
-    agents: [
-      { name: 'Bragi', role: 'Content Creator', emoji: '🎭' },
-      { name: 'Saga', role: 'Community Manager', emoji: '🔮' },
-    ],
-  },
-  {
-    id: 'dev',
-    name: 'Dev',
-    emoji: '🛠️',
-    tier: 'pro',
-    description: 'Full development squad with code, QA, and DevOps',
-    agents: [
-      { name: 'Vidar', role: 'Architect', emoji: '⚔️' },
-      { name: 'Thor', role: 'Tech Lead', emoji: '⚡' },
-      { name: 'Freya', role: 'Senior Dev', emoji: '✨' },
-      { name: 'Tyr', role: 'Security Auditor', emoji: '⚖️' },
-    ],
-  },
-  {
-    id: 'support',
-    name: 'Support',
-    emoji: '🛡️',
-    tier: 'pro',
-    description: 'Customer support, monitoring, and issue resolution',
-    agents: [
-      { name: 'Heimdall', role: 'QA / Observer', emoji: '👁️' },
-      { name: 'Freya', role: 'Support Engineer', emoji: '✨' },
-      { name: 'Odin', role: 'Escalation Manager', emoji: '👁️' },
-    ],
-  },
-];
 
 /* ------------------------------------------------------------------ */
 /*  Onboarding Wizard                                                  */
@@ -107,9 +39,12 @@ function OnboardingWizard() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
-  // Gateway token
+  // Gateway (auto-detected from openclaw.json when possible)
+  const [gatewayUrl, setGatewayUrl] = useState('');
   const [gatewayToken, setGatewayToken] = useState('');
+  const [gatewayOnline, setGatewayOnline] = useState(false);
   const [tokenConfigured, setTokenConfigured] = useState(false);
+  const [detected, setDetected] = useState(false);
 
   // Channel
   const [channel, setChannel] = useState<Channel>('mc');
@@ -129,14 +64,25 @@ function OnboardingWizard() {
   // Save state
   const [saving, setSaving] = useState(false);
 
-  // Pre-fill from server
+  // Auto-detect from openclaw.json (install.sh already created it)
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/settings?key=gateway_token');
+        const res = await fetch('/api/connection/detect');
         const data = await res.json();
-        if (data.configured) setTokenConfigured(true);
-      } catch { /* ignore */ }
+        if (data.detected) {
+          setDetected(true);
+          if (data.gateway?.url) setGatewayUrl(data.gateway.url);
+          if (data.gateway?.token) {
+            setGatewayToken(data.gateway.token);
+            setTokenConfigured(true);
+          }
+          if (data.gateway?.online) setGatewayOnline(data.gateway.online);
+          // Auto-select provider if already configured
+          if (data.configuredProviders?.includes('anthropic')) setProvider('anthropic');
+          else if (data.configuredProviders?.includes('google')) setProvider('google');
+        }
+      } catch { /* ignore — wizard still works manually */ }
     })();
   }, []);
 
@@ -171,10 +117,8 @@ function OnboardingWizard() {
     }
   }, [provider, apiKey, ollamaUrl]);
 
-  const selectedSquadTemplate = SQUAD_TEMPLATES.find(s => s.id === selectedSquad);
-  const allAgents = selectedSquadTemplate
-    ? [{ name: 'Claw', role: 'Chief Orchestrator', emoji: '🦞' }, ...selectedSquadTemplate.agents]
-    : [];
+  const selectedSquadDef = SQUADS.find(s => s.id === selectedSquad);
+  const allAgents = selectedSquadDef?.agents || [];
 
   const createAgents = useCallback(async () => {
     setCreating(true);
@@ -189,6 +133,7 @@ function OnboardingWizard() {
           provider,
           apiKey: provider !== 'skip' && provider !== 'ollama' ? apiKey : undefined,
           ollamaUrl: provider === 'ollama' ? ollamaUrl : undefined,
+          gatewayUrl: gatewayUrl || undefined,
           gatewayToken,
           channel,
           telegramToken: channel === 'telegram' ? telegramToken : undefined,
@@ -201,7 +146,7 @@ function OnboardingWizard() {
       setCreateProgress(p => [...p, 'Configuration saved to vault']);
 
       // 2. Request Claw to create the squad
-      setCreateProgress(p => [...p, `Creating ${selectedSquadTemplate?.name} Squad...`]);
+      setCreateProgress(p => [...p, `Creating ${selectedSquadDef?.name} Squad...`]);
 
       const res = await fetch('/api/squads/create', {
         method: 'POST',
@@ -229,7 +174,7 @@ function OnboardingWizard() {
     } finally {
       setCreating(false);
     }
-  }, [provider, apiKey, ollamaUrl, gatewayToken, channel, telegramToken, selectedSquad, agentCustomizations, selectedSquadTemplate]);
+  }, [provider, apiKey, ollamaUrl, gatewayUrl, gatewayToken, channel, telegramToken, selectedSquad, agentCustomizations, selectedSquadDef]);
 
   const goToDashboard = useCallback(async () => {
     setSaving(true);
@@ -461,48 +406,103 @@ function OnboardingWizard() {
     );
   }
 
-  /* ---------- step 4: gateway token ---------- */
+  /* ---------- step 4: gateway connection ---------- */
 
   if (step === 4) {
+    const hasToken = !!gatewayToken || tokenConfigured;
     return (
       <Wrapper>
         <Progress />
         <Card>
-          <h2 className="text-xl font-bold text-white mb-1">Gateway Token</h2>
+          <h2 className="text-xl font-bold text-white mb-1">Gateway Connection</h2>
           <p className="text-gray-400 text-sm mb-6">
-            This token authenticates Mission Control with the OpenClaw gateway.
-            You can set your own or generate one.
+            {detected
+              ? 'We detected your OpenClaw gateway configuration automatically.'
+              : 'Configure the connection to your OpenClaw gateway.'}
           </p>
 
-          <div className="mb-5 space-y-3">
+          <div className="mb-5 space-y-4">
+            {/* Gateway status */}
+            <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
+              detected && gatewayOnline
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                : detected
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  : 'bg-red-500/10 text-red-400 border border-red-500/20'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${
+                  detected && gatewayOnline ? 'bg-emerald-400' : detected ? 'bg-amber-400 animate-pulse' : 'bg-red-400'
+                }`} />
+                {detected && gatewayOnline
+                  ? `Gateway online at ${gatewayUrl}`
+                  : detected
+                    ? `Gateway not responding at ${gatewayUrl} — start it with: openclaw gateway`
+                    : 'OpenClaw not detected — run install.sh first or configure manually below'}
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/connection/detect');
+                    const data = await res.json();
+                    if (data.detected) {
+                      setDetected(true);
+                      if (data.gateway?.url) setGatewayUrl(data.gateway.url);
+                      if (data.gateway?.token) { setGatewayToken(data.gateway.token); setTokenConfigured(true); }
+                      setGatewayOnline(!!data.gateway?.online);
+                    }
+                  } catch { /* ignore */ }
+                }}
+                className="shrink-0 text-[10px] px-2 py-1 rounded border border-white/10 hover:bg-white/10 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+
+            {/* Gateway URL (read-only when detected) */}
+            <label className="block">
+              <span className="text-xs text-gray-500 font-medium">Gateway URL</span>
+              {detected && <span className="ml-2 text-[10px] text-emerald-400 font-medium">auto-detected</span>}
+              <input
+                type="text"
+                value={gatewayUrl}
+                onChange={(e) => setGatewayUrl(e.target.value)}
+                placeholder="http://127.0.0.1:18789"
+                className="mt-1 block w-full rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 text-sm text-gray-200 font-mono placeholder:text-gray-600 focus:border-amber-500/50 focus:ring-0 focus:outline-none transition-colors"
+              />
+            </label>
+
+            {/* Gateway token */}
             <label className="block">
               <span className="text-xs text-gray-500 font-medium">Token</span>
-              {tokenConfigured && !gatewayToken && (
-                <span className="ml-2 text-[10px] text-emerald-400 font-medium">✓ already configured</span>
+              {detected && gatewayToken && (
+                <span className="ml-2 text-[10px] text-emerald-400 font-medium">auto-detected</span>
               )}
               <div className="flex gap-2 mt-1">
                 <input
-                  type="text"
+                  type="password"
                   value={gatewayToken}
                   onChange={(e) => setGatewayToken(e.target.value)}
                   placeholder={tokenConfigured ? 'Leave empty to keep existing' : 'Paste or generate a token'}
                   className="block flex-1 rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 text-sm text-gray-200 font-mono placeholder:text-gray-600 focus:border-amber-500/50 focus:ring-0 focus:outline-none transition-colors"
                 />
-                <button
-                  onClick={generateToken}
-                  className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-white/10 transition-colors"
-                  title="Generate random token"
-                >
-                  Generate
-                </button>
+                {!detected && (
+                  <button
+                    onClick={generateToken}
+                    className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-white/10 transition-colors"
+                    title="Generate random token"
+                  >
+                    Generate
+                  </button>
+                )}
               </div>
+              <p className="text-xs text-gray-600 mt-1">
+                Stored encrypted in the vault. Used for gateway ↔ MC communication.
+              </p>
             </label>
-            <p className="text-xs text-gray-600">
-              Stored encrypted in the vault. Used for gateway ↔ MC communication.
-            </p>
           </div>
 
-          {!gatewayToken && !tokenConfigured && (
+          {!hasToken && (
             <p className="text-xs text-amber-400/80 mb-3">
               A token is required. Click &quot;Generate&quot; or paste your own.
             </p>
@@ -514,7 +514,7 @@ function OnboardingWizard() {
             </button>
             <button
               onClick={() => {
-                if (!gatewayToken && !tokenConfigured) {
+                if (!hasToken) {
                   generateToken();
                   return;
                 }
@@ -522,7 +522,7 @@ function OnboardingWizard() {
               }}
               className="rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 transition-colors flex-1"
             >
-              {!gatewayToken && !tokenConfigured ? 'Generate & Continue' : 'Next'}
+              {!hasToken ? 'Generate & Continue' : 'Next'}
             </button>
           </div>
         </Card>
@@ -612,11 +612,11 @@ function OnboardingWizard() {
         <Card wide>
           <h2 className="text-xl font-bold text-white mb-1">Choose Your Squad</h2>
           <p className="text-gray-400 text-sm mb-6">
-            Each squad comes with Claw (Chief) + specialized agents. Free tier includes 3 templates.
+            Each squad has a lead + specialized agents. Claw orchestrates all squads. Free tier includes 3 templates.
           </p>
 
           <div className="grid gap-3 mb-6">
-            {SQUAD_TEMPLATES.filter(s => s.tier === 'free').map((squad) => (
+            {SQUADS.filter(s => s.tier === 'free').map((squad) => (
               <button
                 key={squad.id}
                 onClick={() => setSelectedSquad(squad.id)}
@@ -639,10 +639,11 @@ function OnboardingWizard() {
                 </div>
                 <p className="text-xs text-gray-500 mb-2">{squad.description}</p>
                 <div className="flex flex-wrap gap-2">
-                  <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded-full">🦞 Claw</span>
-                  {squad.agents.map(a => (
-                    <span key={a.name} className="text-[10px] bg-white/5 text-gray-400 px-2 py-0.5 rounded-full">
-                      {a.emoji} {a.name}
+                  {squad.agents.map((a, i) => (
+                    <span key={a.name} className={`text-[10px] px-2 py-0.5 rounded-full ${
+                      i === 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-white/5 text-gray-400'
+                    }`}>
+                      {a.emoji} {a.name}{i === 0 ? ' (Lead)' : ''}
                     </span>
                   ))}
                 </div>
@@ -660,7 +661,7 @@ function OnboardingWizard() {
                 Larger specialized squads for development teams and customer support. Available in a future release.
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {SQUAD_TEMPLATES.filter(s => s.tier === 'pro').map(s => (
+                {SQUADS.filter(s => s.tier === 'pro').map(s => (
                   <span key={s.id} className="text-[10px] text-gray-600 bg-white/[0.03] px-2 py-0.5 rounded-full">
                     {s.emoji} {s.name}
                   </span>
@@ -694,7 +695,7 @@ function OnboardingWizard() {
         <Card wide>
           <h2 className="text-xl font-bold text-white mb-1">Customize Agents</h2>
           <p className="text-gray-400 text-sm mb-6">
-            Optional — personalize each agent or keep defaults. Claw will create them with these settings.
+            Optional — personalize each agent or keep defaults.
           </p>
 
           <div className="space-y-3 mb-6">
@@ -730,7 +731,7 @@ function OnboardingWizard() {
                         ...prev,
                         [agent.name]: { ...custom, focus: v },
                       }))}
-                      placeholder={agent.name === 'Claw' ? 'e.g., startup ops' : 'e.g., React, Solidity'}
+                      placeholder="e.g., React, Solidity, content strategy"
                     />
                   </div>
                 </div>
@@ -772,7 +773,7 @@ function OnboardingWizard() {
           <p className="text-gray-400 text-sm mb-6">
             {createDone
               ? 'All agents are configured and ready.'
-              : 'Claw is setting up your agents...'}
+              : 'Setting up your squad...'}
           </p>
 
           <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 mb-6 space-y-2 max-h-60 overflow-y-auto font-mono text-xs">
@@ -817,7 +818,7 @@ function OnboardingWizard() {
         </div>
         <h2 className="text-2xl font-bold text-white text-center mb-2">You&apos;re All Set!</h2>
         <p className="text-gray-400 text-center mb-6 max-w-sm">
-          Your {selectedSquadTemplate?.name} Squad is online. Open the dashboard to start working with your agents.
+          Your {selectedSquadDef?.name} Squad is online. Open the dashboard to start working with your agents.
         </p>
 
         <div className="rounded-xl bg-white/[0.02] border border-white/5 p-4 mb-8 space-y-2 text-sm">
@@ -827,8 +828,9 @@ function OnboardingWizard() {
             provider === 'ollama' ? 'Ollama (local)' : 'Not configured'
           } />
           <SummaryRow label="Channel" value={channel === 'mc' ? 'Mission Control Chat' : 'Telegram'} />
-          <SummaryRow label="Squad" value={`${selectedSquadTemplate?.emoji} ${selectedSquadTemplate?.name}`} />
+          <SummaryRow label="Squad" value={`${selectedSquadDef?.emoji} ${selectedSquadDef?.name}`} />
           <SummaryRow label="Agents" value={allAgents.map(a => a.name).join(', ')} />
+          <SummaryRow label="Gateway" value={gatewayUrl || 'http://127.0.0.1:18789'} />
           <SummaryRow label="Gateway Token" value={gatewayToken ? '✓ configured' : tokenConfigured ? '✓ existing' : '— not set'} />
         </div>
 

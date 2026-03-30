@@ -73,7 +73,7 @@ function saveSessionToDB(sessionId: string, title: string, agentId: string, mode
         artifacts: m.artifacts, createdAt: m.timestamp,
       })),
     }),
-  }).catch(() => {});
+  }).catch(err => console.warn('[chat] save failed:', err));
 }
 
 // --- Thinking Block Component ---
@@ -212,7 +212,7 @@ function ChatPageInner() {
           updatedAt: toIso(s.updatedAt || s.updated_at),
         })));
       }
-    }).catch(() => {});
+    }).catch(err => console.warn('[chat] load sessions failed:', err));
   }, []);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);

@@ -4,6 +4,7 @@ import { join } from 'path';
 import { db } from '@/lib/db';
 import { agents, activities } from '@/lib/schema';
 import { authenticateRequest, isAuthError } from '@/lib/auth';
+import { WORKSPACE } from '@/lib/paths';
 
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,31}$/;
 const SQUAD_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
 
 // Generate minimal persona files in the workspace
 async function generatePersonaFiles(squadId: string, agent: AgentInput) {
-  const workspaceBase = process.env.OPENCLAW_WORKSPACE || '/home/clawdbot/.openclaw/workspace';
+  const workspaceBase = WORKSPACE;
   const agentDir = join(workspaceBase, 'squads', squadId, agent.name.toLowerCase());
 
   await mkdir(agentDir, { recursive: true });

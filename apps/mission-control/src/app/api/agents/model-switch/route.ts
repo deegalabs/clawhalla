@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE } from '@/lib/paths';
 const CONFIG_PATH = join(WORKSPACE, 'config/model-routing.json');
 
 interface ModelRoute {

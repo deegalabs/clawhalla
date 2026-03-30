@@ -45,7 +45,7 @@ function ansiToHtml(text: string): string {
 
 function TerminalPageInner() {
   const [tabs, setTabs] = useState<TerminalTab[]>([{
-    id: 'tab_1', name: 'Terminal', cwd: '/home/clawdbot',
+    id: 'tab_1', name: 'Terminal', cwd: '~',
     lines: [{ type: 'system', content: WELCOME }],
     history: [], historyIndex: -1,
   }]);
@@ -158,7 +158,7 @@ function TerminalPageInner() {
 
   const addTab = () => {
     const id = `tab_${Date.now().toString(36)}`;
-    setTabs(prev => [...prev, { id, name: `Term ${prev.length + 1}`, cwd: '/home/clawdbot', lines: [{ type: 'system', content: 'New session\n' }], history: [], historyIndex: -1 }]);
+    setTabs(prev => [...prev, { id, name: `Term ${prev.length + 1}`, cwd: '~', lines: [{ type: 'system', content: 'New session\n' }], history: [], historyIndex: -1 }]);
     setActiveTab(id);
   };
 

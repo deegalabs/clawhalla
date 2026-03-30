@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
 import { readFile, readdir, stat } from 'fs/promises';
 import { join, relative, extname } from 'path';
+import { WORKSPACE } from '@/lib/paths';
 
 const DB_PATH = process.env.DB_PATH || './data/mission-control.db';
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
 
 const SKIP_DIRS = new Set(['node_modules', '.next', '.git', '.cache', 'venv', '__pycache__', '.openclaw']);
 const SUPPORTED_EXTS = new Set(['.md', '.yaml', '.yml']);

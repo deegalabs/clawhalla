@@ -1,8 +1,7 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import { join, relative } from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-
-const WORKSPACE = join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE } from '@/lib/paths';
 const SKIP = ['node_modules', '.next', '.git', '.cache', 'venv', '__pycache__'];
 
 interface DocEntry {

@@ -54,9 +54,9 @@ export async function POST(req: NextRequest) {
     // Upsert session
     const existing = db.select().from(chatSessions).where(eq(chatSessions.id, sessionId)).get();
     if (existing) {
+      // Count actual messages in DB after upsert (computed below)
       db.update(chatSessions).set({
         title: title || existing.title,
-        messageCount: sql`${chatSessions.messageCount} + ${msgs?.length || 0}`,
         updatedAt: now,
       }).where(eq(chatSessions.id, sessionId)).run();
     } else {
@@ -109,6 +109,13 @@ export async function POST(req: NextRequest) {
           });
         }
       }
+    }
+
+    // Update messageCount to actual count in DB
+    const countRow = db.select({ count: sql<number>`count(*)` }).from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId)).get();
+    if (countRow) {
+      db.update(chatSessions).set({ messageCount: countRow.count }).where(eq(chatSessions.id, sessionId)).run();
     }
 
     return NextResponse.json({ ok: true, sessionId });

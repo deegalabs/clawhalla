@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, DragEvent } from 'react';
 import { MarkdownView } from '@/components/ui/markdown-view';
 import { AGENT_EMOJIS, AGENT_ROSTER, PRIORITY_COLORS } from '@/lib/agents';
+import { useSquad } from '@/hooks/use-squad';
+import { SQUADS } from '@/lib/squads';
 
 // ─── Types ──────────────────────────────────────────────────────
 interface BoardColumn {
@@ -48,6 +50,8 @@ interface Card {
   updatedAt: string;
   completedAt: string | null;
   archivedAt: string | null;
+  delegatedTo: string | null;
+  delegatedFrom: string | null;
 }
 
 interface BoardTemplate {
@@ -177,6 +181,7 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
   onUpdate: (card: Card) => void;
   onDelete: (id: string, mode: 'archive' | 'delete') => void;
 }) {
+  const { activeSquad } = useSquad();
   const [form, setForm] = useState({ ...card });
   const [checklist, setChecklist] = useState<{ text: string; done: boolean }[]>(card.checklist || []);
   const [newCheckItem, setNewCheckItem] = useState('');
@@ -191,6 +196,11 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
   const [confirmAction, setConfirmAction] = useState<'archive' | 'delete' | null>(null);
   const [labelInput, setLabelInput] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [showDelegate, setShowDelegate] = useState(false);
+  const [delegateSquad, setDelegateSquad] = useState('');
+  const [delegateMsg, setDelegateMsg] = useState('');
+  const [delegating, setDelegating] = useState(false);
+  const [delegateResult, setDelegateResult] = useState<{ ok: boolean; squad?: string; boardName?: string; error?: string } | null>(null);
 
   // Load comments and history on mount
   useEffect(() => {
@@ -581,6 +591,70 @@ function CardDetailModal({ card, boardId, columns, onClose, onUpdate, onDelete }
               ▶ Dispatch to @{form.assignee || 'main'}
             </button>
 
+            {/* Delegate to another squad */}
+            {!form.delegatedTo && (
+              <>
+                <button onClick={() => setShowDelegate(!showDelegate)}
+                  className="w-full text-left px-3 py-2 text-[11px] bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400 hover:bg-blue-500/20">
+                  🔄 Delegate to Squad
+                </button>
+                {showDelegate && (
+                  <div className="bg-[#0a0a0b] border border-[#27272a] rounded-lg p-3 space-y-2">
+                    <div className="text-[10px] text-gray-400 font-medium">Send this task to another squad</div>
+                    <select value={delegateSquad} onChange={e => setDelegateSquad(e.target.value)}
+                      className="w-full bg-[#111113] border border-[#27272a] rounded px-2 py-1.5 text-[11px] text-gray-200 focus:border-blue-500/50 focus:outline-none">
+                      <option value="">Select squad...</option>
+                      {SQUADS.filter(s => s.id !== activeSquad).map(s => (
+                        <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>
+                      ))}
+                    </select>
+                    <textarea value={delegateMsg} onChange={e => setDelegateMsg(e.target.value)}
+                      placeholder="Context for the receiving squad (optional)"
+                      rows={2}
+                      className="w-full bg-[#111113] border border-[#27272a] rounded px-2 py-1.5 text-[11px] text-gray-200 placeholder:text-gray-600 focus:border-blue-500/50 focus:outline-none resize-none" />
+                    <div className="flex gap-1.5">
+                      <button disabled={!delegateSquad || delegating} onClick={async () => {
+                        setDelegating(true);
+                        try {
+                          const res = await fetch(`/api/boards/${boardId}/cards/${form.id}/delegate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ targetSquad: delegateSquad, message: delegateMsg }),
+                          });
+                          const data = await res.json();
+                          setDelegateResult(data.ok ? { ok: true, squad: delegateSquad, boardName: data.delegatedCard?.boardName } : { ok: false, error: data.error });
+                          if (data.ok) onUpdate({ ...form, column: 'delegated', delegatedTo: data.delegatedCard?.id });
+                        } catch (err) { setDelegateResult({ ok: false, error: String(err) }); }
+                        setDelegating(false);
+                      }}
+                        className="flex-1 px-2 py-1.5 text-[11px] font-medium bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 disabled:opacity-50">
+                        {delegating ? 'Delegating...' : 'Delegate'}
+                      </button>
+                      <button onClick={() => { setShowDelegate(false); setDelegateResult(null); }}
+                        className="px-2 py-1.5 text-[11px] text-gray-500 rounded hover:text-gray-300">
+                        Cancel
+                      </button>
+                    </div>
+                    {delegateResult && (
+                      <div className={`text-[10px] px-2 py-1.5 rounded ${delegateResult.ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                        {delegateResult.ok ? `Delegated to ${delegateResult.squad} → ${delegateResult.boardName}` : delegateResult.error}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+            {form.delegatedTo && (
+              <div className="px-3 py-2 text-[11px] bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-400">
+                🔄 Delegated — waiting for result
+              </div>
+            )}
+            {form.delegatedFrom && (
+              <div className="px-3 py-2 text-[11px] bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-400">
+                📥 Received from another squad
+              </div>
+            )}
+
             {/* Save */}
             <button onClick={handleSave} disabled={!dirty}
               className={`w-full px-3 py-2 text-[11px] font-medium rounded-lg transition-colors ${
@@ -690,6 +764,7 @@ function NewCardInline({ columnId, boardId, onCreated }: {
 
 // ─── Main Page ──────────────────────────────────────────────────
 export default function BoardsPage() {
+  const { activeSquad } = useSquad();
   const [boardsList, setBoardsList] = useState<Board[]>([]);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
   const [activeBoard, setActiveBoard] = useState<(Board & { cards: Card[] }) | null>(null);
@@ -705,10 +780,11 @@ export default function BoardsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [archivedCards, setArchivedCards] = useState<Card[]>([]);
 
-  // Fetch boards list
+  // Fetch boards list (filtered by active squad)
   const fetchBoards = useCallback(async () => {
     try {
-      const res = await fetch('/api/boards');
+      const url = activeSquad ? `/api/boards?squad=${activeSquad}` : '/api/boards';
+      const res = await fetch(url);
       const data = await res.json();
       if (Array.isArray(data)) {
         setBoardsList(data.map((b: Board & { columns: string | BoardColumn[] }) => ({
@@ -717,7 +793,7 @@ export default function BoardsPage() {
         })));
       }
     } catch (err) { console.error('[boards] fetch error:', err); }
-  }, []);
+  }, [activeSquad]);
 
   // Fetch active board with cards
   const fetchActiveBoard = useCallback(async (boardId: string) => {
@@ -731,8 +807,11 @@ export default function BoardsPage() {
     setLoading(false);
   }, []);
 
-  // Initial load
+  // Initial load + re-fetch when squad changes
   useEffect(() => {
+    setActiveBoardId(null);
+    setActiveBoard(null);
+    setBoardsList([]);
     fetchBoards().then(() => setLoading(false));
   }, [fetchBoards]);
 
@@ -781,7 +860,7 @@ export default function BoardsPage() {
       const res = await fetch('/api/boards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type: template.type, columns: template.columns }),
+        body: JSON.stringify({ name, type: template.type, columns: template.columns, squad: activeSquad }),
       });
       const newBoard = await res.json();
       setShowNewBoard(false);
@@ -900,7 +979,12 @@ export default function BoardsPage() {
     return true;
   });
 
-  const columns = activeBoard?.columns || [];
+  // Add virtual "delegated" column if any cards have been delegated
+  const baseColumns = activeBoard?.columns || [];
+  const hasDelegated = cards.some(c => c.column === 'delegated');
+  const columns = hasDelegated && !baseColumns.some(c => c.id === 'delegated')
+    ? [...baseColumns, { id: 'delegated', name: 'Delegated', color: '#3b82f6' }]
+    : baseColumns;
   const assignees = [...new Set(cards.map(c => c.assignee).filter(Boolean))] as string[];
 
   if (loading) {
@@ -1097,6 +1181,12 @@ export default function BoardsPage() {
                         )}
                         {card.dueDate && (
                           <span className="text-[9px] text-gray-600">📅 {new Date(card.dueDate).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
+                        )}
+                        {card.delegatedTo && (
+                          <span className="text-[9px] px-1 py-0.5 bg-blue-500/10 text-blue-400 rounded">🔄 delegated</span>
+                        )}
+                        {card.delegatedFrom && (
+                          <span className="text-[9px] px-1 py-0.5 bg-purple-500/10 text-purple-400 rounded">📥 cross-squad</span>
                         )}
                       </div>
                     </div>

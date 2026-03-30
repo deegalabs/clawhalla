@@ -2,9 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { costEvents } from '@/lib/schema';
 import { desc } from 'drizzle-orm';
-
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://127.0.0.1:18789';
-const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
+import { getSetting } from '@/lib/settings';
 
 // Per-MTok pricing (USD) — Anthropic public pricing as of 2025
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
@@ -30,12 +28,14 @@ function getPricing(model: string): { input: number; output: number } {
 
 // Fetch live session data from OpenClaw gateway
 async function fetchGatewaySessions(): Promise<GatewaySession[] | null> {
+  const gatewayUrl = getSetting('gateway_url', process.env.GATEWAY_URL || 'http://127.0.0.1:18789');
+  const gatewayToken = getSetting('gateway_token', process.env.GATEWAY_TOKEN || '');
   try {
-    const res = await fetch(`${GATEWAY_URL}/tools/invoke`, {
+    const res = await fetch(`${gatewayUrl}/tools/invoke`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'Authorization': `Bearer ${gatewayToken}`,
       },
       body: JSON.stringify({ tool: 'sessions_list', args: { messageLimit: 0 } }),
       cache: 'no-store',

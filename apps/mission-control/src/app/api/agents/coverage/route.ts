@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { parse } from 'yaml';
-
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE } from '@/lib/paths';
 const ORG_FILE = join(WORKSPACE, 'company/org_structure.yaml');
 
 interface OrgAgent {

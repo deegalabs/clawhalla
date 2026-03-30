@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execSync } from 'child_process';
+import { homedir } from 'os';
 import { requireAuth, isAuthError } from '@/lib/auth';
 
 // POST /api/terminal — execute a command and return output (auth required)
@@ -34,10 +35,10 @@ export async function POST(req: NextRequest) {
 
     // Security: restrict cwd to safe directories
     const allowedPrefixes = [
-      process.env.HOME || '/home/clawdbot',
+      process.env.HOME || homedir(),
       '/tmp',
     ];
-    const workDir = cwd || process.env.HOME || '/home/clawdbot';
+    const workDir = cwd || process.env.HOME || homedir();
     const resolvedCwd = require('path').resolve(workDir);
     if (!allowedPrefixes.some(prefix => resolvedCwd.startsWith(prefix))) {
       return NextResponse.json({ ok: false, error: 'Working directory not allowed' }, { status: 403 });

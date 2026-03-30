@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { execSync } from 'child_process';
+import { join } from 'path';
+import { homedir } from 'os';
 
-const REPO_PATH = process.env.REPO_PATH || '/home/clawdbot/clawhalla-repo';
+const REPO_PATH = process.env.REPO_PATH || join(process.env.HOME || homedir(), 'clawhalla-repo');
 
 function git(cmd: string): string {
   return execSync(`git -C ${REPO_PATH} ${cmd}`, {

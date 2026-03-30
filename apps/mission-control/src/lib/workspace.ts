@@ -1,12 +1,11 @@
 import { readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { parse as parseYaml } from 'yaml';
+import { WORKSPACE as WORKSPACE_PATH } from '@/lib/paths';
 
 // ---------------------------------------------------------------------------
 // Workspace path resolution
 // ---------------------------------------------------------------------------
-
-const WORKSPACE_PATH = process.env.OPENCLAW_WORKSPACE || '/home/clawdbot/.openclaw/workspace';
 
 export function workspacePath(...segments: string[]): string {
   return join(WORKSPACE_PATH, ...segments);

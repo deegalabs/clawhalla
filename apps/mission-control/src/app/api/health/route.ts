@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { notify } from '@/lib/notify';
-
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://127.0.0.1:18789';
+import { getSetting } from '@/lib/settings';
 
 // Track gateway state with debouncing to prevent notification flapping
 let lastNotifiedState: boolean | null = null;
@@ -15,7 +14,8 @@ export async function GET() {
   let gatewayOk = false;
 
   try {
-    const res = await fetch(`${GATEWAY_URL}/health`, {
+    const gatewayUrl = getSetting('gateway_url', process.env.GATEWAY_URL || 'http://127.0.0.1:18789');
+    const res = await fetch(`${gatewayUrl}/health`, {
       signal: AbortSignal.timeout(3000),
       cache: 'no-store',
     });

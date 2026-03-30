@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { agents as agentsTable } from '@/lib/schema';
-
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://127.0.0.1:18789';
-const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
+import { getSetting } from '@/lib/settings';
 
 interface SessionInfo {
   agentId?: string;
@@ -50,12 +48,14 @@ export async function GET() {
     let sessions: SessionInfo[] = [];
 
     // 1. Query gateway for active sessions
+    const gatewayUrl = getSetting('gateway_url', process.env.GATEWAY_URL || 'http://127.0.0.1:18789');
+    const gatewayToken = getSetting('gateway_token', process.env.GATEWAY_TOKEN || '');
     try {
-      const res = await fetch(`${GATEWAY_URL}/tools/invoke`, {
+      const res = await fetch(`${gatewayUrl}/tools/invoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+          'Authorization': `Bearer ${gatewayToken}`,
         },
         body: JSON.stringify({ tool: 'sessions_list', args: { messageLimit: 0 } }),
         cache: 'no-store',

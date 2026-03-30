@@ -1,8 +1,9 @@
 import { readFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { NextResponse } from 'next/server';
+import { WORKSPACE } from '@/lib/paths';
 
-const MEMORY_PATH = join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace/MEMORY.md');
+const MEMORY_PATH = join(WORKSPACE, 'MEMORY.md');
 
 export async function GET() {
   try {

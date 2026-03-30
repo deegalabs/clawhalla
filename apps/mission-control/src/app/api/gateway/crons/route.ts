@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-
-const GATEWAY_URL = process.env.GATEWAY_URL || 'http://127.0.0.1:18789';
-const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
+import { getSetting } from '@/lib/settings';
 
 export async function GET() {
+  const gatewayUrl = getSetting('gateway_url', process.env.GATEWAY_URL || 'http://127.0.0.1:18789');
+  const gatewayToken = getSetting('gateway_token', process.env.GATEWAY_TOKEN || '');
   try {
     // Try direct cron endpoint first
-    const res = await fetch(`${GATEWAY_URL}/cron`, {
+    const res = await fetch(`${gatewayUrl}/cron`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'Authorization': `Bearer ${gatewayToken}`,
       },
       cache: 'no-store',
     });

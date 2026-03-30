@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { requireAuth, isAuthError } from '@/lib/auth';
-
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE } from '@/lib/paths';
 const PROJECTS_FILE = join(WORKSPACE, 'config/projects.json');
 
 interface Project {

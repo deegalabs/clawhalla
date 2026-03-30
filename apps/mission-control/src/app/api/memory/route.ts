@@ -1,10 +1,11 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { NextResponse } from 'next/server';
+import { WORKSPACE, AGENTS_DIR } from '@/lib/paths';
 
 const MEMORY_PATHS = [
-  join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace/memory'),
-  join(process.env.HOME || '/home/clawdbot', '.openclaw/agents/main/workspace/memory'),
+  join(WORKSPACE, 'memory'),
+  join(AGENTS_DIR, 'main/workspace/memory'),
 ];
 
 export async function GET() {

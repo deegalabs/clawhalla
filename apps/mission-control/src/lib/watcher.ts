@@ -3,8 +3,7 @@ import { join, extname, basename } from 'path';
 import { searchIndex } from './search';
 import { db } from './db';
 import { activities } from './schema';
-
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE } from '@/lib/paths';
 const INDEXABLE_EXTS = new Set(['.md', '.yaml', '.yml']);
 
 export interface FileEvent {

@@ -3,11 +3,10 @@ import { spawn } from 'child_process';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { db } from '@/lib/db';
-import { activities, agents as agentsTable } from '@/lib/schema';
+import { activities, agents as agentsTable, costEvents } from '@/lib/schema';
 import { notify } from '@/lib/notify';
 import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
-
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { WORKSPACE, AGENTS_DIR } from '@/lib/paths';
 
 /**
  * Extract readable text from any OpenClaw JSON response format.
@@ -35,7 +34,15 @@ function extractTextFromResponse(raw: string): { text: string; meta?: Record<str
     const meta: Record<string, unknown> = {};
 
     // Extract metadata if present
-    if (parsed.meta) {
+    // OpenClaw agent format: result.meta.agentMeta.usage
+    const agentMeta = parsed.result?.meta?.agentMeta;
+    const resultMeta = parsed.result?.meta;
+    if (agentMeta?.usage) {
+      meta.inputTokens = (agentMeta.usage.input || 0) + (agentMeta.usage.cacheRead || 0);
+      meta.outputTokens = agentMeta.usage.output || 0;
+      meta.model = agentMeta.model || 'claude-sonnet-4-6';
+      meta.durationMs = resultMeta?.durationMs;
+    } else if (parsed.meta) {
       if (parsed.meta.durationMs) meta.durationMs = parsed.meta.durationMs;
       if (parsed.meta.model) meta.model = parsed.meta.model;
       if (parsed.meta.inputTokens) meta.inputTokens = parsed.meta.inputTokens;
@@ -163,7 +170,7 @@ async function loadAgentContext(agentId: string): Promise<string> {
   }
 
   // Load AGENTS.md — the agent's full instructions and role definition
-  const agentDir = join(process.env.HOME || '/home/clawdbot', `.openclaw/agents/${resolvedId}/agent`);
+  const agentDir = join(AGENTS_DIR, resolvedId, 'agent');
   try {
     const agentsMd = await readFile(join(agentDir, 'AGENTS.md'), 'utf-8');
     if (agentsMd) {
@@ -194,7 +201,7 @@ function resolveAgentId(mcId: string): string {
 }
 
 // Run a single agent and return its response
-function runAgent(agentId: string, prompt: string, _model?: string): Promise<{ output: string; ok: boolean; duration: number }> {
+function runAgent(agentId: string, prompt: string, _model?: string): Promise<{ output: string; ok: boolean; duration: number; meta?: Record<string, unknown> }> {
   const start = Date.now();
   return new Promise((resolve) => {
     const proc = spawn('openclaw', [
@@ -215,6 +222,7 @@ function runAgent(agentId: string, prompt: string, _model?: string): Promise<{ o
         output: response || errOutput || `Process exited with code ${code}`,
         ok: code === 0 && !!response && !response.startsWith('Error:'),
         duration: Date.now() - start,
+        meta: extracted?.meta,
       });
     });
 
@@ -255,7 +263,7 @@ function streamResponse(agent: string, prompt: string, _model?: string): Respons
         const response = extracted?.text || output.trim() || errBuf || 'No response received.';
         const isOk = code === 0 && !!extracted?.text && !response.startsWith('Error:');
 
-        logActivity(agent, prompt, response, isOk);
+        logActivity(agent, prompt, response, isOk, extracted?.meta);
 
         send({ type: 'done', ok: isOk, response, agent, mode: 'single' });
         controller.close();
@@ -329,7 +337,7 @@ function streamPartyMode(agentIds: string[], topic: string, _model?: string): Re
             const isOk = code === 0 && !!extracted?.text && !response.startsWith('Error:');
 
             send({ type: 'agent_done', agent: agentId, ok: isOk, response });
-            logActivity(agentId, `[Party] ${topic}`, response, isOk);
+            logActivity(agentId, `[Party] ${topic}`, response, isOk, extracted?.meta);
             resolve(response);
           });
 
@@ -365,7 +373,7 @@ function streamPartyMode(agentIds: string[], topic: string, _model?: string): Re
 // --- Non-streaming fallbacks ---
 async function execAgent(agent: string, prompt: string, model?: string): Promise<NextResponse> {
   const result = await runAgent(agent, prompt, model);
-  logActivity(agent, prompt, result.output, result.ok);
+  logActivity(agent, prompt, result.output, result.ok, result.meta);
 
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.output }, { status: 500 });
@@ -389,7 +397,7 @@ async function execPartyMode(agentIds: string[], topic: string, model?: string):
     const result = await runAgent('main', prompt, model);
     allResponses.push({ agentId, response: result.output });
     context += `**${agentId}:** ${result.output}\n\n`;
-    logActivity(agentId, `[Party] ${topic}`, result.output, result.ok);
+    logActivity(agentId, `[Party] ${topic}`, result.output, result.ok, result.meta);
   }
 
   // Build combined response
@@ -405,7 +413,7 @@ async function execPartyMode(agentIds: string[], topic: string, model?: string):
   });
 }
 
-function logActivity(agent: string, prompt: string, response: string, ok: boolean) {
+function logActivity(agent: string, prompt: string, response: string, ok: boolean, meta?: Record<string, unknown>) {
   try {
     db.insert(activities).values({
       id: `act_${Date.now().toString(36)}_chat`,
@@ -415,6 +423,29 @@ function logActivity(agent: string, prompt: string, response: string, ok: boolea
       details: `${response.length} chars`,
       timestamp: new Date(),
     }).run();
+
+    // Log cost event for token tracking
+    const inputTokens = (meta?.inputTokens as number) || 0;
+    const outputTokens = (meta?.outputTokens as number) || 0;
+    const model = (meta?.model as string) || 'claude-sonnet-4-6';
+    if (inputTokens || outputTokens) {
+      // Estimate cost in cents (rough: sonnet $3/$15 per 1M, opus $15/$75 per 1M)
+      const isOpus = model.includes('opus');
+      const costCents = Math.round(
+        (inputTokens / 1_000_000 * (isOpus ? 1500 : 300)) +
+        (outputTokens / 1_000_000 * (isOpus ? 7500 : 1500))
+      );
+      db.insert(costEvents).values({
+        id: `cost_${Date.now().toString(36)}_${agent}`,
+        agentId: agent,
+        model,
+        action: 'chat',
+        inputTokens,
+        outputTokens,
+        estimatedCost: costCents,
+        timestamp: new Date(),
+      }).run();
+    }
 
     // Get agent info for display
     let agentRow: { name: string; emoji: string | null } | undefined;
