@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { PageLoading } from '@/components/ui/loading';
 import { AGENT_EMOJIS } from '@/lib/agents';
 import { useSquad } from '@/hooks/use-squad';
+import { CostWidget } from './_components/cost-widget';
+import { AgentMetrics } from './_components/agent-metrics';
+import { SystemStatus } from './_components/system-status';
+import { ActivityFeed } from './_components/activity-feed';
 
 interface AgentHealth {
   id: string;
@@ -18,19 +22,9 @@ interface AgentHealth {
   sessionCount: number;
 }
 
-interface Activity {
-  id: string;
-  agentId: string;
-  action: string;
-  target: string | null;
-  details: string | null;
-  timestamp: string;
-}
-
 interface BoardData {
   tasks: { status: string }[];
   sprints: { id: string; name: string; status: string }[];
-  // Boards Engine data
   boardCount?: number;
   cardsByColumn?: Record<string, number>;
   totalCards?: number;
@@ -38,54 +32,26 @@ interface BoardData {
 
 interface UsageData {
   today: { totalCostUsd: string; inputTokens: number; outputTokens: number; events: number };
+  byAgent?: Record<string, { input: number; output: number; cost: number }>;
 }
 
 interface ApprovalData {
   pending: unknown[];
 }
 
-const actionLabels: Record<string, string> = {
-  task_started: 'started task', task_completed: 'completed task',
-  task_updated: 'updated board', heartbeat_check: 'heartbeat',
-  file_created: 'created file', file_updated: 'updated file',
-  session_started: 'session started', session_ended: 'session ended',
-  approval_requested: 'requested approval', approval_resolved: 'resolved approval',
-};
-
 const healthDots: Record<string, string> = {
   active: 'bg-green-500', idle: 'bg-gray-500', stalled: 'bg-amber-500 animate-pulse',
   stuck: 'bg-red-500 animate-pulse', offline: 'bg-gray-700',
 };
 
-function timeAgo(ms: number | string): string {
-  const diff = Date.now() - (typeof ms === 'string' ? new Date(ms).getTime() : ms);
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-const quickNav = [
-  { href: '/tasks', label: 'Boards', icon: '✓', desc: 'Kanban boards' },
-  { href: '/pipeline', label: 'Pipeline', icon: '⚡', desc: 'Build status' },
-  { href: '/squads', label: 'Squads', icon: '👥', desc: 'Agent hierarchy' },
-  { href: '/office', label: 'Office', icon: '🏢', desc: 'Live agents' },
-  { href: '/memory', label: 'Memory', icon: '🧠', desc: 'Knowledge base' },
-  { href: '/content', label: 'Content', icon: '✍️', desc: 'Create posts' },
-  { href: '/council', label: 'Council', icon: '🔬', desc: 'R&D insights' },
-  { href: '/settings', label: 'Settings', icon: '🔒', desc: 'Vault & config' },
-];
-
 export default function DashboardPage() {
   const { activeSquad } = useSquad();
   const [agents, setAgents] = useState<AgentHealth[]>([]);
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [board, setBoard] = useState<BoardData | null>(null);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [approvals, setApprovals] = useState<ApprovalData | null>(null);
   const [gatewayOk, setGatewayOk] = useState(false);
+  const [totalSessions, setTotalSessions] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -93,16 +59,14 @@ export default function DashboardPage() {
     try {
       setFetchError(null);
       const boardsUrl = activeSquad ? `/api/boards?squad=${activeSquad}` : '/api/boards';
-      const [healthRes, actRes, boardsRes, usageRes, approvalRes] = await Promise.all([
+      const [healthRes, boardsRes, usageRes, approvalRes] = await Promise.all([
         fetch('/api/agents/health'),
-        fetch('/api/activities?limit=12'),
         fetch(boardsUrl),
         fetch('/api/usage'),
         fetch('/api/approvals'),
       ]);
 
       const healthData = await healthRes.json();
-      const actData = await actRes.json();
       const boardsData = await boardsRes.json();
       const usageData = await usageRes.json();
       const approvalData = await approvalRes.json();
@@ -110,12 +74,13 @@ export default function DashboardPage() {
       if (healthData.ok) {
         setAgents(healthData.agents);
         setGatewayOk(healthData.gatewayOk);
+        setTotalSessions(
+          healthData.agents.reduce((sum: number, a: AgentHealth) => sum + a.sessionCount, 0)
+        );
       }
-      setActivities(actData.ok ? actData.activities : Array.isArray(actData) ? actData : []);
 
       // Aggregate board data from Boards Engine
       if (Array.isArray(boardsData)) {
-        // Fetch cards from first board for sprint progress display
         const firstBoard = boardsData.find((b: { archivedAt: unknown }) => !b.archivedAt);
         if (firstBoard) {
           try {
@@ -126,7 +91,6 @@ export default function DashboardPage() {
               for (const card of cardsData) {
                 columnMap[card.column] = (columnMap[card.column] || 0) + 1;
               }
-              // Map board columns to legacy task statuses for dashboard widgets
               const doing = (columnMap['doing'] || 0) + (columnMap['fixing'] || 0) + (columnMap['writing'] || 0) + (columnMap['researching'] || 0);
               const review = (columnMap['review'] || 0) + (columnMap['testing'] || 0) + (columnMap['triaged'] || 0);
               const done = (columnMap['done'] || 0) + (columnMap['deployed'] || 0) + (columnMap['resolved'] || 0) + (columnMap['published'] || 0);
@@ -151,7 +115,10 @@ export default function DashboardPage() {
 
       if (usageData.ok) setUsage(usageData);
       setApprovals(approvalData);
-    } catch (err) { console.error('[dashboard] fetch error:', err); setFetchError(String(err)); }
+    } catch (err) {
+      console.error('[dashboard] fetch error:', err);
+      setFetchError(String(err));
+    }
     setLoading(false);
   }, [activeSquad]);
 
@@ -183,6 +150,14 @@ export default function DashboardPage() {
   const activeSprint = board?.sprints?.find(s => s.status === 'active' || s.status === 'done');
   const sprintProgress = totalTasks > 0 ? Math.round((tasksDone / totalTasks) * 100) : 0;
 
+  // Agent list for child components
+  const agentList = agents.map(a => ({
+    id: a.id,
+    name: a.name || a.id,
+    emoji: a.emoji || AGENT_EMOJIS[a.id] || '🤖',
+    state: a.state,
+  }));
+
   if (loading) {
     return <PageLoading title="Loading dashboard..." />;
   }
@@ -195,159 +170,143 @@ export default function DashboardPage() {
           <button onClick={fetchData} className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 bg-red-500/10 rounded">Retry now</button>
         </div>
       )}
-      {/* Row 1: System Health */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {/* Gateway */}
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Gateway</div>
-          <div className={`text-lg font-bold mt-1 ${gatewayOk ? 'text-green-400' : 'text-red-400'}`}>
-            {gatewayOk ? 'Online' : 'Offline'}
-          </div>
-        </div>
 
-        {/* Active Agents */}
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Agents</div>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-lg font-bold text-green-400">{activeAgents}</span>
-            <span className="text-xs text-gray-600">active</span>
+      {/* Row 1 — Overview */}
+      <div>
+        <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Overview</div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* Gateway */}
+          <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Gateway</div>
+            <div className={`text-lg font-bold mt-1 ${gatewayOk ? 'text-green-400' : 'text-red-400'}`}>
+              {gatewayOk ? 'Online' : 'Offline'}
+            </div>
           </div>
-          {stalledAgents > 0 && (
-            <div className="text-[10px] text-amber-400 mt-0.5">⚠ {stalledAgents} stalled</div>
-          )}
-        </div>
 
-        {/* Pipeline */}
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Building</div>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-lg font-bold text-blue-400">{tasksInProgress}</span>
-            <span className="text-xs text-gray-600">in progress</span>
+          {/* Active Agents */}
+          <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Agents</div>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-lg font-bold text-green-400">{activeAgents}</span>
+              <span className="text-xs text-gray-600">active</span>
+            </div>
+            {stalledAgents > 0 && (
+              <div className="text-[10px] text-amber-400 mt-0.5">{stalledAgents} stalled</div>
+            )}
           </div>
-          {tasksInReview > 0 && (
-            <div className="text-[10px] text-amber-400 mt-0.5">{tasksInReview} in review</div>
-          )}
-        </div>
 
-        {/* Shipped */}
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Shipped</div>
-          <div className="text-lg font-bold text-green-400 mt-1">{tasksDone}</div>
-        </div>
-
-        {/* Approvals */}
-        <div className={`bg-[#111113] rounded-lg p-4 border ${pendingApprovals > 0 ? 'border-amber-500/40' : 'border-[#1e1e21]'}`}>
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Approvals</div>
-          <div className={`text-lg font-bold mt-1 ${pendingApprovals > 0 ? 'text-amber-400' : 'text-gray-500'}`}>
-            {pendingApprovals}
+          {/* Pipeline */}
+          <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Building</div>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-lg font-bold text-blue-400">{tasksInProgress}</span>
+              <span className="text-xs text-gray-600">in progress</span>
+            </div>
+            {tasksInReview > 0 && (
+              <div className="text-[10px] text-amber-400 mt-0.5">{tasksInReview} in review</div>
+            )}
           </div>
-          {pendingApprovals > 0 && (
-            <Link href="/approvals" className="text-[10px] text-amber-400 hover:text-amber-300">Review →</Link>
-          )}
-        </div>
 
-        {/* Cost Today */}
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider">Cost Today</div>
-          <div className="text-lg font-bold text-gray-300 mt-1">
-            ${usage?.today.totalCostUsd || '0.00'}
+          {/* Shipped */}
+          <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Shipped</div>
+            <div className="text-lg font-bold text-green-400 mt-1">{tasksDone}</div>
           </div>
-          {usage && usage.today.events > 0 && (
-            <div className="text-[10px] text-gray-600 mt-0.5">{usage.today.events} events</div>
-          )}
+
+          {/* Approvals */}
+          <div className={`bg-[#111113] rounded-lg p-4 border ${pendingApprovals > 0 ? 'border-amber-500/40' : 'border-[#1e1e21]'}`}>
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Approvals</div>
+            <div className={`text-lg font-bold mt-1 ${pendingApprovals > 0 ? 'text-amber-400' : 'text-gray-500'}`}>
+              {pendingApprovals}
+            </div>
+            {pendingApprovals > 0 && (
+              <Link href="/approvals" className="text-[10px] text-amber-400 hover:text-amber-300">Review →</Link>
+            )}
+          </div>
+
+          {/* Cost Today */}
+          <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
+            <div className="text-[10px] text-gray-500 uppercase tracking-wider">Cost Today</div>
+            <div className="text-lg font-bold text-gray-300 mt-1">
+              ${usage?.today.totalCostUsd || '0.00'}
+            </div>
+            {usage && usage.today.events > 0 && (
+              <div className="text-[10px] text-gray-600 mt-0.5">{usage.today.events} events</div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Row 2: Sprint Progress + Agent Health Strip */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Sprint */}
-        <div className="bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-medium text-gray-300">
-              {activeSprint?.name || 'Current Sprint'}
-            </div>
-            <span className="text-xs text-gray-500">{tasksDone}/{totalTasks}</span>
-          </div>
-          <div className="h-2 bg-[#1a1a1d] rounded-full overflow-hidden">
-            <div className="h-full bg-amber-500 rounded-full" style={{ width: `${sprintProgress}%` }} />
-          </div>
-          <div className="flex justify-between mt-2 text-[10px] text-gray-600">
-            <span>{tasksBacklog} backlog</span>
-            <span>{tasksInProgress} building</span>
-            <span>{tasksDone} done</span>
-          </div>
+      {/* Row 2 — Cost & Performance */}
+      <div>
+        <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Cost & Performance</div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CostWidget usageData={{ byAgent: usage?.byAgent || {} }} />
+          <AgentMetrics agents={agentList} />
         </div>
+      </div>
 
-        {/* Agent Health Strip */}
-        <div className="lg:col-span-2 bg-[#111113] rounded-lg p-4 border border-[#1e1e21]">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">Agent Health</div>
-          <div className="flex flex-wrap gap-2">
-            {agents.map(a => (
-              <div key={a.id} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#0a0a0b] rounded group relative" title={`${a.name} — ${a.role}${a.idleMinutes != null ? ` (${a.idleMinutes}m)` : ''}`}>
-                <span className={`w-2 h-2 rounded-full ${healthDots[a.state]}`} />
-                <span className="text-xs">{a.emoji || AGENT_EMOJIS[a.id] || '🤖'}</span>
-                <span className="text-[10px] text-gray-400">{a.name || a.id}</span>
-                {a.state === 'active' && a.sessionCount > 0 && (
-                  <span className="text-[8px] text-green-400/60">{a.sessionCount}</span>
-                )}
+      {/* Row 3 — System */}
+      <div>
+        <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">System</div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <SystemStatus
+            gatewayOk={gatewayOk}
+            agents={agentList}
+            totalSessions={totalSessions}
+          />
+
+          {/* Sprint Progress */}
+          <div className="bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
+            <div className="px-4 py-3 border-b border-[#1e1e21]">
+              <span className="text-xs font-medium text-gray-300">Sprint Progress</span>
+            </div>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] text-gray-400">
+                  {activeSprint?.name || 'Current Sprint'}
+                </div>
+                <span className="text-[11px] text-gray-500">{tasksDone}/{totalTasks}</span>
               </div>
-            ))}
-            {agents.length === 0 && (
-              <div className="text-[10px] text-gray-600">No agents registered — complete onboarding to create your squad</div>
-            )}
+              <div className="h-2 bg-[#1a1a1d] rounded-full overflow-hidden">
+                <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${sprintProgress}%` }} />
+              </div>
+              <div className="flex justify-between mt-2 text-[10px] text-gray-600">
+                <span>{tasksBacklog} backlog</span>
+                <span>{tasksInProgress} building</span>
+                <span>{tasksInReview} review</span>
+                <span>{tasksDone} done</span>
+              </div>
+
+              {/* Agent Health Strip */}
+              <div className="mt-4 pt-3 border-t border-[#1e1e21]">
+                <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Agent Health</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {agents.map(a => (
+                    <div
+                      key={a.id}
+                      className="flex items-center gap-1 px-2 py-1 bg-[#0a0a0b] rounded"
+                      title={`${a.name} — ${a.role}${a.idleMinutes != null ? ` (${a.idleMinutes}m)` : ''}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${healthDots[a.state]}`} />
+                      <span className="text-[10px]">{a.emoji || AGENT_EMOJIS[a.id] || '🤖'}</span>
+                      <span className="text-[10px] text-gray-500">{a.name || a.id}</span>
+                    </div>
+                  ))}
+                  {agents.length === 0 && (
+                    <div className="text-[10px] text-gray-600">No agents registered</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Row 3: Activity Feed + Quick Nav */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Activity Feed */}
-        <div className="lg:col-span-3 bg-[#111113] rounded-lg border border-[#1e1e21] overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#1e1e21] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-              <span className="text-xs font-medium text-gray-300">Live Activity</span>
-            </div>
-            <span className="text-[10px] text-gray-600">SSE connected</span>
-          </div>
-          <div className="divide-y divide-[#1e1e21]">
-            {activities.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-600 text-xs">No recent activity</div>
-            ) : (
-              activities.map(act => (
-                <div key={act.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-[#141416]">
-                  <span className="text-base">{AGENT_EMOJIS[act.agentId] || '🤖'}</span>
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs text-gray-300 font-medium capitalize">{act.agentId}</span>
-                    <span className="text-xs text-gray-600"> {actionLabels[act.action] || act.action}</span>
-                    {act.target && <span className="text-xs text-gray-700"> — {act.target}</span>}
-                  </div>
-                  <span className="text-[10px] text-gray-700 shrink-0">{timeAgo(act.timestamp)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Quick Nav */}
-        <div className="lg:col-span-2 bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3">Quick Navigation</div>
-          <div className="grid grid-cols-2 gap-2">
-            {quickNav.map(nav => (
-              <Link
-                key={nav.href}
-                href={nav.href}
-                className="flex items-center gap-2.5 px-3 py-2.5 bg-[#0a0a0b] rounded-lg border border-[#1e1e21] hover:border-amber-500/30 hover:bg-[#141416]"
-              >
-                <span className="text-base">{nav.icon}</span>
-                <div>
-                  <div className="text-xs font-medium text-gray-200">{nav.label}</div>
-                  <div className="text-[10px] text-gray-600">{nav.desc}</div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
+      {/* Row 4 — Activity */}
+      <div>
+        <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Activity</div>
+        <ActivityFeed agents={agentList} />
       </div>
     </div>
   );
