@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { vault } from '@/lib/vault';
 import { notify } from '@/lib/notify';
 import { getSetting } from '@/lib/settings';
+import { syncDraftStatus } from '@/lib/board-sync';
 
 /**
  * POST /api/telegram/webhook — Telegram Bot webhook handler
@@ -107,6 +108,9 @@ async function handleCallbackQuery(query: {
         href: '/content',
       });
 
+      // Sync board card
+      syncDraftStatus(draftId, 'approved').catch(() => {});
+
       // Auto-publish if enabled
       const autoPublish = getSetting('auto_publish_on_approve', 'true');
       if (autoPublish === 'true') {
@@ -159,6 +163,9 @@ async function handleCallbackQuery(query: {
         timestamp: now,
       }).run();
 
+      // Sync board card
+      syncDraftStatus(draftId, 'rejected').catch(() => {});
+
       await answerCallback(token, query.id, '❌ Rejected');
       await editMessage(token, chatId, query.message.message_id,
         `❌ *REJEITADO* — ${draft.platform.toUpperCase()}\n\n${draft.title}\n\n_Rejected by ${query.from.first_name}_`
@@ -172,6 +179,9 @@ async function handleCallbackQuery(query: {
         reviewNote: 'Correction requested via Telegram — reply with feedback',
         updatedAt: now,
       }).where(eq(contentDrafts.id, draftId)).run();
+
+      // Sync board card (back to draft/ideas)
+      syncDraftStatus(draftId, 'draft').catch(() => {});
 
       // Store the draft ID so the next message is treated as correction feedback
       await vault.set(`_telegram_pending_correction`, draftId, { category: 'system', description: 'Pending correction draft ID' });

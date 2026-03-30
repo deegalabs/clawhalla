@@ -4,6 +4,7 @@ import { contentDrafts, contentMedia, activities } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { notify } from '@/lib/notify';
 import { getSetting } from '@/lib/settings';
+import { syncDraftStatus } from '@/lib/board-sync';
 
 /**
  * POST /api/content/approve — approve or correct a draft
@@ -80,6 +81,9 @@ export async function POST(req: NextRequest) {
           priority: 'normal',
           href: '/content',
         });
+
+        // Sync board card
+        syncDraftStatus(draftId, 'approved').catch(() => {});
 
         // Send to Telegram
         await sendTelegramApprovalNotification(draft, 'approved', note);
@@ -162,6 +166,9 @@ export async function POST(req: NextRequest) {
           href: '/content',
         });
 
+        // Sync board card (back to draft/ideas)
+        syncDraftStatus(draftId, 'draft').catch(() => {});
+
         // Send to Telegram
         await sendTelegramApprovalNotification(draft, 'corrected', note);
 
@@ -192,6 +199,9 @@ export async function POST(req: NextRequest) {
           agentId: draft.agentId || 'bragi',
           priority: 'normal',
         });
+
+        // Sync board card (rejected -> ideas)
+        syncDraftStatus(draftId, 'rejected').catch(() => {});
 
         return NextResponse.json({ ok: true, status: 'rejected' });
       }

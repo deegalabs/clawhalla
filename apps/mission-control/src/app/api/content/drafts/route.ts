@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { contentDrafts } from '@/lib/schema';
 import { eq, desc } from 'drizzle-orm';
+import { syncDraftToBoard } from '@/lib/board-sync';
 
 function ensureTable() {
   const sqlite = (db as unknown as { $client: { exec: (s: string) => void } }).$client;
@@ -78,6 +79,15 @@ export async function POST(req: NextRequest) {
         updatedAt: now,
       });
     }
+
+    // Fire-and-forget: sync to content board
+    syncDraftToBoard({
+      id: draftId,
+      title: text.slice(0, 80),
+      platform,
+      agentId: agentId || null,
+      status: status || (existing ? existing.status : 'draft'),
+    }).catch(() => {});
 
     return NextResponse.json({ ok: true, id: draftId });
   } catch (error) {

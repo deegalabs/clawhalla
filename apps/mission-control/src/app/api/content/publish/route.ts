@@ -4,6 +4,7 @@ import { contentDrafts, activities, costEvents } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { publishContent, type PublishRequest } from '@/lib/content-publisher';
 import { notify } from '@/lib/notify';
+import { syncDraftStatus } from '@/lib/board-sync';
 
 /**
  * POST /api/content/publish — publish a draft to its platform
@@ -90,6 +91,11 @@ export async function POST(req: NextRequest) {
         }),
         updatedAt: new Date(),
       }).where(eq(contentDrafts.id, draftId)).run();
+    }
+
+    // Sync board card on successful publish
+    if (result.ok && draftId) {
+      syncDraftStatus(draftId, 'published').catch(() => {});
     }
 
     // Log activity
