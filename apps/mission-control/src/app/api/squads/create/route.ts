@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, readFile, mkdir } from 'fs/promises';
+import { writeFile, readFile, mkdir, copyFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { db } from '@/lib/db';
 import { agents, activities, boards, cards } from '@/lib/schema';
 import { getSetting } from '@/lib/settings';
 import { SQUADS_BY_ID, getSquadAgents } from '@/lib/squads';
 import { OPENCLAW_HOME, WORKSPACE } from '@/lib/paths';
+
+// Path to the clawhalla repo root (parent of apps/mission-control)
+const CLAWHALLA_ROOT = join(process.cwd(), '..', '..');
 
 // Default board columns for each squad type
 const SQUAD_BOARDS: Record<string, { name: string; columns: { id: string; name: string; color: string }[] }> = {
@@ -364,6 +367,32 @@ executionModes: [autonomous, interactive]
   await writeFile(join(agentDir, 'IDENTITY.md'), identity, 'utf-8');
   await writeFile(join(agentDir, 'SOUL.md'), soul, 'utf-8');
   await writeFile(join(agentDir, 'AGENTS.md'), agents_md, 'utf-8');
+
+  // Copy global skills (clawhalla/skills/*.md) to agent's skills/
+  const skillsDir = join(agentDir, 'skills');
+  await copySkillsFromDir(join(CLAWHALLA_ROOT, 'skills'), skillsDir);
+
+  // Copy squad-specific skills (squads/templates/<squad>/skills/*.md)
+  const squadSkillsDir = join(CLAWHALLA_ROOT, 'squads', 'templates', squadId, 'skills');
+  await copySkillsFromDir(squadSkillsDir, skillsDir);
+}
+
+/** Copy all .md files from srcDir to destDir (non-destructive, won't overwrite) */
+async function copySkillsFromDir(srcDir: string, destDir: string) {
+  if (!existsSync(srcDir)) return;
+  try {
+    await mkdir(destDir, { recursive: true });
+    const files = await readdir(srcDir);
+    for (const file of files) {
+      if (!file.endsWith('.md')) continue;
+      const dest = join(destDir, file);
+      if (!existsSync(dest)) {
+        await copyFile(join(srcDir, file), dest);
+      }
+    }
+  } catch (err) {
+    console.warn(`[skills] Failed to copy from ${srcDir}:`, err);
+  }
 }
 
 function nanoid(prefix = 'agent') {

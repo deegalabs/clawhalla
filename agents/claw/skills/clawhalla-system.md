@@ -41,8 +41,27 @@ setup.sh → Docker containers (gateway + MC)
 ## Squad system
 - Free: 1 squad (Personal, Hackathon, or Social)
 - Pro: up to 3 squads
-- Each squad has Claw (always) + specialized agents
+- Each squad has specialized agents + shared skills
 - Board auto-created per squad
+
+## Content Pipeline (Social squad)
+```
+Ideas → Researching → Writing → Review → Published
+  │         │            │         │          │
+  Saga    Saga/Bragi    Bragi    Claw→      Published
+                                 Approval
+```
+- Saga: strategy, research, community monitoring
+- Bragi: writing, platform adaptation
+- Claw: reviews, requests human approval before publishing
+- API: POST /api/content/publish, POST /api/approvals
+- Approval via MC Dashboard or Telegram inline buttons
+
+## Memory/RAG
+- Per-agent SQLite with FTS5 + vector embeddings
+- Config: Settings > Memory tab in MC
+- Modes: RAG (semantic search), .md (file-based), Default (inherit)
+- API: GET /api/memory/rag?q=query&agent=main
 
 ## Onboarding flow
 1. Welcome → 2. LLM Provider → 3. Test → 4. Gateway Token → 5. Channel
@@ -52,4 +71,5 @@ setup.sh → Docker containers (gateway + MC)
 - `~/.openclaw/openclaw.json` — gateway config
 - MC database: `./data/mission-control.db`
 - Agent persona files: IDENTITY.md, SOUL.md, AGENTS.md
-- Skills: agents/claw/skills/*.md
+- Global skills: skills/*.md (copied to all agents)
+- Squad skills: squads/templates/<squad>/skills/*.md
