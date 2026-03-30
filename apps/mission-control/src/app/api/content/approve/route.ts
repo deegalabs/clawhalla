@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { notify } from '@/lib/notify';
 import { getSetting } from '@/lib/settings';
 import { syncDraftStatus } from '@/lib/board-sync';
+import { schedulePublish } from '@/lib/publish-scheduler';
 
 /**
  * POST /api/content/approve — approve or correct a draft
@@ -24,7 +25,7 @@ import { syncDraftStatus } from '@/lib/board-sync';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { draftId, action, note, updatedText, updatedHashtags, approveMedia } = body;
+    const { draftId, action, note, updatedText, updatedHashtags, approveMedia, scheduledAt } = body;
 
     if (!draftId) {
       return NextResponse.json({ ok: false, error: 'draftId required' }, { status: 400 });
@@ -42,11 +43,20 @@ export async function POST(req: NextRequest) {
 
     switch (action) {
       case 'approve': {
+        // Check if this is a scheduled approval
+        const scheduledDate = scheduledAt ? new Date(scheduledAt) : null;
+        if (scheduledDate && isNaN(scheduledDate.getTime())) {
+          return NextResponse.json({ ok: false, error: 'Invalid scheduledAt date format' }, { status: 400 });
+        }
+
         const updates: Record<string, unknown> = {
-          status: 'approved',
+          status: scheduledDate ? 'scheduled' : 'approved',
           approvedAt: now,
           updatedAt: now,
         };
+        if (scheduledDate) {
+          updates.scheduledAt = scheduledDate;
+        }
         // Apply any last-minute corrections
         if (updatedText) updates.content = updatedText;
         if (updatedHashtags) updates.hashtags = updatedHashtags;
@@ -65,13 +75,44 @@ export async function POST(req: NextRequest) {
         db.insert(activities).values({
           id: `act_${crypto.randomUUID()}`,
           agentId: 'daniel',
-          action: 'content_approved',
-          target: `Approved: ${draft.platform} — ${draft.title}`,
-          details: note || null,
+          action: scheduledDate ? 'content_scheduled' : 'content_approved',
+          target: `${scheduledDate ? 'Scheduled' : 'Approved'}: ${draft.platform} — ${draft.title}`,
+          details: scheduledDate
+            ? `Scheduled for ${scheduledDate.toISOString()}${note ? `. Note: ${note}` : ''}`
+            : (note || null),
           timestamp: now,
         }).run();
 
-        // Notify agents
+        // If scheduled, register the timer and return early (no auto-publish)
+        if (scheduledDate) {
+          schedulePublish(draftId, scheduledDate);
+
+          // Sync board card
+          syncDraftStatus(draftId, 'scheduled').catch(() => {});
+
+          // Notify
+          notify({
+            type: 'approval',
+            title: `Content scheduled: ${draft.platform}`,
+            body: `"${draft.title}" approved and scheduled for ${scheduledDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`,
+            icon: '🕐',
+            agentId: 'saga',
+            priority: 'normal',
+            href: '/content',
+          });
+
+          // Send Telegram notification
+          await sendTelegramApprovalNotification(draft, 'approved', note, scheduledDate);
+
+          return NextResponse.json({
+            ok: true,
+            status: 'scheduled',
+            scheduledAt: scheduledDate.toISOString(),
+            message: `Draft approved and scheduled for ${scheduledDate.toISOString()}.`,
+          });
+        }
+
+        // Notify agents (non-scheduled flow)
         notify({
           type: 'approval',
           title: `Content approved: ${draft.platform}`,
@@ -237,6 +278,7 @@ async function sendTelegramApprovalNotification(
   draft: { id: string; title: string; content: string; platform: string; hashtags: string | null },
   action: 'approved' | 'corrected' | 'rejected',
   note?: string | null,
+  scheduledAt?: Date | null,
 ) {
   try {
     const { vault } = await import('@/lib/vault');
@@ -247,17 +289,25 @@ async function sendTelegramApprovalNotification(
     const token = secret.value;
     const chatId = chatIdSecret.value;
 
-    const statusEmoji = action === 'approved' ? '✅' : action === 'corrected' ? '🔄' : '❌';
-    const statusLabel = action === 'approved' ? 'APROVADO' : action === 'corrected' ? 'CORREÇÃO' : 'REJEITADO';
+    let statusEmoji: string;
+    let statusLabel: string;
+
+    if (scheduledAt && action === 'approved') {
+      statusEmoji = '🕐';
+      statusLabel = `AGENDADO para ${scheduledAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+    } else {
+      statusEmoji = action === 'approved' ? '✅' : action === 'corrected' ? '🔄' : '❌';
+      statusLabel = action === 'approved' ? 'APROVADO' : action === 'corrected' ? 'CORREÇÃO' : 'REJEITADO';
+    }
 
     const message = [
-      `${statusEmoji} *${statusLabel}* — ${draft.platform.toUpperCase()}`,
+      `${statusEmoji} *${escapeMarkdown(statusLabel)}* -- ${draft.platform.toUpperCase()}`,
       '',
-      `📝 ${escapeMarkdown(draft.title)}`,
+      `${escapeMarkdown(draft.title)}`,
       '',
       `${escapeMarkdown(draft.content.slice(0, 300))}${draft.content.length > 300 ? '...' : ''}`,
-      draft.hashtags ? `\n🏷️ ${escapeMarkdown(draft.hashtags)}` : '',
-      note ? `\n💬 Nota: _${escapeMarkdown(note)}_` : '',
+      draft.hashtags ? `\n${escapeMarkdown(draft.hashtags)}` : '',
+      note ? `\nNota: _${escapeMarkdown(note)}_` : '',
     ].filter(Boolean).join('\n');
 
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

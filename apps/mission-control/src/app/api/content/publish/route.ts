@@ -31,10 +31,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: 'Draft not found' }, { status: 404 });
       }
 
-      if (draft.status !== 'approved') {
+      if (draft.status !== 'approved' && draft.status !== 'scheduled') {
         return NextResponse.json({
           ok: false,
-          error: `Draft must be approved before publishing. Current status: ${draft.status}`,
+          error: `Draft must be approved or scheduled before publishing. Current status: ${draft.status}`,
         }, { status: 400 });
       }
 

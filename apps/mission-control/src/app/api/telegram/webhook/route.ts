@@ -6,6 +6,7 @@ import { vault } from '@/lib/vault';
 import { notify } from '@/lib/notify';
 import { getSetting } from '@/lib/settings';
 import { syncDraftStatus } from '@/lib/board-sync';
+import { schedulePublish, cancelScheduled, getScheduledCount } from '@/lib/publish-scheduler';
 
 /**
  * POST /api/telegram/webhook — Telegram Bot webhook handler
@@ -220,6 +221,60 @@ async function handleCallbackQuery(query: {
       break;
     }
 
+    case 'schedule': {
+      // Schedule callback format: schedule:{draftId}:{minutesFromNow}
+      // The third segment (after the second colon) is minutes from now
+      const parts = query.data.split(':');
+      const minutesStr = parts[2];
+      const minutes = minutesStr ? parseInt(minutesStr, 10) : NaN;
+
+      if (isNaN(minutes) || minutes <= 0) {
+        await answerCallback(token, query.id, 'Invalid schedule time');
+        return NextResponse.json({ ok: true });
+      }
+
+      const scheduledAt = new Date(Date.now() + minutes * 60 * 1000);
+
+      // Update draft status to scheduled
+      db.update(contentDrafts).set({
+        status: 'scheduled',
+        scheduledAt,
+        approvedAt: draft.approvedAt || now,
+        updatedAt: now,
+      }).where(eq(contentDrafts.id, draftId)).run();
+
+      // Approve all media
+      db.update(contentMedia)
+        .set({ approved: 1 })
+        .where(eq(contentMedia.draftId, draftId))
+        .run();
+
+      // Register timer
+      schedulePublish(draftId, scheduledAt);
+
+      // Sync board
+      syncDraftStatus(draftId, 'scheduled').catch(() => {});
+
+      db.insert(activities).values({
+        id: `act_${crypto.randomUUID()}`,
+        agentId: 'daniel',
+        action: 'content_scheduled',
+        target: `Scheduled via Telegram: ${draft.platform} — ${draft.title}`,
+        details: `Scheduled for ${scheduledAt.toISOString()}`,
+        timestamp: now,
+      }).run();
+
+      const timeLabel = minutes >= 60
+        ? `${Math.floor(minutes / 60)}h${minutes % 60 > 0 ? `${minutes % 60}min` : ''}`
+        : `${minutes}min`;
+
+      await answerCallback(token, query.id, `🕐 Scheduled in ${timeLabel}`);
+      await editMessage(token, chatId, query.message.message_id,
+        `🕐 *AGENDADO* -- ${draft.platform.toUpperCase()}\n\n${draft.title}\n\nPublicacao em ${timeLabel} (${scheduledAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })})\n\n_Scheduled by ${query.from.first_name}_`
+      );
+      break;
+    }
+
     default:
       await answerCallback(token, query.id, 'Unknown action');
   }
@@ -360,12 +415,25 @@ async function handleMessage(message: {
         const approved = db.select().from(contentDrafts)
           .where(eq(contentDrafts.status, 'approved'))
           .all();
+        const scheduled = db.select().from(contentDrafts)
+          .where(eq(contentDrafts.status, 'scheduled'))
+          .all();
+
+        const scheduledLines = scheduled.slice(0, 5).map(d => {
+          const when = d.scheduledAt
+            ? (d.scheduledAt instanceof Date ? d.scheduledAt : new Date(d.scheduledAt as unknown as string))
+                .toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+            : '?';
+          return `• ${d.platform} — ${d.title?.slice(0, 40)} (${when})`;
+        }).join('\n');
 
         await sendMessage(token, chatId,
-          `📊 *Content Status*\n\n` +
-          `📝 Pending review: ${pending.length}\n` +
-          `✅ Approved (ready to publish): ${approved.length}\n\n` +
-          pending.slice(0, 5).map(d => `• ${d.platform} — ${d.title?.slice(0, 50)}`).join('\n')
+          `*Content Status*\n\n` +
+          `Pending review: ${pending.length}\n` +
+          `Approved: ${approved.length}\n` +
+          `Scheduled: ${scheduled.length} (${getScheduledCount()} timers)\n\n` +
+          (pending.length > 0 ? `*Pending:*\n${pending.slice(0, 5).map(d => `• ${d.platform} — ${d.title?.slice(0, 50)}`).join('\n')}\n\n` : '') +
+          (scheduled.length > 0 ? `*Scheduled:*\n${scheduledLines}` : '')
         );
         break;
       }
@@ -449,6 +517,12 @@ export async function sendContentForApproval(draftId: string) {
           ],
           [
             { text: '📣 Aprovar e Publicar', callback_data: `publish:${draftId}` },
+          ],
+          [
+            { text: '🕐 30min', callback_data: `schedule:${draftId}:30` },
+            { text: '🕐 1h', callback_data: `schedule:${draftId}:60` },
+            { text: '🕐 3h', callback_data: `schedule:${draftId}:180` },
+            { text: '🕐 24h', callback_data: `schedule:${draftId}:1440` },
           ],
         ],
       },
