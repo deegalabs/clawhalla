@@ -38,7 +38,7 @@ export async function GET() {
   try {
     // 1. Read config from openclaw.json
     let config: MemoryConfig = { provider: '', enabled: false };
-    let agentOverrides: Record<string, 'rag' | 'md'> = {};
+    const agentOverrides: Record<string, 'rag' | 'md'> = {};
 
     if (existsSync(OPENCLAW_CONFIG)) {
       const raw = JSON.parse(await readFile(OPENCLAW_CONFIG, 'utf-8'));
@@ -53,13 +53,17 @@ export async function GET() {
       }
 
       // Read per-agent overrides from agents.list
+      // OpenClaw expects memorySearch to be an object (not false/boolean)
+      // We use { enabled: false } to disable per agent
       for (const agent of raw.agents?.list || []) {
-        if (agent.memorySearch === false) {
-          agentOverrides[agent.id] = 'md';
-        } else if (agent.memorySearch && typeof agent.memorySearch === 'object') {
-          agentOverrides[agent.id] = 'rag';
+        if (agent.memorySearch && typeof agent.memorySearch === 'object') {
+          if (agent.memorySearch.enabled === false) {
+            agentOverrides[agent.id] = 'md';
+          } else {
+            agentOverrides[agent.id] = 'rag';
+          }
         }
-        // no key = 'default' (inherits from defaults)
+        // no memorySearch key = 'default' (inherits from defaults)
       }
     }
 
@@ -70,10 +74,10 @@ export async function GET() {
         timeout: 15000,
         env: { ...process.env, NODE_NO_WARNINGS: '1' },
       });
-      // Parse the text output
-      const blocks = stdout.split(/\nMemory Search \(/);
+      // Parse the text output — split on "Memory Search (" (with optional leading newline)
+      const blocks = stdout.split(/(?:^|\n)Memory Search \(/);
       for (const block of blocks) {
-        const nameMatch = block.match(/^([^)]+)\)/);
+        const nameMatch = block.match(/^([a-z][a-z0-9_-]*)\)/);
         if (!nameMatch) continue;
         const agentId = nameMatch[1];
 
@@ -102,8 +106,8 @@ export async function GET() {
         });
       }
 
-      // Add agents from config that didn't appear in CLI output (e.g. RAG disabled for them)
-      if (existsSync(OPENCLAW_CONFIG)) {
+      // Add agents from config that didn't appear in CLI output
+      {
         const raw = JSON.parse(await readFile(OPENCLAW_CONFIG, 'utf-8'));
         const cliAgentIds = new Set(agents.map(a => a.agentId));
         for (const agent of raw.agents?.list || []) {
@@ -130,6 +134,9 @@ export async function GET() {
       if (existsSync(OPENCLAW_CONFIG)) {
         const raw = JSON.parse(await readFile(OPENCLAW_CONFIG, 'utf-8'));
         for (const agent of raw.agents?.list || []) {
+          let mode: 'rag' | 'md' | 'default' = 'default';
+          if (agent.memorySearch?.enabled === false) mode = 'md';
+          else if (agent.memorySearch && typeof agent.memorySearch === 'object') mode = 'rag';
           agents.push({
             agentId: agent.id,
             provider: config.provider || 'none',
@@ -142,7 +149,7 @@ export async function GET() {
             ftsReady: false,
             storePath: '',
             issues: [],
-            mode: agentOverrides[agent.id] || 'default',
+            mode,
           });
         }
       }
@@ -200,17 +207,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Apply per-agent overrides
+    // OpenClaw requires memorySearch to be an object, not a boolean
     if (agentModes && typeof agentModes === 'object') {
       for (const agent of config.agents.list || []) {
         const mode = agentModes[agent.id];
         if (mode === 'md') {
           // Disable RAG for this agent — .md only
-          agent.memorySearch = false;
-        } else if (mode === 'rag') {
-          // Explicitly enable RAG (uses defaults provider unless agent has own config)
-          delete agent.memorySearch; // remove false override, inherit from defaults
-        } else if (mode === 'default') {
-          // Remove any override — inherit from defaults
+          agent.memorySearch = { enabled: false };
+        } else if (mode === 'rag' || mode === 'default') {
+          // Remove override — inherit from defaults
           delete agent.memorySearch;
         }
       }

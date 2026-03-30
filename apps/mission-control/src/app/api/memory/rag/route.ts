@@ -20,16 +20,35 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'query parameter "q" required (min 2 chars)' }, { status: 400 });
     }
 
-    const args = ['memory', 'search', '--query', q, '--agent', agent, '--limit', limit, '--json'];
+    const args = ['memory', 'search', '--query', q, '--agent', agent, '--max-results', limit, '--json'];
 
     try {
-      const { stdout } = await execFileAsync('openclaw', args, {
-        timeout: 15000,
-        env: { ...process.env, NODE_NO_WARNINGS: '1' },
-      });
+      let stdout = '';
+      let stderr = '';
+      try {
+        const result = await execFileAsync('openclaw', args, {
+          timeout: 15000,
+          env: { ...process.env, NODE_NO_WARNINGS: '1', NO_COLOR: '1' },
+        });
+        stdout = result.stdout;
+        stderr = result.stderr;
+      } catch (execErr: unknown) {
+        // CLI may exit non-zero but still produce valid output
+        const e = execErr as { stdout?: string; stderr?: string };
+        stdout = e.stdout || '';
+        stderr = e.stderr || '';
+        if (!stdout && !stderr) throw execErr;
+      }
 
-      // Parse JSON output from openclaw
-      const results = JSON.parse(stdout);
+      // Strip ANSI escape codes and find JSON in combined output
+      const raw = (stdout || stderr).replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\[\?[0-9]*[a-zA-Z]/g, '').trim();
+      const jsonStart = raw.indexOf('[');
+      const jsonStartObj = raw.indexOf('{');
+      const start = jsonStart >= 0 && (jsonStartObj < 0 || jsonStart < jsonStartObj) ? jsonStart : jsonStartObj;
+      if (start < 0) {
+        return NextResponse.json({ ok: true, query: q, agent, results: [], count: 0, message: 'No results found.' });
+      }
+      const results = JSON.parse(raw.slice(start));
       return NextResponse.json({
         ok: true,
         query: q,
@@ -38,7 +57,6 @@ export async function GET(req: NextRequest) {
         count: Array.isArray(results) ? results.length : results.results?.length || 0,
       });
     } catch (cliError) {
-      // If CLI fails, try parsing stderr for useful error info
       const errMsg = String(cliError);
 
       if (errMsg.includes('not configured') || errMsg.includes('unavailable')) {
