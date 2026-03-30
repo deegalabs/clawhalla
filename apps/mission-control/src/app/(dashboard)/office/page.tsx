@@ -62,7 +62,7 @@ function OfficePageInner() {
       const [healthData, orgData, actData] = await Promise.all([healthRes.json(), orgRes.json(), actRes.json()]);
       if (healthData.ok) setAllAgents(healthData.agents);
       if (orgData.ok) setOrgAgents(orgData.org.agents);
-      if (Array.isArray(actData)) setActivities(actData);
+      setActivities(actData.ok ? actData.activities : Array.isArray(actData) ? actData : []);
     } catch (err) { console.error('[office] fetch error:', err); }
   }, []);
 

@@ -97,7 +97,7 @@ export default function PipelinePage() {
         setCards(allCards);
       }
       if (healthData.ok) setAgents(healthData.agents);
-      if (Array.isArray(actData)) setActivities(actData);
+      setActivities(actData.ok ? actData.activities : Array.isArray(actData) ? actData : []);
       if (usageData.ok) setUsage(usageData);
     } catch (err) { console.error('[pipeline] fetch error:', err); }
   }, [activeSquad]);

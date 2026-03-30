@@ -682,6 +682,72 @@ async function testContentPipeline() {
   });
 }
 
+async function testActivities() {
+  console.log('\n📊 Activities');
+
+  // GET with new format
+  await test('GET /api/activities returns paginated format', async () => {
+    const { status, data } = await req('GET', '/api/activities?limit=5');
+    assertEqual(status, 200, 'status');
+    assert(data.ok, 'should be ok');
+    assert(Array.isArray(data.activities), 'should have activities array');
+    assert(typeof data.total === 'number', 'should have total count');
+    assert(typeof data.limit === 'number', 'should have limit');
+    assert(typeof data.offset === 'number', 'should have offset');
+  });
+
+  // POST activity
+  await test('POST /api/activities creates activity', async () => {
+    const { status, data } = await req('POST', '/api/activities', {
+      agent_id: 'thor', action: 'task_started', target: 'Test task', details: 'Running tests',
+    });
+    assertEqual(status, 200, 'status');
+    assert(data.ok, 'should be ok');
+    assert(data.id, 'should return id');
+  });
+
+  // Filter by agent
+  await test('GET /api/activities?agent_id=thor filters by agent', async () => {
+    const { data } = await req('GET', '/api/activities?agent_id=thor');
+    assert(data.ok, 'should be ok');
+    assert(data.activities.every((a: any) => a.agentId === 'thor'), 'all should be thor');
+  });
+
+  // Filter by action
+  await test('GET /api/activities?action=task_started filters by action', async () => {
+    const { data } = await req('GET', '/api/activities?action=task_started');
+    assert(data.ok, 'should be ok');
+    assert(data.activities.every((a: any) => a.action === 'task_started'), 'all should be task_started');
+  });
+
+  // DELETE without auth fails
+  await test('DELETE /api/activities without auth returns 401', async () => {
+    const { status } = await req('DELETE', '/api/activities?all=true');
+    assertEqual(status, 401, 'status');
+  });
+
+  // DELETE without params fails
+  await test('DELETE /api/activities without params returns 400', async () => {
+    const { status } = await req('DELETE', '/api/activities', undefined, gatewayHeaders());
+    assertEqual(status, 400, 'status');
+  });
+
+  // DELETE with auth works
+  await test('DELETE /api/activities?all=true clears all', async () => {
+    const { status, data } = await req('DELETE', '/api/activities?all=true', undefined, gatewayHeaders());
+    assertEqual(status, 200, 'status');
+    assert(data.ok, 'should be ok');
+    assert(typeof data.deleted === 'number', 'should report deleted count');
+  });
+
+  // Verify empty
+  await test('Activities are empty after delete', async () => {
+    const { data } = await req('GET', '/api/activities');
+    assert(data.ok, 'should be ok');
+    assertEqual(data.total, 0, 'should be empty');
+  });
+}
+
 // ---- Main ----
 
 async function main() {
@@ -709,6 +775,7 @@ async function main() {
   await testMemoryConfig();
   await testMemoryRAG();
   await testContentPipeline();
+  await testActivities();
 
   // Restore original gateway_token
   if (originalGatewayToken) {

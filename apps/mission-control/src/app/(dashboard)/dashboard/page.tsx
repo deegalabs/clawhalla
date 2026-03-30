@@ -111,7 +111,7 @@ export default function DashboardPage() {
         setAgents(healthData.agents);
         setGatewayOk(healthData.gatewayOk);
       }
-      if (Array.isArray(actData)) setActivities(actData);
+      setActivities(actData.ok ? actData.activities : Array.isArray(actData) ? actData : []);
 
       // Aggregate board data from Boards Engine
       if (Array.isArray(boardsData)) {
