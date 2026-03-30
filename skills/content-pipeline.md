@@ -41,7 +41,7 @@ Check connection: `GET /api/linkedin` — returns profile info if token is valid
 
 **Required Vault secrets:**
 - `LINKEDIN_ACCESS_TOKEN` — OAuth token (scopes: w_member_social, openid, profile)
-- `LINKEDIN_PERSON_URN` — e.g. `urn:li:person:WNSjClaVxj` (optional, auto-detected)
+- `LINKEDIN_PERSON_URN` — e.g. `urn:li:person:YOUR_ID` (optional, auto-detected)
 
 ### Generic content publish
 ```
