@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { boards } from '@/lib/schema';
-import { desc, isNull } from 'drizzle-orm';
+import { desc, isNull, eq, and } from 'drizzle-orm';
 import { broadcastBoardEvent } from '@/lib/events';
 
 function nanoid(prefix = 'board') {
@@ -12,13 +12,17 @@ function nanoid(prefix = 'board') {
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get('archived') === 'true';
+  const squadFilter = url.searchParams.get('squad');
 
-  let result;
-  if (includeArchived) {
-    result = await db.select().from(boards).orderBy(desc(boards.updatedAt));
-  } else {
-    result = await db.select().from(boards).where(isNull(boards.archivedAt)).orderBy(desc(boards.updatedAt));
-  }
+  const conditions = [];
+  if (!includeArchived) conditions.push(isNull(boards.archivedAt));
+  if (squadFilter) conditions.push(eq(boards.squad, squadFilter));
+
+  const where = conditions.length > 0
+    ? conditions.length === 1 ? conditions[0] : and(...conditions)
+    : undefined;
+
+  const result = await db.select().from(boards).where(where).orderBy(desc(boards.updatedAt));
 
   return NextResponse.json(result);
 }

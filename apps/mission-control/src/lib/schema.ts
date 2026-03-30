@@ -184,6 +184,8 @@ export const cards = sqliteTable('cards', {
   epicId: text('epic_id'), // link to epics table (optional)
   sprintId: text('sprint_id'), // link to sprints table (optional)
   progress: integer('progress').default(0), // 0-100
+  delegatedTo: text('delegated_to'), // card_id of the delegated card in another squad's board
+  delegatedFrom: text('delegated_from'), // card_id of the source card that delegated to this one
   createdBy: text('created_by').notNull().default('user'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
@@ -262,16 +264,49 @@ export const contentDrafts = sqliteTable('content_drafts', {
   title: text('title').notNull(),
   content: text('content').notNull(),
   platform: text('platform').notNull(), // linkedin | twitter | instagram | blog | newsletter
-  status: text('status').notNull().default('draft'), // draft | approved | scheduled | published
+  status: text('status').notNull().default('draft'), // draft | review | approved | scheduled | published | rejected
   hashtags: text('hashtags'), // comma-separated
-  mediaUrl: text('media_url'),
+  mediaUrl: text('media_url'), // legacy single media
+  mediaItems: text('media_items'), // JSON array of ContentMedia[]
+  format: text('format').default('post'), // post | thread | carousel | reel | story | article
   scheduledAt: integer('scheduled_at', { mode: 'timestamp' }),
   publishedAt: integer('published_at', { mode: 'timestamp' }),
+  publishResult: text('publish_result'), // JSON: { postId, url, error }
   agentId: text('agent_id'), // which agent created it
   pipelineId: text('pipeline_id'), // link to content pipeline
+  reviewNote: text('review_note'), // correction feedback from user
+  approvedAt: integer('approved_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Content Media — images, videos, carousels attached to drafts/pipelines
+// ---------------------------------------------------------------------------
+
+export const contentMedia = sqliteTable('content_media', {
+  id: text('id').primaryKey(),
+  draftId: text('draft_id'), // link to content draft
+  pipelineId: text('pipeline_id'), // link to pipeline
+  type: text('type').notNull(), // image | video | carousel_slide | thumbnail
+  source: text('source').notNull(), // upload | search | ai_generated | url
+  url: text('url').notNull(), // local path or external URL
+  thumbnailUrl: text('thumbnail_url'), // preview thumbnail
+  alt: text('alt'), // accessibility alt text
+  caption: text('caption'), // slide caption for carousels
+  mimeType: text('mime_type'), // image/jpeg, video/mp4, etc.
+  width: integer('width'),
+  height: integer('height'),
+  sizeBytes: integer('size_bytes'),
+  sortOrder: integer('sort_order').default(0), // carousel slide order
+  sourceQuery: text('source_query'), // search query or AI prompt used
+  sourceCredit: text('source_credit'), // photographer/source attribution
+  approved: integer('approved').default(0), // 0 = pending, 1 = approved, -1 = rejected
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+}, (table) => [
+  index('idx_content_media_draft').on(table.draftId),
+  index('idx_content_media_pipeline').on(table.pipelineId),
+]);
 
 // ---------------------------------------------------------------------------
 // Notification Engine — persistent notifications
@@ -362,6 +397,33 @@ export const campaignContacts = sqliteTable('campaign_contacts', {
 }, (table) => [
   index('idx_campaign_contacts_campaign').on(table.campaignId),
   index('idx_campaign_contacts_status').on(table.campaignId, table.status),
+]);
+
+// ---------------------------------------------------------------------------
+// Task Runner — autonomous agent task execution tracking
+// ---------------------------------------------------------------------------
+
+export const taskRuns = sqliteTable('task_runs', {
+  id: text('id').primaryKey(),
+  cardId: text('card_id').notNull(),
+  boardId: text('board_id').notNull(),
+  agentId: text('agent_id').notNull(),
+  status: text('status').notNull().default('running'), // running | done | failed | timeout
+  prompt: text('prompt'),
+  result: text('result'),
+  error: text('error'),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens: integer('output_tokens').notNull().default(0),
+  estimatedCostCents: integer('estimated_cost_cents').notNull().default(0),
+  model: text('model'),
+  durationMs: integer('duration_ms'),
+  triggeredBy: text('triggered_by').notNull().default('manual'), // manual | cron
+  startedAt: integer('started_at', { mode: 'timestamp' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
+}, (table) => [
+  index('idx_task_runs_card').on(table.cardId),
+  index('idx_task_runs_agent_status').on(table.agentId, table.status),
+  index('idx_task_runs_status').on(table.status),
 ]);
 
 export const contentPipelines = sqliteTable('content_pipelines', {

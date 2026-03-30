@@ -5,10 +5,7 @@ import { parse, stringify } from 'yaml';
 import { db } from '@/lib/db';
 import { agents as agentsTable, activities } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
-
-const OPENCLAW_CONFIG = join(process.env.HOME || '/home/clawdbot', '.openclaw/openclaw.json');
-const AGENTS_DIR = join(process.env.HOME || '/home/clawdbot', '.openclaw/agents');
-const WORKSPACE = process.env.WORKSPACE_PATH || join(process.env.HOME || '/home/clawdbot', '.openclaw/workspace');
+import { OPENCLAW_CONFIG, AGENTS_DIR, WORKSPACE } from '@/lib/paths';
 const ORG_FILE = join(WORKSPACE, 'company/org_structure.yaml');
 const PERSONAS_DIR = join(WORKSPACE, 'personas');
 

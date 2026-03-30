@@ -123,6 +123,48 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       agentId: card.assignee || by,
       priority: 'low',
     });
+
+    // Cross-squad callback: if this card was delegated FROM another card, update the source
+    if (card.delegatedFrom) {
+      const sourceCard = db.select().from(cards).where(eq(cards.id, card.delegatedFrom)).get();
+      if (sourceCard) {
+        const resultNote = `\n\n---\n**Delegation completed** (${body.column}):\n${card.description || '(no details)'}`;
+        db.update(cards).set({
+          column: 'review',
+          delegatedTo: null,
+          description: (sourceCard.description || '') + resultNote,
+          updatedAt: now,
+        }).where(eq(cards.id, card.delegatedFrom)).run();
+
+        await db.insert(cardHistory).values({
+          id: nanoid(),
+          cardId: card.delegatedFrom,
+          action: 'moved',
+          by: 'claw',
+          fromValue: 'delegated',
+          toValue: 'review',
+          timestamp: now,
+        });
+
+        broadcastBoardEvent({
+          type: 'card.moved',
+          boardId: sourceCard.boardId,
+          cardId: card.delegatedFrom,
+          by: 'claw',
+          data: { from: 'delegated', to: 'review', title: sourceCard.title },
+        });
+
+        notify({
+          type: 'task',
+          title: 'Delegation Complete',
+          body: `"${sourceCard.title}" — delegated work returned to review`,
+          icon: '🔄',
+          href: '/tasks',
+          agentId: 'claw',
+          priority: 'normal',
+        });
+      }
+    }
   }
 
   db.update(cards).set(updates).where(eq(cards.id, cardId)).run();
