@@ -533,10 +533,31 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Generate org_structure.yaml for /api/org-structure
+    //    Rebuild from ALL agents in DB (not just this squad) to ensure consistency
     try {
-      await generateOrgStructure(squadId, squadAgents);
+      const allDbAgents = await db.select().from(agents);
+      const allSquadAgents = allDbAgents
+        .filter(a => a.squad && a.id !== 'claw')
+        .map(a => ({
+          name: a.name, role: a.role, emoji: a.emoji || '🤖',
+          tier: a.tier ?? 2, model: a.model || 'claude-sonnet-4-6',
+          squad: a.squad!,
+        }));
+      // Group by squad
+      const squads = new Map<string, typeof allSquadAgents>();
+      for (const a of allSquadAgents) {
+        const list = squads.get(a.squad) || [];
+        list.push(a);
+        squads.set(a.squad, list);
+      }
+      // Regenerate for each squad
+      for (const [sid, sAgents] of squads) {
+        await generateOrgStructure(sid, sAgents);
+      }
     } catch (err) {
-      console.warn(`[squads/create] Failed to generate org structure:`, err);
+      console.error(`[squads/create] Failed to generate org structure:`, err);
+      // Fallback: at least generate for the current squad
+      try { await generateOrgStructure(squadId, squadAgents); } catch {}
     }
 
     // 5. Register squad agents in OpenClaw gateway (openclaw.json + agent dirs)
@@ -582,25 +603,32 @@ async function generateOrgStructure(
     };
   }
 
+  const freshOrg = (): OrgData['org'] => ({
+    name: 'ClawHalla',
+    owner: 'User',
+    owner_role: 'ceo',
+    tiers: { '0': 'platform', '1': 'squad_lead', '2': 'execution' },
+    squads: {},
+    agents: {
+      claw: { id: 'claw', tier: 0, role: 'chief_orchestrator', model: 'claude-opus-4-6', manages: [], squad: null, skills: [] },
+    },
+  });
+
   let org: OrgData['org'];
   try {
     const existing = await readFile(orgPath, 'utf-8');
-    // Simple YAML parse via JSON roundtrip — we write structured YAML below
     const { parse } = await import('yaml');
     const parsed = parse(existing) as OrgData;
-    org = parsed.org;
-  } catch {
-    // Fresh start
-    org = {
-      name: 'ClawHalla',
-      owner: 'User',
-      owner_role: 'ceo',
-      tiers: { '0': 'platform', '1': 'squad_lead', '2': 'execution' },
-      squads: {},
-      agents: {
-        claw: { id: 'claw', tier: 0, role: 'chief_orchestrator', model: 'claude-opus-4-6', manages: [], squad: null, skills: [] },
-      },
-    };
+    org = parsed?.org || freshOrg();
+    // Ensure required fields exist (defensive merge)
+    if (!org.squads) org.squads = {};
+    if (!org.agents) org.agents = {};
+    if (!org.agents.claw) {
+      org.agents.claw = { id: 'claw', tier: 0, role: 'chief_orchestrator', model: 'claude-opus-4-6', manages: [], squad: null, skills: [] };
+    }
+  } catch (err) {
+    console.warn(`[squads/create] Failed to parse existing org_structure.yaml, creating fresh:`, err);
+    org = freshOrg();
   }
 
   const lead = squadAgents.find(a => a.tier === 1);
