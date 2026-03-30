@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { autoTask } from '@/lib/tasks';
 
-type SettingsTab = 'general' | 'connection' | 'database' | 'vault' | 'gateway' | 'about';
+type SettingsTab = 'general' | 'connection' | 'database' | 'vault' | 'gateway' | 'memory' | 'about';
 
 interface SecretEntry {
   id: string; name: string; description: string | null; category: string;
@@ -45,7 +45,7 @@ function SettingsPageInner() {
   const [gateway, setGateway] = useState<GatewayInfo | null>(null);
   // General state
   const [defaultModel, setDefaultModel] = useState('claude-sonnet-4-6');
-  const [workspace, setWorkspace] = useState('/home/clawdbot/.openclaw/workspace');
+  const [workspace, setWorkspace] = useState('');
   // Connection state
   const [conn, setConn] = useState({
     mode: 'local' as 'local' | 'ssh' | 'cloud',
@@ -70,6 +70,15 @@ function SettingsPageInner() {
     syncInterval: '30',
   });
 
+  // Memory/Embeddings state
+  const [memConfig, setMemConfig] = useState({ provider: '', model: '', ollamaUrl: 'http://localhost:11434', enabled: false });
+  const [memAgents, setMemAgents] = useState<Array<{ agentId: string; provider: string; model: string; indexed: number; total: number; chunks: number; dirty: boolean; vectorReady: boolean; ftsReady: boolean; issues: string[]; mode: 'rag' | 'md' | 'default' }>>([]);
+  const [memProviders, setMemProviders] = useState<Array<{ id: string; name: string; description: string; requiresKey: boolean; keyName?: string }>>([]);
+  const [memSaving, setMemSaving] = useState(false);
+  const [memMsg, setMemMsg] = useState('');
+  const [memApiKey, setMemApiKey] = useState('');
+  const [agentModes, setAgentModes] = useState<Record<string, 'rag' | 'md' | 'default'>>({});
+
   const fetchSecrets = useCallback(async () => {
     try { const r = await fetch('/api/vault'); const d = await r.json(); if (d.ok) setSecrets(d.secrets); } catch (err) { console.error('[settings] vault fetch error:', err); }
     setLoadingVault(false);
@@ -87,7 +96,25 @@ function SettingsPageInner() {
     } catch { setGateway({ status: 'offline', sessions: 0, crons: 0 }); }
   }, []);
 
-  useEffect(() => { fetchSecrets(); fetchGateway(); }, [fetchSecrets, fetchGateway]);
+  const fetchMemoryConfig = useCallback(async () => {
+    try {
+      const res = await fetch('/api/memory/config');
+      const data = await res.json();
+      if (data.ok) {
+        setMemConfig({ provider: data.config?.provider || '', model: data.config?.model || '', ollamaUrl: data.config?.ollamaUrl || 'http://localhost:11434', enabled: data.config?.enabled || false });
+        setMemAgents(data.agents || []);
+        setMemProviders(data.providers || []);
+        // Initialize agent modes from server
+        const modes: Record<string, 'rag' | 'md' | 'default'> = {};
+        for (const a of data.agents || []) {
+          modes[a.agentId] = a.mode || 'default';
+        }
+        setAgentModes(modes);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchSecrets(); fetchGateway(); fetchMemoryConfig(); }, [fetchSecrets, fetchGateway, fetchMemoryConfig]);
 
   // Vault handlers
   const handleSave = async () => {
@@ -201,10 +228,10 @@ function SettingsPageInner() {
       <div className="flex items-center gap-3 shrink-0">
         <h2 className="text-sm font-semibold text-gray-200">Settings</h2>
         <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
-          {(['general', 'connection', 'database', 'vault', 'gateway', 'about'] as SettingsTab[]).map(t => (
+          {(['general', 'connection', 'database', 'vault', 'gateway', 'memory', 'about'] as SettingsTab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-2.5 py-1 text-[11px] rounded capitalize ${tab === t ? 'bg-[#1e1e21] text-gray-100' : 'text-gray-500 hover:text-gray-300'}`}>
-              {t === 'general' ? '⚙️ General' : t === 'connection' ? '🔌 Connection' : t === 'database' ? '💾 Database' : t === 'vault' ? '🔒 Vault' : t === 'gateway' ? '🌐 Gateway' : 'ℹ️ About'}
+              {t === 'general' ? '⚙️ General' : t === 'connection' ? '🔌 Connection' : t === 'database' ? '💾 Database' : t === 'vault' ? '🔒 Vault' : t === 'gateway' ? '🌐 Gateway' : t === 'memory' ? '🧠 Memory' : 'ℹ️ About'}
               {t === 'vault' && secrets.length > 0 ? ` (${secrets.length})` : ''}
             </button>
           ))}
@@ -819,6 +846,169 @@ function SettingsPageInner() {
                 </button>
               </div>
               {gwMsg && <div className="text-[10px] text-amber-400 mt-2 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{gwMsg}</div>}
+            </div>
+          </div>
+        )}
+
+        {/* MEMORY TAB */}
+        {tab === 'memory' && (
+          <div className="max-w-2xl space-y-4">
+            {/* Provider Selection */}
+            <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Embedding Provider</div>
+                <div className={`w-8 h-4 rounded-full relative cursor-pointer ${memConfig.enabled ? 'bg-purple-500' : 'bg-[#2a2a2d]'}`}
+                  onClick={() => setMemConfig({ ...memConfig, enabled: !memConfig.enabled })}>
+                  <div className="absolute w-3 h-3 rounded-full bg-white top-0.5 transition-all" style={{ left: memConfig.enabled ? '17px' : '2px' }} />
+                </div>
+              </div>
+              <div className="text-[9px] text-gray-600 mb-3">Choose how agent memories are embedded for semantic search (RAG).</div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {memProviders.map(p => (
+                  <button key={p.id} onClick={() => setMemConfig({ ...memConfig, provider: p.id, enabled: true })}
+                    className={`p-3 rounded-lg border text-left transition-colors ${
+                      memConfig.provider === p.id ? 'border-purple-500/40 bg-purple-500/5' : 'border-[#1e1e21] bg-[#0a0a0b] hover:border-[#333]'
+                    }`}>
+                    <div className="text-[11px] font-medium text-gray-200">{p.name}</div>
+                    <div className="text-[9px] text-gray-600 mt-0.5">{p.description}</div>
+                    {p.requiresKey && <div className="text-[8px] text-amber-400 mt-1">Requires API key</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Provider Config */}
+            {memConfig.enabled && memConfig.provider && (
+              <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3 font-medium">Configuration</div>
+                <div className="space-y-3">
+                  {memConfig.provider === 'ollama' && (
+                    <>
+                      <div>
+                        <label className="block text-[9px] text-gray-600 mb-0.5">Ollama URL</label>
+                        <input type="text" value={memConfig.ollamaUrl} onChange={e => setMemConfig({ ...memConfig, ollamaUrl: e.target.value })}
+                          className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-200 font-mono focus:outline-none focus:border-purple-500" />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] text-gray-600 mb-0.5">Embedding Model</label>
+                        <input type="text" value={memConfig.model || 'nomic-embed-text'} onChange={e => setMemConfig({ ...memConfig, model: e.target.value })}
+                          placeholder="nomic-embed-text"
+                          className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-200 font-mono focus:outline-none focus:border-purple-500" />
+                        <div className="text-[9px] text-gray-600 mt-1">Run: <code className="text-purple-400">ollama pull nomic-embed-text</code></div>
+                      </div>
+                    </>
+                  )}
+
+                  {memConfig.provider === 'local' && (
+                    <div className="bg-[#0a0a0b] rounded p-2.5 border border-[#1e1e21]">
+                      <div className="text-[10px] text-gray-400">Uses node-llama-cpp with a local GGUF model (~330MB download on first use).</div>
+                      <div className="text-[9px] text-gray-600 mt-1">Model auto-selected by OpenClaw. No configuration needed.</div>
+                    </div>
+                  )}
+
+                  {memProviders.find(p => p.id === memConfig.provider)?.requiresKey && (
+                    <div>
+                      <label className="block text-[9px] text-gray-600 mb-0.5">API Key</label>
+                      <input type="password" value={memApiKey} onChange={e => setMemApiKey(e.target.value)}
+                        placeholder={`Enter ${memConfig.provider} API key`}
+                        className="w-full px-2.5 py-1.5 bg-[#0a0a0b] border border-[#1e1e21] rounded text-[11px] text-gray-200 font-mono focus:outline-none focus:border-purple-500" />
+                      <div className="text-[9px] text-gray-600 mt-1">Saved encrypted in Vault.</div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={memSaving}
+                      onClick={async () => {
+                        setMemSaving(true); setMemMsg('');
+                        try {
+                          const res = await fetch('/api/memory/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              provider: memConfig.provider,
+                              model: memConfig.model || undefined,
+                              ollamaUrl: memConfig.provider === 'ollama' ? memConfig.ollamaUrl : undefined,
+                              apiKey: memApiKey || undefined,
+                              enabled: memConfig.enabled,
+                              agentModes,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (data.ok) { setMemMsg(data.message || 'Saved!'); setMemApiKey(''); fetchMemoryConfig(); }
+                          else setMemMsg(data.error || 'Failed');
+                        } catch { setMemMsg('Failed to save'); }
+                        setMemSaving(false);
+                        setTimeout(() => setMemMsg(''), 4000);
+                      }}
+                      className="px-4 py-1.5 text-[10px] font-medium bg-purple-500/20 text-purple-400 rounded border border-purple-500/30 hover:bg-purple-500/30 disabled:opacity-40">
+                      {memSaving ? 'Saving...' : 'Save & Reindex'}
+                    </button>
+                    {memMsg && <span className={`text-[10px] ${memMsg.includes('Failed') || memMsg.includes('error') ? 'text-red-400' : 'text-green-400'}`}>{memMsg}</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Per-Agent Memory Mode */}
+            {memAgents.length > 0 && (
+              <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Per-Agent Memory Mode</div>
+                  <div className="text-[9px] text-gray-600">Not all agents need RAG — choose per agent</div>
+                </div>
+                <div className="text-[9px] text-gray-600 mb-3">
+                  <span className="text-purple-400">RAG</span> = semantic search via embeddings &middot;
+                  <span className="text-blue-400"> .md</span> = file-based memory only &middot;
+                  <span className="text-gray-400"> Default</span> = inherits global setting
+                </div>
+                <div className="space-y-1.5">
+                  {memAgents.map(a => {
+                    const mode = agentModes[a.agentId] || 'default';
+                    const effectiveRag = mode === 'rag' || (mode === 'default' && memConfig.enabled);
+                    return (
+                      <div key={a.agentId} className="flex items-center justify-between p-2.5 bg-[#0a0a0b] rounded border border-[#1e1e21]">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${effectiveRag && a.vectorReady ? 'bg-green-500' : mode === 'md' ? 'bg-blue-500' : 'bg-gray-600'}`} />
+                          <span className="text-[11px] text-gray-200 font-medium capitalize">{a.agentId}</span>
+                          {effectiveRag && (
+                            <span className="text-[9px] text-gray-600">
+                              {a.indexed}/{a.total} files &middot; {a.chunks} chunks
+                              {a.dirty ? ' &middot; dirty' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {(['default', 'rag', 'md'] as const).map(m => (
+                            <button key={m} onClick={() => setAgentModes(prev => ({ ...prev, [a.agentId]: m }))}
+                              className={`px-2 py-0.5 text-[9px] rounded transition-colors ${
+                                mode === m
+                                  ? m === 'rag' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                  : m === 'md' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                  : 'bg-[#1e1e21] text-gray-300 border border-[#333]'
+                                  : 'text-gray-600 hover:text-gray-400 border border-transparent'
+                              }`}>
+                              {m === 'default' ? 'Default' : m === 'rag' ? 'RAG' : '.md'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Info */}
+            <div className="bg-[#111113] rounded-lg border border-[#1e1e21] p-4">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-3 font-medium">How It Works</div>
+              <div className="space-y-2 text-[10px] text-gray-500">
+                <p>Memory RAG indexes agent workspace files (.md) into vector embeddings, enabling semantic search across all agent memories.</p>
+                <p><span className="text-gray-300">Ollama</span> — recommended for Docker setups. Uses existing Ollama container with <code className="text-purple-400">nomic-embed-text</code>.</p>
+                <p><span className="text-gray-300">Local (GGUF)</span> — runs inside Node.js. No external dependencies. Downloads ~330MB model on first use.</p>
+                <p><span className="text-gray-300">Cloud APIs</span> — OpenAI, Gemini, Voyage, Mistral. Requires API key. Pay per token.</p>
+              </div>
             </div>
           </div>
         )}

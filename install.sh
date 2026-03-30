@@ -598,6 +598,21 @@ DFILE
     done
     [ $TRIES -eq 20 ] && warn "Gateway health check timed out — check: docker compose logs openclaw"
 
+    # ── Pull Ollama embedding model for memory RAG ────────────────────────
+    if [ "$INSTALL_OLLAMA" = "true" ]; then
+        info "Pulling embedding model for memory search…"
+        TRIES=0
+        while [ $TRIES -lt 10 ]; do
+            if curl -sf http://127.0.0.1:11434/api/tags &>/dev/null; then break; fi
+            TRIES=$((TRIES+1)); sleep 3
+        done
+        if [ $TRIES -lt 10 ]; then
+            docker compose exec -T ollama ollama pull nomic-embed-text &>/dev/null && ok "Embedding model ready (nomic-embed-text)" || warn "Could not pull embedding model — run: docker compose exec ollama ollama pull nomic-embed-text"
+        else
+            warn "Ollama not ready — pull embedding model later: docker compose exec ollama ollama pull nomic-embed-text"
+        fi
+    fi
+
     # ── Wait for MC ──────────────────────────────────────────────────────────
     if [ "$INSTALL_MC" = "true" ]; then
         info "Waiting for Mission Control…"
