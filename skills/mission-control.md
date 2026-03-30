@@ -57,6 +57,19 @@ POST /api/approvals {
 
 The human approves/rejects via MC dashboard or Telegram inline buttons.
 
+## LinkedIn Publishing
+
+After approval, publish directly to LinkedIn:
+```
+POST /api/linkedin {
+  "text": "Post text (max 3000 chars)",
+  "url": "https://article-link.com",         // optional — article preview
+  "imageUrl": "https://image-url.com/img.jpg" // optional — uploads image
+}
+```
+
+Check connection: `GET /api/linkedin` — shows profile and token status.
+
 ## Memory
 
 Each agent has a memory directory in their workspace. Write daily notes to `memory/YYYY-MM-DD.md`.

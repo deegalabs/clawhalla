@@ -26,12 +26,30 @@ Each card represents a piece of content (post, article, thread) that moves throu
 
 ## Publishing via MC API
 
+### LinkedIn (direct API)
+```
+POST /api/linkedin {
+  "text": "Post text here (max 3000 chars)",
+  "url": "https://article-link.com",        // optional — generates preview card
+  "imageUrl": "https://image-url.com/img.jpg" // optional — uploads and attaches image
+}
+
+// Response: { ok: true, postId: "...", urn: "urn:li:ugcPost:..." }
+```
+
+Check connection: `GET /api/linkedin` — returns profile info if token is valid.
+
+**Required Vault secrets:**
+- `LINKEDIN_ACCESS_TOKEN` — OAuth token (scopes: w_member_social, openid, profile)
+- `LINKEDIN_PERSON_URN` — e.g. `urn:li:person:WNSjClaVxj` (optional, auto-detected)
+
+### Generic content publish
 ```
 POST /api/content/publish {
-  platform: "linkedin",        // linkedin, twitter, blog, newsletter
-  content: "Post text here...",
-  mediaUrl: null,               // optional image/video URL
-  agentId: "bragi"
+  "platform": "linkedin",       // linkedin, twitter, blog, newsletter
+  "content": "Post text here...",
+  "mediaUrl": null,              // optional image/video URL
+  "agentId": "bragi"
 }
 ```
 
