@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { contentDrafts, contentMedia, activities } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { notify } from '@/lib/notify';
+import { getSetting } from '@/lib/settings';
 
 /**
  * POST /api/content/approve — approve or correct a draft
@@ -82,6 +83,45 @@ export async function POST(req: NextRequest) {
 
         // Send to Telegram
         await sendTelegramApprovalNotification(draft, 'approved', note);
+
+        // Auto-publish if enabled
+        const autoPublish = getSetting('auto_publish_on_approve', 'true');
+        if (autoPublish === 'true') {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+            const pubRes = await fetch(`${baseUrl}/api/content/publish`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ draftId }),
+            });
+            const pubData = await pubRes.json();
+
+            if (pubData.ok) {
+              return NextResponse.json({
+                ok: true,
+                status: 'published',
+                message: `Draft approved and published to ${draft.platform}.`,
+                postUrl: pubData.postUrl,
+                postId: pubData.postId,
+              });
+            } else {
+              // Approval succeeded but publish failed — report both
+              return NextResponse.json({
+                ok: true,
+                status: 'approved',
+                message: `Draft approved but auto-publish failed: ${pubData.error}`,
+                publishError: pubData.error,
+              });
+            }
+          } catch (pubError) {
+            return NextResponse.json({
+              ok: true,
+              status: 'approved',
+              message: `Draft approved but auto-publish error: ${String(pubError)}`,
+              publishError: String(pubError),
+            });
+          }
+        }
 
         return NextResponse.json({ ok: true, status: 'approved', message: 'Draft approved. Ready to publish.' });
       }

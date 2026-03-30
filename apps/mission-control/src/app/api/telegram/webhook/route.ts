@@ -4,6 +4,7 @@ import { contentDrafts, contentMedia, activities } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 import { vault } from '@/lib/vault';
 import { notify } from '@/lib/notify';
+import { getSetting } from '@/lib/settings';
 
 /**
  * POST /api/telegram/webhook — Telegram Bot webhook handler
@@ -106,10 +107,39 @@ async function handleCallbackQuery(query: {
         href: '/content',
       });
 
-      await answerCallback(token, query.id, '✅ Approved!');
-      await editMessage(token, chatId, query.message.message_id,
-        `✅ *APROVADO* — ${draft.platform.toUpperCase()}\n\n${draft.title}\n\n_Approved by ${query.from.first_name}_`
-      );
+      // Auto-publish if enabled
+      const autoPublish = getSetting('auto_publish_on_approve', 'true');
+      if (autoPublish === 'true') {
+        await answerCallback(token, query.id, '✅ Approved — publishing...');
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          const pubRes = await fetch(`${baseUrl}/api/content/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ draftId }),
+          });
+          const pubData = await pubRes.json();
+
+          if (pubData.ok) {
+            await editMessage(token, chatId, query.message.message_id,
+              `📣 *APROVADO E PUBLICADO* — ${draft.platform.toUpperCase()}\n\n${draft.title}\n\n🔗 ${pubData.postUrl || 'Published successfully'}\n\n_Approved by ${query.from.first_name}_`
+            );
+          } else {
+            await editMessage(token, chatId, query.message.message_id,
+              `✅ *APROVADO* — ${draft.platform.toUpperCase()}\n\n${draft.title}\n\n⚠️ Auto-publish failed: ${pubData.error || 'Unknown error'}\n_Use the publish button to retry._\n\n_Approved by ${query.from.first_name}_`
+            );
+          }
+        } catch (pubError) {
+          await editMessage(token, chatId, query.message.message_id,
+            `✅ *APROVADO* — ${draft.platform.toUpperCase()}\n\n${draft.title}\n\n⚠️ Auto-publish error: ${String(pubError)}\n_Use the publish button to retry._\n\n_Approved by ${query.from.first_name}_`
+          );
+        }
+      } else {
+        await answerCallback(token, query.id, '✅ Approved!');
+        await editMessage(token, chatId, query.message.message_id,
+          `✅ *APROVADO* — ${draft.platform.toUpperCase()}\n\n${draft.title}\n\n_Approved by ${query.from.first_name}_`
+        );
+      }
       break;
     }
 
