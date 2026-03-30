@@ -8,11 +8,22 @@ import { notify } from '@/lib/notify';
 import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
 import { WORKSPACE, AGENTS_DIR } from '@/lib/paths';
 
+// Legacy tier names → full model IDs (backwards compatible)
 const MODEL_MAP: Record<string, string> = {
   haiku: 'anthropic/claude-haiku-4-5',
   sonnet: 'anthropic/claude-sonnet-4-6',
   opus: 'anthropic/claude-opus-4-6',
 };
+
+// Resolve model: accepts tier name (haiku/sonnet/opus), bare ID (claude-sonnet-4-6), or full ID (anthropic/claude-sonnet-4-6)
+function resolveModelId(model?: string): string | undefined {
+  if (!model) return undefined;
+  if (MODEL_MAP[model]) return MODEL_MAP[model];
+  if (model.includes('/')) return model; // already full ID
+  // Try prepending anthropic/ for bare Claude model IDs
+  if (model.startsWith('claude-')) return `anthropic/${model}`;
+  return model;
+}
 
 /**
  * Extract readable text from any OpenClaw JSON response format.
@@ -211,8 +222,9 @@ function runAgent(agentId: string, prompt: string, model?: string): Promise<{ ou
   const start = Date.now();
   return new Promise((resolve) => {
     const env = { ...process.env };
-    if (model && MODEL_MAP[model]) {
-      env.OPENCLAW_MODEL = MODEL_MAP[model];
+    const resolvedModel = resolveModelId(model);
+    if (resolvedModel) {
+      env.OPENCLAW_MODEL = resolvedModel;
     }
 
     const proc = spawn('openclaw', [

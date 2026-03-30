@@ -43,13 +43,14 @@ const QUICK_PROMPTS: Record<string, string[]> = {
 };
 
 type ChatMode = 'single' | 'party';
-type ModelTier = 'haiku' | 'sonnet' | 'opus';
 type ResponseStyle = 'normal' | 'concise' | 'detailed' | 'formal' | 'technical';
 
-const MODEL_TIERS: { id: ModelTier; label: string; desc: string; color: string }[] = [
-  { id: 'haiku', label: 'Haiku 4.5', desc: 'Fast, lightweight', color: 'text-green-400' },
-  { id: 'sonnet', label: 'Sonnet 4.6', desc: 'Balanced', color: 'text-blue-400' },
-  { id: 'opus', label: 'Opus 4.6', desc: 'Deep reasoning', color: 'text-purple-400' },
+interface ModelOption { id: string; fullId: string; name: string; provider: string; desc: string; color: string }
+
+// Fallback models if API unavailable
+const FALLBACK_MODELS: ModelOption[] = [
+  { id: 'claude-sonnet-4-6', fullId: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic', desc: 'Balanced', color: 'text-blue-400' },
+  { id: 'claude-opus-4-6', fullId: 'anthropic/claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic', desc: 'Deep reasoning', color: 'text-purple-400' },
 ];
 
 const RESPONSE_STYLES: { id: ResponseStyle; label: string; icon: string }[] = [
@@ -174,7 +175,8 @@ function ChatPageInner() {
   const [showSkillsMenu, setShowSkillsMenu] = useState(false);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
-  const [modelTier, setModelTier] = useState<ModelTier>('sonnet');
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>(FALLBACK_MODELS);
+  const [selectedModelId, setSelectedModelId] = useState<string>('claude-sonnet-4-6');
   const [responseStyle, setResponseStyle] = useState<ResponseStyle>('normal');
   const [webSearch, setWebSearch] = useState(false);
   const [thinking, setThinking] = useState(false);
@@ -186,6 +188,23 @@ function ChatPageInner() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<{ stop: () => void; abort: () => void } | null>(null);
+
+  // Load available models from gateway config
+  useEffect(() => {
+    fetch('/api/models').then(r => r.json()).then(data => {
+      if (data.ok && data.models?.length > 0) {
+        setAvailableModels(data.models);
+        // Set default model if current selection not in list
+        const defaultId = data.defaultModel?.split('/')?.pop() || '';
+        if (defaultId && data.models.some((m: ModelOption) => m.id === defaultId)) {
+          setSelectedModelId(defaultId);
+        } else if (!data.models.some((m: ModelOption) => m.id === selectedModelId)) {
+          setSelectedModelId(data.models[0].id);
+        }
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Default party agents to first 3 non-main agents
   useEffect(() => {
@@ -277,7 +296,7 @@ function ChatPageInner() {
     const timer = setTimeout(() => {
       // Save all messages with content (skip empty streaming placeholders)
       const msgsToSave = messages.filter(m => m.content && m.content.trim());
-      saveSessionToDB(sessionId, title, mode === 'party' ? 'party' : selectedAgent, mode, mode === 'party' ? partyAgents : undefined, modelTier, msgsToSave);
+      saveSessionToDB(sessionId, title, mode === 'party' ? 'party' : selectedAgent, mode, mode === 'party' ? partyAgents : undefined, selectedModelId, msgsToSave);
     }, 500);
 
     // Update local sessions list immediately
@@ -443,8 +462,8 @@ function ChatPageInner() {
     const curAgent = selectedAgent;
     const curMode = mode;
     const curPartyAgents = [...partyAgents];
-    const curModelTier = modelTier;
-    saveSessionToDB(curSessionId, msg.slice(0, 50), curMode === 'party' ? 'party' : curAgent, curMode, curMode === 'party' ? curPartyAgents : undefined, curModelTier, [userMsg]);
+    const curModel = selectedModelId;
+    saveSessionToDB(curSessionId, msg.slice(0, 50), curMode === 'party' ? 'party' : curAgent, curMode, curMode === 'party' ? curPartyAgents : undefined, curModel, [userMsg]);
 
     try {
       let contextPrefix = '';
@@ -455,8 +474,8 @@ function ChatPageInner() {
       const fullMessage = contextPrefix ? `${contextPrefix}\n\n${msg}` : msg;
 
       const body = curMode === 'party'
-        ? { mode: 'party', agents: curPartyAgents, topic: fullMessage, model: curModelTier }
-        : { agentId: curAgent, message: fullMessage, model: curModelTier };
+        ? { mode: 'party', agents: curPartyAgents, topic: fullMessage, model: curModel }
+        : { agentId: curAgent, message: fullMessage, model: curModel };
 
       // NO abort signal — let the stream run even if user navigates away
       const res = await fetch('/api/chat', {
@@ -475,7 +494,7 @@ function ChatPageInner() {
 
         // Helper: save a response message to DB directly (used when component unmounted)
         const saveResponseToDB = (agentResponseMsg: Message) => {
-          saveSessionToDB(curSessionId, msg.slice(0, 50), curMode === 'party' ? 'party' : curAgent, curMode, curMode === 'party' ? curPartyAgents : undefined, curModelTier, [agentResponseMsg]);
+          saveSessionToDB(curSessionId, msg.slice(0, 50), curMode === 'party' ? 'party' : curAgent, curMode, curMode === 'party' ? curPartyAgents : undefined, curModel, [agentResponseMsg]);
         };
 
         while (true) {
@@ -587,7 +606,7 @@ function ChatPageInner() {
               content: r.response, timestamp: new Date().toISOString(), mode: 'party',
             };
             if (mountedRef.current) setMessages(prev => [...prev, agentMsg]);
-            saveSessionToDB(curSessionId, msg.slice(0, 50), 'party', curMode, curPartyAgents, curModelTier, [agentMsg]);
+            saveSessionToDB(curSessionId, msg.slice(0, 50), 'party', curMode, curPartyAgents, curModel, [agentMsg]);
           }
         } else {
           const agentMsg: Message = {
@@ -597,7 +616,7 @@ function ChatPageInner() {
             timestamp: new Date().toISOString(),
           };
           if (mountedRef.current) setMessages(prev => [...prev, agentMsg]);
-          saveSessionToDB(curSessionId, msg.slice(0, 50), curAgent, curMode, undefined, curModelTier, [agentMsg]);
+          saveSessionToDB(curSessionId, msg.slice(0, 50), curAgent, curMode, undefined, curModel, [agentMsg]);
         }
         if (data.ok) autoTask.agentChat(curMode === 'party' ? 'party' : curAgent, msg);
       }
@@ -905,15 +924,15 @@ function ChatPageInner() {
             <div className="relative">
               <button onClick={() => { setShowModelMenu(!showModelMenu); setShowStyleMenu(false); }}
                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium border transition-colors ${showModelMenu ? 'bg-[#1e1e21] border-[#333] text-gray-200' : 'bg-[#111113] border-[#1e1e21] text-gray-500 hover:text-gray-300'}`}>
-                <span className={MODEL_TIERS.find(m => m.id === modelTier)?.color}>{MODEL_TIERS.find(m => m.id === modelTier)?.label}</span>
+                <span className={availableModels.find(m => m.id === selectedModelId)?.color || 'text-gray-400'}>{availableModels.find(m => m.id === selectedModelId)?.name || selectedModelId}</span>
               </button>
               {showModelMenu && (
-                <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1d] border border-[#2a2a2d] rounded-lg shadow-xl py-1 min-w-[180px] z-50">
-                  {MODEL_TIERS.map(m => (
-                    <button key={m.id} onClick={() => { setModelTier(m.id); setShowModelMenu(false); }}
-                      className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-[#222] ${modelTier === m.id ? 'bg-[#1e1e21]' : ''}`}>
-                      <div><div className={`text-[11px] font-medium ${m.color}`}>{m.label}</div><div className="text-[9px] text-gray-600">{m.desc}</div></div>
-                      {modelTier === m.id && <span className="text-amber-500 text-xs">✓</span>}
+                <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1d] border border-[#2a2a2d] rounded-lg shadow-xl py-1 min-w-[220px] z-50 max-h-64 overflow-y-auto">
+                  {availableModels.map(m => (
+                    <button key={m.id} onClick={() => { setSelectedModelId(m.id); setShowModelMenu(false); }}
+                      className={`w-full text-left px-3 py-2 flex items-center justify-between hover:bg-[#222] ${selectedModelId === m.id ? 'bg-[#1e1e21]' : ''}`}>
+                      <div><div className={`text-[11px] font-medium ${m.color}`}>{m.name}</div><div className="text-[9px] text-gray-600">{m.provider}{m.desc ? ` · ${m.desc}` : ''}</div></div>
+                      {selectedModelId === m.id && <span className="text-amber-500 text-xs">✓</span>}
                     </button>
                   ))}
                 </div>
