@@ -8,6 +8,12 @@ import { notify } from '@/lib/notify';
 import { checkRateLimit, releaseRateLimit } from '@/lib/rate-limit';
 import { WORKSPACE, AGENTS_DIR } from '@/lib/paths';
 
+const MODEL_MAP: Record<string, string> = {
+  haiku: 'anthropic/claude-haiku-4-5',
+  sonnet: 'anthropic/claude-sonnet-4-6',
+  opus: 'anthropic/claude-opus-4-6',
+};
+
 /**
  * Extract readable text from any OpenClaw JSON response format.
  * Handles multiple response shapes:
@@ -201,12 +207,17 @@ function resolveAgentId(mcId: string): string {
 }
 
 // Run a single agent and return its response
-function runAgent(agentId: string, prompt: string, _model?: string): Promise<{ output: string; ok: boolean; duration: number; meta?: Record<string, unknown> }> {
+function runAgent(agentId: string, prompt: string, model?: string): Promise<{ output: string; ok: boolean; duration: number; meta?: Record<string, unknown> }> {
   const start = Date.now();
   return new Promise((resolve) => {
+    const env = { ...process.env };
+    if (model && MODEL_MAP[model]) {
+      env.OPENCLAW_MODEL = MODEL_MAP[model];
+    }
+
     const proc = spawn('openclaw', [
       'agent', '--agent', resolveAgentId(agentId), '--json', '-m', prompt,
-    ], { timeout: 120000 });
+    ], { timeout: 120000, env });
 
     let output = '';
     let errOutput = '';
@@ -233,8 +244,12 @@ function runAgent(agentId: string, prompt: string, _model?: string): Promise<{ o
 }
 
 // --- Streaming single agent ---
-function streamResponse(agent: string, prompt: string, _model?: string): Response {
+function streamResponse(agent: string, prompt: string, model?: string): Response {
   const encoder = new TextEncoder();
+  const env = { ...process.env };
+  if (model && MODEL_MAP[model]) {
+    env.OPENCLAW_MODEL = MODEL_MAP[model];
+  }
 
   const stream = new ReadableStream({
     start(controller) {
@@ -244,7 +259,7 @@ function streamResponse(agent: string, prompt: string, _model?: string): Respons
 
       send({ type: 'start', agent, mode: 'single' });
 
-      const proc = spawn('openclaw', ['agent', '--agent', resolveAgentId(agent), '--json', '-m', prompt], { timeout: 120000 });
+      const proc = spawn('openclaw', ['agent', '--agent', resolveAgentId(agent), '--json', '-m', prompt], { timeout: 120000, env });
       let output = '';
       let errBuf = '';
 
@@ -283,8 +298,12 @@ function streamResponse(agent: string, prompt: string, _model?: string): Respons
 }
 
 // --- Streaming party mode — each agent responds sequentially ---
-function streamPartyMode(agentIds: string[], topic: string, _model?: string): Response {
+function streamPartyMode(agentIds: string[], topic: string, model?: string): Response {
   const encoder = new TextEncoder();
+  const env = { ...process.env };
+  if (model && MODEL_MAP[model]) {
+    env.OPENCLAW_MODEL = MODEL_MAP[model];
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -317,7 +336,7 @@ function streamPartyMode(agentIds: string[], topic: string, _model?: string): Re
         // Stream this agent's response
         // Use 'main' agent for party mode to avoid IDENTITY.md conflicts — the prompt contains the agent's full identity
         const result = await new Promise<string>((resolve) => {
-          const proc = spawn('openclaw', ['agent', '--agent', 'main', '--json', '-m', agentPrompt], { timeout: 90000 });
+          const proc = spawn('openclaw', ['agent', '--agent', 'main', '--json', '-m', agentPrompt], { timeout: 90000, env });
           let output = '';
 
           proc.stdout?.on('data', (chunk: Buffer) => {
