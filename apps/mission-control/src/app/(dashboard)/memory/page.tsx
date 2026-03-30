@@ -76,21 +76,23 @@ export default function MemoryPage() {
   const [ragSearching, setRagSearching] = useState(false);
   const [ragAgent, setRagAgent] = useState('main');
   const [reindexing, setReindexing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/memory').then(r => r.json()).then(setEntries).catch(() => {});
-    fetch('/api/memory/longterm').then(r => r.json()).then(setLongTerm).catch(() => {});
-    // Load knowledge base entries
-    fetch('/api/search?q=insight+transcription+research&limit=30').then(r => r.json())
-      .then(data => { if (data.ok) setKnowledge(data.results); }).catch(() => {});
-    // Load RAG config/status
-    fetch('/api/memory/config').then(r => r.json()).then(data => {
-      if (data.ok) {
-        setRagStatus(data.agents || []);
-        setRagProvider(data.config?.provider || '');
-        setRagEnabled(data.config?.enabled || false);
-      }
-    }).catch(() => {});
+    setLoading(true);
+    Promise.all([
+      fetch('/api/memory').then(r => r.json()).then(setEntries).catch(() => {}),
+      fetch('/api/memory/longterm').then(r => r.json()).then(setLongTerm).catch(() => {}),
+      fetch('/api/search?q=insight+transcription+research&limit=30').then(r => r.json())
+        .then(data => { if (data.ok) setKnowledge(data.results); }).catch(() => {}),
+      fetch('/api/memory/config').then(r => r.json()).then(data => {
+        if (data.ok) {
+          setRagStatus(data.agents || []);
+          setRagProvider(data.config?.provider || '');
+          setRagEnabled(data.config?.enabled || false);
+        }
+      }).catch(() => {}),
+    ]).finally(() => setLoading(false));
     // Trigger index
     fetch('/api/search', { method: 'POST' }).catch(() => {});
   }, []);
@@ -160,6 +162,17 @@ export default function MemoryPage() {
   const totalWords = entries.reduce((s, e) => s + e.wordCount, 0) + (longTerm?.wordCount || 0);
   const totalChunks = ragStatus.reduce((s, a) => s + a.chunks, 0);
   const totalIndexed = ragStatus.reduce((s, a) => s + a.indexed, 0);
+
+  if (loading) {
+    return (
+      <div className="flex h-[calc(100vh-7rem)] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+          <span className="text-xs text-gray-500">Loading memories...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-4">

@@ -11,6 +11,7 @@
 const BASE = process.env.MC_URL || 'http://localhost:3000';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || 'test-token-for-api-tests';
 
+let originalGatewayToken = '';
 let passed = 0;
 let failed = 0;
 let skipped = 0;
@@ -109,8 +110,10 @@ async function testSettings() {
     assertEqual(data.value, 'test_value', 'value');
   });
 
-  // Set gateway_token for auth tests
+  // Save original gateway_token, then set test token for auth tests
   await test('Set gateway_token for auth tests', async () => {
+    const { data: existing } = await req('GET', '/api/settings?key=gateway_token');
+    originalGatewayToken = existing.value || '';
     const { status } = await req('POST', '/api/settings', { key: 'gateway_token', value: GATEWAY_TOKEN });
     assertEqual(status, 200, 'status');
   });
@@ -706,6 +709,12 @@ async function main() {
   await testMemoryConfig();
   await testMemoryRAG();
   await testContentPipeline();
+
+  // Restore original gateway_token
+  if (originalGatewayToken) {
+    await req('POST', '/api/settings', { key: 'gateway_token', value: originalGatewayToken });
+    console.log('\n🔄 Restored original gateway_token');
+  }
 
   // Report
   console.log('\n' + '─'.repeat(50));
