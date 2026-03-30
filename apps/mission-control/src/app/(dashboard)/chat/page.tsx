@@ -162,7 +162,10 @@ function ChatPageInner() {
   // Track which sessions are actively streaming (allows parallel chats with different agents)
   const [sendingSessions, setSendingSessions] = useState<Set<string>>(new Set());
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('chat_active_session'); } catch { return null; }
+  });
+  const [sessionsLoading, setSessionsLoading] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
@@ -192,16 +195,25 @@ function ChatPageInner() {
     }
   }, [agents, partyAgents.length]);
 
-  // Load sessions from DB on mount
+  // Persist active session to sessionStorage
   useEffect(() => {
-    fetch('/api/chat/sessions?limit=30').then(r => r.json()).then(data => {
+    try {
+      if (activeSessionId) sessionStorage.setItem('chat_active_session', activeSessionId);
+      else sessionStorage.removeItem('chat_active_session');
+    } catch {}
+  }, [activeSessionId]);
+
+  // Load sessions from DB on mount + auto-restore active session
+  useEffect(() => {
+    setSessionsLoading(true);
+    fetch('/api/chat/sessions?limit=30').then(r => r.json()).then(async (data) => {
       if (data.ok && data.sessions) {
         const toIso = (v: unknown) => {
           if (!v) return new Date().toISOString();
           if (typeof v === 'number') return new Date(v).toISOString();
           return String(v);
         };
-        setSessions(data.sessions.map((s: Record<string, unknown>) => ({
+        const loaded: ChatSession[] = data.sessions.map((s: Record<string, unknown>) => ({
           id: s.id as string,
           title: (s.title || 'Chat') as string,
           agentId: (s.agentId || s.agent_id || 'main') as string,
@@ -210,9 +222,42 @@ function ChatPageInner() {
           messageCount: (s.messageCount || s.message_count || 0) as number,
           createdAt: toIso(s.createdAt || s.created_at),
           updatedAt: toIso(s.updatedAt || s.updated_at),
-        })));
+        }));
+        setSessions(loaded);
+
+        // Auto-restore last active session
+        const restoreId = activeSessionId;
+        if (restoreId && loaded.find(s => s.id === restoreId) && messages.length === 0) {
+          const session = loaded.find(s => s.id === restoreId)!;
+          try {
+            const res = await fetch(`/api/chat/sessions/${restoreId}`);
+            const sData = await res.json();
+            if (sData.ok && sData.messages?.length > 0) {
+              const sessionMode = (sData.session?.mode || session.mode || 'single') as ChatMode;
+              setMessages(sData.messages.map((m: Record<string, unknown>) => ({
+                id: m.id, role: m.role, agentId: m.agentId || m.agent_id,
+                content: m.content || '', timestamp: toIso(m.createdAt || m.created_at),
+                mode: sessionMode === 'party' ? 'party' as const : undefined,
+                toolCalls: m.toolCalls || undefined,
+                thinkingContent: (m.thinkingContent || m.thinking_content || undefined) as string | undefined,
+                artifacts: m.artifacts || undefined,
+              })));
+              setMode(sessionMode);
+              if (sessionMode === 'single') {
+                setSelectedAgent(session.agentId === 'party' ? 'main' : session.agentId);
+              }
+              if (sData.session?.participants) {
+                const p = Array.isArray(sData.session.participants)
+                  ? sData.session.participants : JSON.parse(sData.session.participants);
+                setPartyAgents(p);
+              }
+            }
+          } catch {}
+        }
       }
-    }).catch(err => console.warn('[chat] load sessions failed:', err));
+    }).catch(err => console.warn('[chat] load sessions failed:', err))
+      .finally(() => setSessionsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -646,7 +691,11 @@ function ChatPageInner() {
         {/* Conversations list (main view) */}
         {sidebarView === 'chats' && (
           <div className="flex-1 overflow-y-auto">
-            {sessions.length === 0 ? (
+            {sessionsLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+              </div>
+            ) : sessions.length === 0 ? (
               <div className="text-center py-6 text-[10px] text-gray-700">No conversations yet</div>
             ) : (
               sessions.map(s => (
