@@ -16,6 +16,68 @@ interface Activity {
 interface OrgAgent {
   id: string; name: string; emoji: string; role: string; squad: string | null;
 }
+interface GatewaySession {
+  key: string;
+  kind: string;
+  channel: string;
+  updatedAt: number;
+  model: string;
+  totalTokens: number;
+  estimatedCostUsd: number;
+}
+interface ParsedSession extends GatewaySession {
+  agentId: string;
+  channelType: 'telegram' | 'gateway' | 'cron' | 'unknown';
+  channelLabel: string;
+}
+
+function parseSessionKey(key: string): { agentId: string; channelType: ParsedSession['channelType']; channelLabel: string } {
+  // key format: agent:<agentId>:<sessionType>
+  const parts = key.split(':');
+  if (parts.length < 3 || parts[0] !== 'agent') {
+    return { agentId: 'unknown', channelType: 'unknown', channelLabel: key };
+  }
+  const agentId = parts[1];
+  const sessionType = parts[2];
+  if (sessionType === 'telegram') {
+    return { agentId, channelType: 'telegram', channelLabel: `Telegram ${parts.slice(4).join(':')}` };
+  }
+  if (sessionType === 'main') {
+    return { agentId, channelType: 'gateway', channelLabel: 'Gateway' };
+  }
+  if (sessionType === 'cron') {
+    return { agentId, channelType: 'cron', channelLabel: `Cron ${parts.slice(3).join(':')}` };
+  }
+  return { agentId, channelType: 'unknown', channelLabel: sessionType };
+}
+
+const CHANNEL_ICONS: Record<ParsedSession['channelType'], string> = {
+  telegram: '\u{1F4F1}',
+  gateway: '\u{1F4AC}',
+  cron: '\u23F0',
+  unknown: '\u2753',
+};
+
+const CHANNEL_LABELS: Record<ParsedSession['channelType'], string> = {
+  telegram: 'Telegram',
+  gateway: 'Gateway',
+  cron: 'Cron',
+  unknown: 'Other',
+};
+
+function msAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function isRecent(ts: number): boolean {
+  return Date.now() - ts < 10 * 60 * 1000; // 10 minutes
+}
 
 const stateStyles: Record<string, { border: string; dot: string; label: string; glow: string }> = {
   active: { border: 'border-green-500/50', dot: 'bg-green-500', label: 'Working', glow: 'shadow-green-500/20 shadow-lg' },
@@ -51,18 +113,35 @@ function OfficePageInner() {
   const [allAgents, setAllAgents] = useState<AgentHealth[]>([]);
   const [orgAgents, setOrgAgents] = useState<OrgAgent[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [sessions, setSessions] = useState<ParsedSession[]>([]);
+  const [sessionsOpen, setSessionsOpen] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [popPos, setPopPos] = useState({ x: 0, y: 0 });
 
   const fetchData = useCallback(async () => {
     try {
-      const [healthRes, orgRes, actRes] = await Promise.all([
+      const [healthRes, orgRes, actRes, sessRes] = await Promise.all([
         fetch('/api/agents/health'), fetch('/api/org-structure'), fetch('/api/activities?limit=20'),
+        fetch('/api/gateway/sessions').catch(() => null),
       ]);
       const [healthData, orgData, actData] = await Promise.all([healthRes.json(), orgRes.json(), actRes.json()]);
       if (healthData.ok) setAllAgents(healthData.agents);
       if (orgData.ok) setOrgAgents(orgData.org.agents);
       setActivities(actData.ok ? actData.activities : Array.isArray(actData) ? actData : []);
+
+      if (sessRes && sessRes.ok) {
+        try {
+          const sessData = await sessRes.json();
+          if (sessData.ok && Array.isArray(sessData.sessions)) {
+            const parsed: ParsedSession[] = sessData.sessions.map((s: GatewaySession) => {
+              const { agentId, channelType, channelLabel } = parseSessionKey(s.key);
+              return { ...s, agentId, channelType, channelLabel };
+            });
+            parsed.sort((a, b) => b.updatedAt - a.updatedAt);
+            setSessions(parsed);
+          }
+        } catch { /* sessions endpoint unavailable, ignore */ }
+      }
     } catch (err) { console.error('[office] fetch error:', err); }
   }, []);
 
@@ -81,6 +160,17 @@ function OfficePageInner() {
 
   const getOrg = (id: string) => orgAgents.find(a => a.id === id || (id === 'main' && a.id === 'claw'));
   const getAgentsInRoom = (states: string[]) => agents.filter(a => states.includes(a.state));
+
+  // Build channel types per agent from sessions
+  const agentChannels: Record<string, Set<ParsedSession['channelType']>> = {};
+  const agentSessionRecency: Record<string, Record<string, number>> = {}; // agentId -> channelType -> latest updatedAt
+  for (const s of sessions) {
+    if (!agentChannels[s.agentId]) agentChannels[s.agentId] = new Set();
+    agentChannels[s.agentId].add(s.channelType);
+    if (!agentSessionRecency[s.agentId]) agentSessionRecency[s.agentId] = {};
+    const prev = agentSessionRecency[s.agentId][s.channelType] || 0;
+    if (s.updatedAt > prev) agentSessionRecency[s.agentId][s.channelType] = s.updatedAt;
+  }
 
   const activeCount = agents.filter(a => a.state === 'active').length;
   const idleCount = agents.filter(a => a.state === 'idle').length;
@@ -141,6 +231,16 @@ function OfficePageInner() {
                       <span className="text-[8px] text-gray-500">{style.label}</span>
                     </div>
                     {agent.model && <div className="text-[7px] text-gray-600">{agent.model.replace('claude-', '')}</div>}
+                    {agentChannels[agent.id] && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {Array.from(agentChannels[agent.id]).map(ch => (
+                          <span key={ch} className="flex items-center gap-0.5" title={CHANNEL_LABELS[ch]}>
+                            <span className={`w-1 h-1 rounded-full ${isRecent(agentSessionRecency[agent.id]?.[ch] || 0) ? 'bg-green-500' : 'bg-gray-600'}`} />
+                            <span className="text-[8px]">{CHANNEL_ICONS[ch]}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -170,7 +270,14 @@ function OfficePageInner() {
                           className={`flex flex-col items-center gap-0.5 p-2 rounded-lg border ${style.border} bg-[#111113] transition-transform hover:scale-105 ${selectedAgent === agent.id ? 'ring-1 ring-amber-500/50' : ''}`}>
                           <div className="text-lg">{AGENT_EMOJIS[agent.id] || org?.emoji || '🤖'}</div>
                           <div className="text-[9px] text-gray-300">{org?.name || agent.id}</div>
-                          <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                          <div className="flex items-center gap-1">
+                            <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                            {agentChannels[agent.id] && Array.from(agentChannels[agent.id]).map(ch => (
+                              <span key={ch} title={CHANNEL_LABELS[ch]}>
+                                <span className={`inline-block w-1 h-1 rounded-full ${isRecent(agentSessionRecency[agent.id]?.[ch] || 0) ? 'bg-green-500' : 'bg-gray-600'}`} />
+                              </span>
+                            ))}
+                          </div>
                         </button>
                       );
                     })}
@@ -182,6 +289,53 @@ function OfficePageInner() {
               );
             })}
           </div>
+
+          {/* Sessions panel */}
+          {sessions.length > 0 && (
+            <div className="bg-[#0d0d0f] rounded-xl border border-[#1e1e21] shrink-0">
+              <button
+                onClick={() => setSessionsOpen(!sessionsOpen)}
+                className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-[#111113] rounded-t-xl transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px]">{sessionsOpen ? '▾' : '▸'}</span>
+                  <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Sessions</span>
+                  <span className="text-[9px] text-gray-600 bg-[#1a1a1d] px-1.5 py-0.5 rounded">{sessions.length} active</span>
+                </div>
+                <div className="flex items-center gap-3 text-[9px] text-gray-600">
+                  <span>{sessions.reduce((sum, s) => sum + s.totalTokens, 0).toLocaleString()} tokens</span>
+                  <span>${sessions.reduce((sum, s) => sum + s.estimatedCostUsd, 0).toFixed(3)}</span>
+                </div>
+              </button>
+              {sessionsOpen && (
+                <div className="px-4 pb-3 space-y-1 max-h-[200px] overflow-y-auto">
+                  {sessions.map(s => {
+                    const org = getOrg(s.agentId);
+                    return (
+                      <div key={s.key} className="flex items-center gap-2 py-1.5 border-t border-[#1a1a1d] first:border-t-0">
+                        <span className="text-sm shrink-0">{AGENT_EMOJIS[s.agentId] || org?.emoji || '\u{1F916}'}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-300 font-medium">{org?.name || s.agentId}</span>
+                            <span className="flex items-center gap-0.5">
+                              <span className={`w-1.5 h-1.5 rounded-full ${isRecent(s.updatedAt) ? 'bg-green-500' : 'bg-gray-600'}`} />
+                              <span className="text-[9px]">{CHANNEL_ICONS[s.channelType]}</span>
+                              <span className="text-[9px] text-gray-500">{CHANNEL_LABELS[s.channelType]}</span>
+                            </span>
+                          </div>
+                          <div className="text-[8px] text-gray-600 truncate">{s.channelLabel}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-[9px] text-gray-500">{msAgo(s.updatedAt)}</div>
+                          <div className="text-[8px] text-gray-600">{s.totalTokens.toLocaleString()} tok &middot; ${s.estimatedCostUsd.toFixed(3)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Live Activity sidebar */}
@@ -246,7 +400,15 @@ function OfficePageInner() {
                     </div>
                     <div className="bg-[#0a0a0b] rounded-lg p-2 border border-[#1e1e21]">
                       <div className="text-[8px] text-gray-600">Sessions</div>
-                      <div className="text-[10px] text-gray-300">{selAgent.sessionCount}</div>
+                      <div className="text-[10px] text-gray-300 flex items-center gap-1">
+                        {selAgent.sessionCount}
+                        {agentChannels[selAgent.id] && Array.from(agentChannels[selAgent.id]).map(ch => (
+                          <span key={ch} className="flex items-center gap-0.5" title={CHANNEL_LABELS[ch]}>
+                            <span className={`w-1 h-1 rounded-full ${isRecent(agentSessionRecency[selAgent.id]?.[ch] || 0) ? 'bg-green-500' : 'bg-gray-600'}`} />
+                            <span className="text-[8px]">{CHANNEL_ICONS[ch]}</span>
+                          </span>
+                        ))}
+                      </div>
                     </div>
                     <div className="bg-[#0a0a0b] rounded-lg p-2 border border-[#1e1e21]">
                       <div className="text-[8px] text-gray-600">Idle</div>
