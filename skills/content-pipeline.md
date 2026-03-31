@@ -85,6 +85,53 @@ Media (images, documents) can be sent to the Telegram bot and attached to conten
 - Track performance in card comments after publishing
 - Create content in the user's preferred language (check USER.md)
 
+## Creating Drafts (for agents)
+
+Agents that cannot make HTTP calls to MC can create drafts by writing a `.md` file
+to their workspace's `drafts/` directory. The MC file watcher will detect the file
+and create a draft in the content pipeline automatically.
+
+**File location:** `drafts/<platform>-YYYY-MM-DD-<topic>.md`
+
+For squad agents, write to: `squads/<squad>/drafts/<platform>-YYYY-MM-DD-<topic>.md`
+
+**File format:**
+```markdown
+---
+platform: linkedin
+title: Short title for the draft
+agent: bragi
+status: review
+scheduledAt: 2026-03-31T09:00:00Z
+---
+
+Post content here...
+
+#hashtag1 #hashtag2
+```
+
+**Frontmatter fields:**
+| Field | Required | Description |
+|-------|----------|-------------|
+| `platform` | Yes | Target platform: `linkedin`, `twitter`, `instagram`, `blog`, `newsletter` |
+| `title` | No | Short title (auto-derived from first line if missing) |
+| `agent` | No | Agent ID that wrote the draft (auto-detected from path if missing) |
+| `status` | No | Draft status: `draft`, `review`, `approved` (defaults to `draft`) |
+| `scheduledAt` | No | ISO 8601 date for scheduled publishing |
+
+**What happens automatically:**
+1. MC detects the file via chokidar file watcher
+2. Frontmatter is parsed for metadata, body is extracted as content
+3. Hashtags are extracted from the last line (if it starts with `#`)
+4. A draft is created/updated in the content_drafts DB table
+5. A board card is created/updated on the Content Pipeline board
+6. An activity log entry is recorded
+7. The Content page refreshes in real-time via SSE
+
+**Stable IDs:** The filename (without `.md`) is used as the draft ID prefix
+(`draft_file_<filename>`). Updating the same file updates the existing draft
+instead of creating a duplicate.
+
 ## Creating a Post (step by step)
 
 1. Saga creates a card in "Ideas" with topic and target platform

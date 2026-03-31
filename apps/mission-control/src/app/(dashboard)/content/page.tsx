@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { MarkdownView } from '@/components/ui/markdown-view';
 import { autoTask } from '@/lib/tasks';
@@ -255,10 +255,56 @@ function ContentPageInner() {
   const [searchingImages, setSearchingImages] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
 
-  useEffect(() => {
-    fetchDrafts().then(setDrafts);
-    fetchCampaigns().then(setCampaigns);
+  // Live-update state
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [isLive, setIsLive] = useState(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+
+  const refreshData = useCallback(async () => {
+    const [d, c] = await Promise.all([fetchDrafts(), fetchCampaigns()]);
+    setDrafts(d);
+    setCampaigns(c);
+    setLastUpdate(new Date());
   }, []);
+
+  // Initial fetch + polling every 10 seconds
+  useEffect(() => {
+    refreshData();
+    pollingRef.current = setInterval(refreshData, 10_000);
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, [refreshData]);
+
+  // SSE listener — immediate refresh on draft file changes
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/sse');
+      esRef.current = es;
+      setIsLive(true);
+
+      es.onmessage = (evt) => {
+        try {
+          const d = JSON.parse(evt.data);
+          if (
+            d.type === 'file_change' &&
+            d.event?.path?.includes('drafts/')
+          ) {
+            refreshData();
+          }
+          if (d.type === 'board_event') {
+            refreshData();
+          }
+        } catch { /* skip malformed SSE */ }
+      };
+
+      es.onerror = () => { setIsLive(false); };
+    } catch { setIsLive(false); }
+
+    return () => {
+      if (es) { es.close(); esRef.current = null; setIsLive(false); }
+    };
+  }, [refreshData]);
 
   useEffect(() => {
     const checkAccounts = async () => {
@@ -683,6 +729,10 @@ function ContentPageInner() {
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-gray-200">Content Studio</h2>
+          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${isLive ? 'bg-green-900/40 text-green-400' : 'bg-gray-800 text-gray-500'}`}>
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${isLive ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`} />
+            {isLive ? 'Live' : `Updated ${lastUpdate.toLocaleTimeString()}`}
+          </span>
           <div className="flex gap-0.5 bg-[#111113] rounded-lg p-0.5 border border-[#1e1e21]">
             {(['studio', 'create', 'drafts', 'scheduled', 'accounts'] as ContentTab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
