@@ -130,9 +130,34 @@ export async function POST(req: NextRequest) {
 
 function generateWorkspaceCore(_provider: string) {
   mkdirSync(join(WORKSPACE, 'memory'), { recursive: true });
+  mkdirSync(join(WORKSPACE, 'drafts'), { recursive: true });
+  mkdirSync(join(WORKSPACE, 'projects', 'content-strategy'), { recursive: true });
 
   // Skip if already initialized
   if (existsSync(join(WORKSPACE, 'IDENTITY.md'))) return;
+
+  // Copy from workspace-template if available (ClawHalla templates)
+  const templateDir = join(process.cwd(), '..', '..', 'workspace-template');
+  if (existsSync(templateDir)) {
+    const copyTemplate = (filename: string) => {
+      const src = join(templateDir, filename);
+      const dest = join(WORKSPACE, filename);
+      if (existsSync(src) && !existsSync(dest)) {
+        mkdirSync(join(dest, '..'), { recursive: true });
+        writeFileSync(dest, readFileSync(src, 'utf-8'), 'utf-8');
+      }
+    };
+    // Core files
+    for (const f of ['IDENTITY.md', 'SOUL.md', 'AGENTS.md', 'USER.md', 'TOOLS.md', 'MEMORY.md', 'APPROVALS.md', 'HEARTBEAT.md']) {
+      copyTemplate(f);
+    }
+    // Project templates
+    copyTemplate('projects/content-strategy/linkedin-posts.json');
+    // If all core files were copied, we're done
+    if (existsSync(join(WORKSPACE, 'IDENTITY.md'))) return;
+  }
+
+  // Fallback: generate inline if templates not available
 
   // IDENTITY.md — OpenClaw template, pre-filled for Claw
   // Original: empty fields for agent to fill during BOOTSTRAP conversation
