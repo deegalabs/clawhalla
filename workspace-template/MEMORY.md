@@ -5,6 +5,14 @@
 
 ---
 
+## Onboarding Status
+
+- [ ] USER.md filled (name, timezone, context) — ask if empty on first interaction
+- [ ] Squad created and agents configured
+- [ ] Telegram channel working
+- [ ] First content published (if Social squad active)
+- [ ] MEMORY.md has real context (not just template)
+
 ## The Setup
 
 _(Auto-populated during onboarding. Update as the system evolves.)_
