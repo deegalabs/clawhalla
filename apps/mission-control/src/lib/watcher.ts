@@ -146,9 +146,22 @@ class WorkspaceWatcher {
       const agent = meta.agent || this.agentFromPath(relativePath);
       const status = meta.status || 'draft';
 
+      // Separate "## Imagem Sugerida" / "## Suggested Image" section from content
+      let postBody = body;
+      let imageUrl = meta.imageUrl || meta.image || null;
+      const imgSectionMatch = postBody.match(/\n##\s*(Imagem Sugerida|Suggested [Ii]mage)\s*\n([\s\S]*)$/);
+      if (imgSectionMatch) {
+        postBody = postBody.slice(0, imgSectionMatch.index).trimEnd();
+        // Extract URL from image section if present
+        if (!imageUrl) {
+          const urlMatch = imgSectionMatch[2].match(/https?:\/\/[^\s\n"'<>]+/);
+          if (urlMatch) imageUrl = urlMatch[0];
+        }
+      }
+
       // Extract hashtags from the last line if it starts with #
       let hashtags = '';
-      const lines = body.trimEnd().split('\n');
+      const lines = postBody.trimEnd().split('\n');
       const lastLine = lines[lines.length - 1]?.trim() || '';
       if (lastLine.startsWith('#') && /^[#\w\s]+$/.test(lastLine)) {
         hashtags = lastLine
@@ -174,10 +187,11 @@ class WorkspaceWatcher {
         db.update(contentDrafts)
           .set({
             title,
-            content: body,
+            content: postBody,
             platform,
             status,
             hashtags: hashtags || null,
+            mediaUrl: imageUrl,
             agentId: agent,
             scheduledAt: meta.scheduledAt ? new Date(meta.scheduledAt) : null,
             updatedAt: now,
@@ -189,11 +203,11 @@ class WorkspaceWatcher {
           .values({
             id: draftId,
             title,
-            content: body,
+            content: postBody,
             platform,
             status,
             hashtags: hashtags || null,
-            mediaUrl: null,
+            mediaUrl: imageUrl,
             scheduledAt: meta.scheduledAt ? new Date(meta.scheduledAt) : null,
             agentId: agent,
             pipelineId: null,
