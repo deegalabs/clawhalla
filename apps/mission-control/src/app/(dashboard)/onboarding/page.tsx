@@ -20,7 +20,7 @@ interface TestResult {
   model?: string;
 }
 
-const TOTAL_STEPS = 9;
+const TOTAL_STEPS = 10;
 
 /* ------------------------------------------------------------------ */
 /*  Onboarding Wizard                                                  */
@@ -60,6 +60,13 @@ function OnboardingWizard() {
   const [creating, setCreating] = useState(false);
   const [createProgress, setCreateProgress] = useState<string[]>([]);
   const [createDone, setCreateDone] = useState(false);
+
+  // Profile state
+  const [profileName, setProfileName] = useState('');
+  const [profileCallName, setProfileCallName] = useState('');
+  const [profileTimezone, setProfileTimezone] = useState('');
+  const [profileContext, setProfileContext] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
 
   // Save state
   const [saving, setSaving] = useState(false);
@@ -803,7 +810,85 @@ function OnboardingWizard() {
     );
   }
 
-  /* ---------- step 9: done ---------- */
+  /* ---------- step 9: profile ---------- */
+
+  if (step === 9) {
+    const handleSaveProfile = async () => {
+      setProfileSaving(true);
+      try {
+        await fetch('/api/settings/user-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: profileName,
+            callName: profileCallName || profileName,
+            timezone: profileTimezone,
+            notes: '',
+            context: profileContext,
+          }),
+        });
+      } catch {}
+      setProfileSaving(false);
+      setStep(10);
+    };
+
+    return (
+      <Wrapper>
+        <Progress />
+        <Card>
+          <h2 className="text-xl font-bold text-white mb-1">About You</h2>
+          <p className="text-gray-400 text-sm mb-6">
+            Help your agents understand who they&apos;re working for. You can update this later in Settings.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Your name</label>
+              <input type="text" value={profileName} onChange={e => setProfileName(e.target.value)}
+                placeholder="e.g. Daniel"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">What should agents call you?</label>
+              <input type="text" value={profileCallName} onChange={e => setProfileCallName(e.target.value)}
+                placeholder="e.g. Daniel, Boss, Chief (optional)"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Timezone</label>
+              <input type="text" value={profileTimezone} onChange={e => setProfileTimezone(e.target.value)}
+                placeholder="e.g. UTC-3, America/Sao_Paulo"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50" />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Tell your agents about yourself</label>
+              <textarea value={profileContext} onChange={e => setProfileContext(e.target.value)}
+                placeholder="What do you do? What are you building? What should agents know about you?"
+                rows={4}
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50 resize-none" />
+              <p className="text-[10px] text-gray-600 mt-1">This helps agents adapt tone, language, and context to your needs.</p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button onClick={() => setStep(10)}
+              className="flex-1 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-gray-400 hover:text-white transition-colors">
+              Skip for now
+            </button>
+            <button onClick={handleSaveProfile} disabled={profileSaving || !profileName.trim()}
+              className="flex-1 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-amber-400 transition-colors disabled:opacity-60">
+              {profileSaving ? 'Saving...' : 'Save & Continue'}
+            </button>
+          </div>
+        </Card>
+      </Wrapper>
+    );
+  }
+
+  /* ---------- step 10: done ---------- */
 
   return (
     <Wrapper>
