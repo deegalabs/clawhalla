@@ -1,14 +1,14 @@
 # ── Stage 1: Install dependencies ──────────────────────────────────
 FROM node:24-slim AS deps
 WORKDIR /app
-RUN npm install -g pnpm
-COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm@10.28.1
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
 RUN pnpm install --frozen-lockfile
 
 # ── Stage 2: Build ────────────────────────────────────────────────
 FROM node:24-slim AS builder
 WORKDIR /app
-RUN npm install -g pnpm
+RUN npm install -g pnpm@10.28.1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN mkdir -p data
@@ -24,8 +24,10 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs && \
-    npm install -g pnpm
+    adduser --system --uid 1001 --ingroup nodejs nextjs && \
+    apt-get update && apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/* && \
+    npm install -g pnpm@10.28.1
 
 # Copy standalone output + static assets
 COPY --from=builder /app/.next/standalone ./
@@ -43,10 +45,10 @@ COPY --from=builder /app/node_modules/better-sqlite3 ./node_modules/better-sqlit
 COPY docker-entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Data directory for SQLite (mount a volume here)
+# Data directory for SQLite (mount a volume here).
+# The entrypoint runs as root so it can chown the bind-mounted volume
+# (which Docker creates root-owned on Linux hosts) before dropping to nextjs.
 RUN mkdir -p data && chown nextjs:nodejs data
-
-USER nextjs
 
 EXPOSE 3000
 
