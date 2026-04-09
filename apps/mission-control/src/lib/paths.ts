@@ -17,3 +17,9 @@ export const AGENTS_DIR = join(OPENCLAW_HOME, 'agents');
 
 /** Cron jobs file */
 export const CRON_JOBS = join(OPENCLAW_HOME, 'cron', 'jobs.json');
+
+/** ClawHalla CLI state directory (~/.clawhalla) — managed by `clawhalla connect`. */
+export const CLAWHALLA_HOME = process.env.CLAWHALLA_HOME || join(HOME, '.clawhalla');
+
+/** Active SSH tunnels registry written by `clawhalla connect`. */
+export const CLAWHALLA_TUNNELS = join(CLAWHALLA_HOME, 'tunnels.json');
