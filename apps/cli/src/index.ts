@@ -2,6 +2,14 @@ import { Command } from 'commander';
 import { connect } from './commands/connect.js';
 import { disconnect } from './commands/disconnect.js';
 import { status } from './commands/status.js';
+import {
+  mcInstall,
+  mcStart,
+  mcStop,
+  mcStatus,
+  mcLogs,
+  mcOpen,
+} from './commands/mc.js';
 
 const program = new Command();
 
@@ -60,6 +68,58 @@ program
   .description('List active SSH tunnels and their local ports.')
   .action(async () => {
     const code = await status();
+    process.exit(code);
+  });
+
+/* ------------------------------- mc * -------------------------------- */
+
+const mc = program
+  .command('mc')
+  .description('Install and run Mission Control locally (install / start / stop / status / logs / open).');
+
+mc.command('install')
+  .description('Clone the clawhalla repo and install Mission Control dependencies.')
+  .action(async () => {
+    const code = await mcInstall();
+    process.exit(code);
+  });
+
+mc.command('start')
+  .description('Start Mission Control in the background (detached pnpm dev).')
+  .option('-p, --port <port>', 'Port to bind Mission Control on', (v) => Number.parseInt(v, 10), 3000)
+  .action(async (opts) => {
+    const code = await mcStart({ port: opts.port });
+    process.exit(code);
+  });
+
+mc.command('stop')
+  .description('Stop the Mission Control dev server.')
+  .action(async () => {
+    const code = await mcStop();
+    process.exit(code);
+  });
+
+mc.command('status')
+  .description('Show Mission Control process + HTTP status.')
+  .option('-p, --port <port>', 'Port Mission Control is bound to', (v) => Number.parseInt(v, 10), 3000)
+  .action(async (opts) => {
+    const code = await mcStatus({ port: opts.port });
+    process.exit(code);
+  });
+
+mc.command('logs')
+  .description('Tail the Mission Control log file.')
+  .option('-f, --follow', 'Follow the log output (tail -f)', false)
+  .action(async (opts) => {
+    const code = await mcLogs(!!opts.follow);
+    process.exit(code);
+  });
+
+mc.command('open')
+  .description('Open Mission Control in your default browser.')
+  .option('-p, --port <port>', 'Port Mission Control is bound to', (v) => Number.parseInt(v, 10), 3000)
+  .action(async (opts) => {
+    const code = await mcOpen({ port: opts.port });
     process.exit(code);
   });
 
