@@ -223,33 +223,41 @@ Keep it a tour, not a click-through of every feature. You're selling the fact th
 
 ## Block 5 — Install the hackathon squad
 
-MC → **Marketplace** (or **Squad Packs**) → pick **Hackathon** → install.
+MC → **Onboarding wizard** (or **Squads** page) → pick **Hackathon** → create.
 
-This copies the squad template from `squads/templates/hackathon/` into the container's workspace (`/home/node/clawd/squads/hackathon/`) and registers the agents with the gateway.
+This calls `POST /api/squads/create`, which for the hackathon squad:
 
-The template currently contains Thor (tech lead) and Tyr (security auditor). **Before the workshop, enrich it with:**
+1. Inserts 6 agents into MC's SQLite DB with proper tier/reports-to chain:
+   - **Thor** — Tech Lead (tier 1, squad lead)
+   - **Odin** — Product Lead (tier 2)
+   - **Freya** — Senior Developer (tier 2)
+   - **Tyr** — Security Auditor (tier 2)
+   - **Heimdall** — QA / Observer (tier 2)
+   - **Bragi** — Pitch & Demo (tier 2)
+2. Generates persona files per agent in `workspace/squads/hackathon/<agent>/` — `IDENTITY.md`, `SOUL.md`, `AGENTS.md`, `manifest.yaml` — built from the `AGENT_LORE` dictionary (Norse mythology, principles, communication style).
+3. Copies global skills into every agent's `skills/` dir from `skills/*.md` — `ai-agil.md`, `mission-control.md`, `content-pipeline.md`.
+4. Copies hackathon-specific skills from `squads/templates/hackathon/skills/` — `hackathon-playbook.md` (phases, wedge rule, decision hierarchy), `pitch-demo.md` (3-minute script, demo rules), `project-scaffold.md` (20-minute boot, default stack).
+5. Creates a "Hackathon Sprint" board with columns `Backlog / Doing / Testing / Done`.
+6. Seeds 6 starter cards — one per agent — each referencing its playbook by filename so the squad has an actionable first-run board.
+7. Registers the agents with the OpenClaw gateway (`openclaw.json` `agents.list` + `agentToAgent.allow`) and copies the main agent's auth profiles so every squad agent can call models without re-entering keys.
 
-- **Odin** — product lead / scope / user stories
-- **Freya** — senior developer / implementation
-- **Loki** — frontend / UX prototypes
-- **Bragi** — pitch / README / demo video script
-
-This enrichment is tracked as a separate task (P1 in the pre-workshop checklist).
+Show on stage: open `workspace/squads/hackathon/thor/` in the MC terminal and point at the generated files — the "team culture" is just markdown, and participants can edit it live.
 
 ## Block 6 — Create a project + board, capture a real idea
 
+The hackathon squad already gave you a seeded "Hackathon Sprint" board in Block 5 (6 starter cards, one per agent, each referencing its playbook). Now wrap it in a concrete project so the cards have context.
+
 1. MC → **Projects** → **New project**. Name: pick something concrete the event just discussed. Example: `ipe-builder-match`.
-2. MC → **Boards** → **New board**. Link it to the project. Columns: `Backlog` / `Doing` / `Review` / `Done`.
-3. Add 3 to 5 cards. Keep them small enough to produce visible movement in ~20 minutes.
+2. MC → **Boards** → open "Hackathon Sprint". Link it to the project you just created.
+3. Update the 6 seed cards with project-specific context, then add 2 or 3 feature cards on top so the board tells the story of the idea.
 
-Suggested seed cards for `ipe-builder-match`:
+Suggested feature cards for `ipe-builder-match`:
 
-- "Define tech stack (Freya + Thor — ADR document)"
-- "Build static landing page with skill-tag form (Loki)"
-- "Wire form to local JSON store (Freya)"
-- "Security review of user-input handling (Tyr)"
-- "Write demo README + pitch script (Bragi)"
-- "Define scope + user stories (Odin)"
+- "Landing page with skill-tag form" (assignee: **freya**, labels: `ui`, `dev`)
+- "Store submissions in SQLite" (assignee: **freya**, labels: `dev`)
+- "Match users by overlapping tags" (assignee: **thor**, labels: `architecture`)
+
+The 6 seed cards already cover the lifecycle: Odin locks scope → Thor slices the wedge → Freya scaffolds → Tyr audits deps → Heimdall writes the smoke-test checklist → Bragi drafts the pitch. You don't need to invent the process on stage; it's the skills you shipped.
 
 ## Block 7 — Dispatch the first task
 
@@ -264,7 +272,8 @@ Watch the board. Cards should flow from Backlog → Doing → Review → Done as
 - **Agents commit code themselves.** They use git credentials pre-provisioned in the container vault.
 - **MC is the window, not the engine.** The laptop can close — as long as the SSH tunnel is alive, agents keep running on the VPS. Reconnect later with `clawhalla connect` to resume the view.
 - **Approval gates are live.** Any action that leaves the VPS (push to a public repo, send a message, call an external API) pauses for approval via Telegram. Show the Telegram prompt in the projector.
-- **Each agent has a personality file.** Open `squads/hackathon/thor.prompt.md` in an editor on the laptop — show that the "team culture" is just markdown.
+- **Each agent has a full persona on disk.** Open `workspace/squads/hackathon/thor/IDENTITY.md` (or `SOUL.md`, `AGENTS.md`) in an editor on the laptop — show that the "team culture" is just markdown, generated from `AGENT_LORE` at squad creation. Same for every other agent in the squad.
+- **The playbooks are skills.** Open `workspace/squads/hackathon/thor/skills/hackathon-playbook.md` — point at the "wedge rule" and "decision hierarchy" sections. Every agent in the squad has the same playbook loaded.
 
 ## Block 8 — Cleanup
 
@@ -372,16 +381,17 @@ Tested end-to-end against a workshop VPS on 2026-04-08 (Linux host).
 Full Path A flow green:
 
 - `./scripts/install-cli.sh` — installs the CLI into `~/.local/bin`.
-- `clawhalla connect root@<vps>:<port> --bind 0.0.0.0` — probes, auto-provisions the managed SSH key, installs it on the remote, opens the tunnel.
+- `clawhalla connect root@<vps>:<port> --no-bridge --bind 0.0.0.0` — probes, auto-provisions the managed SSH key, installs it on the remote, opens the tunnel against the bare-OpenClaw single-port layout.
 - `docker compose -f docker-compose.mc.yml up -d` — MC container boots from a root-owned bind mount, the entrypoint self-heals the volume ownership, migrations run, health shows `gateway: true`.
 - Authenticated `POST /tools/invoke` from inside the MC container round-trips through the tunnel to the real VPS gateway (bearer auth accepted, structured JSON error returned for an unknown tool name — proof the gateway actually handled the request).
 - `clawhalla disconnect --all` — tears down and removes the state entry.
+- Hackathon squad ships with 6 agents (Thor, Odin, Freya, Tyr, Heimdall, Bragi), 3 global skills (ai-agil, mission-control, content-pipeline), and 3 hackathon-specific skills (playbook, pitch-demo, project-scaffold). `POST /api/squads/create` generates the persona files, seeds the board with 6 assigned cards, and registers the agents in the gateway.
 
 What has **not** been validated yet:
 
 - MC native (`pnpm dev`) reaching the tunnel (Path B).
-- Hackathon squad installation against this specific OpenAI-backed gateway (the model configured is `openai/gpt-5.1-codex`, not Anthropic — some squad prompts may need adjustment).
-- Real agent dispatch producing code commits.
+- Hackathon squad behavior against an OpenAI-backed gateway (the workshop VPS model is `openai/gpt-5.1-codex`, not Anthropic — `AGENT_LORE` was written with Claude in mind, so tone may drift but the roles still work).
+- Real agent dispatch producing code commits end-to-end on a workshop VPS.
 - The `installKeyOnRemote` password branch against a fresh VPS with a human at the keyboard (unit-tested in isolation, but not rehearsed with a real password — needs one live dry-run before the workshop).
 
 These are the next things to close.
