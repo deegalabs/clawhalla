@@ -1,0 +1,31 @@
+{
+  "name": "@clawhalla/cli",
+  "version": "0.1.0",
+  "description": "ClawHalla CLI — manage SSH tunnels from your laptop to remote OpenClaw gateways",
+  "bin": {
+    "clawhalla": "./bin/clawhalla.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepare": "tsc"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
