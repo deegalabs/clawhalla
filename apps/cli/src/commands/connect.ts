@@ -119,6 +119,24 @@ export async function connect(
     `Allocated local ports  ${localGatewayPort} (gateway) → ${localBridgePort} (bridge) on ${bindHost}`,
   );
 
+  // Warn loudly when the user binds to 0.0.0.0 — anyone on the same LAN
+  // (coworking wifi, hotel network, conference hall) can reach the forward
+  // and will be one gateway token away from the remote OpenClaw instance.
+  if (bindHost === '0.0.0.0') {
+    log.warn(
+      'Binding to 0.0.0.0 — the tunnel is reachable from every machine on your LAN.',
+    );
+    log.dim(
+      '  Anyone on the same network who guesses the gateway token reaches your VPS.',
+    );
+    log.dim(
+      '  Use this flag ONLY on trusted networks (home wifi, personal hotspot).',
+    );
+    log.dim(
+      '  For Path B (native Mission Control) drop --bind and the default 127.0.0.1 is safer.',
+    );
+  }
+
   // 3. Spawn detached ssh tunnel.
   const remoteGatewayPort = options.remoteGatewayPort ?? BASE_GATEWAY_PORT;
   const remoteBridgePort = options.remoteBridgePort ?? BASE_BRIDGE_PORT;
