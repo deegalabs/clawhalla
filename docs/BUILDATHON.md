@@ -117,7 +117,7 @@ One command, directly against the VPS IP and SSH port the organizer handed you:
 clawhalla connect root@<vps-ip>:<ssh-port> \
   --alias ipe \
   --remote-gateway-port 47716 \
-  --remote-bridge-port 47717 \
+  --no-bridge \
   --bind 0.0.0.0
 ```
 
@@ -125,11 +125,13 @@ clawhalla connect root@<vps-ip>:<ssh-port> \
   the container can reach the forward through `host.docker.internal`.
   On **Path B** (MC native), drop that flag — the default `127.0.0.1`
   bind is safer. See the security note at the bottom of this doc.
-- `--remote-bridge-port 47717` is still passed so the flags match what
-  a "real" deployment would use. Bare OpenClaw on the workshop image
-  runs single-port (47717 does not exist on the VPS), so the local
-  bind on 18790 is a no-op — MC only hits 18789 for the demo. A future
-  `--no-bridge` flag will clean this up.
+- `--no-bridge` skips the WS bridge forward. Bare OpenClaw on the
+  workshop image only publishes the HTTP gateway port (47716); the WS
+  bridge port (47717) is not exposed. Without this flag, ssh would
+  fail with `ExitOnForwardFailure` when the second `-L` can't bind.
+  MC only hits the HTTP gateway for the demo, so nothing is lost —
+  the live activity stream (which uses the bridge) is disabled in
+  this mode, and that's fine for the workshop.
 
 **First run on a fresh laptop** prompts for the VPS password exactly
 once. Behind the scenes the CLI generates a managed ed25519 key,
@@ -146,13 +148,13 @@ Connecting to root@<vps-ip> as "ipe"
 root@<vps-ip>'s password: ••••••••
 ✓  Key installed. Re-probing...
 ✓  SSH reachable.
-·  Allocated local ports  18789 (gateway) → 18790 (bridge) on 0.0.0.0
+·  Allocated local port   18789 (gateway only, --no-bridge) on 0.0.0.0
 ·  Spawning SSH tunnel (detached)...
 ✓  Tunnel up (pid <pid>)
 
   Alias              ipe
   Local gateway      http://0.0.0.0:18789
-  Local bridge       http://0.0.0.0:18790
+  Local bridge       disabled (--no-bridge)
   Remote target      root@<vps-ip>:<ssh-port>
 
   Mission Control should point OPENCLAW_GATEWAY to http://host.docker.internal:18789

@@ -13,6 +13,13 @@ export interface ConnectOptions {
   skipProbe?: boolean;
   bindHost?: string;
   noAutoKey?: boolean;
+  /**
+   * Skip the WS bridge forward. Use for bare-OpenClaw VPSs that only expose
+   * the HTTP gateway port (e.g. the ipe.city workshop boxes where only
+   * 47716 is published). Mission Control still works — only features that
+   * rely on the WS bridge (live activity stream) are disabled.
+   */
+  noBridge?: boolean;
 }
 
 /**
@@ -112,12 +119,20 @@ export async function connect(
     log.ok('SSH reachable.');
   }
 
-  // 2. Allocate a free local port pair.
-  const { gateway: localGatewayPort, bridge: localBridgePort } = await allocatePortPair();
+  // 2. Allocate a free local port pair (or gateway-only when --no-bridge).
+  const { gateway: localGatewayPort, bridge: localBridgePort } = await allocatePortPair({
+    skipBridge: options.noBridge,
+  });
   const bindHost = options.bindHost ?? '127.0.0.1';
-  log.info(
-    `Allocated local ports  ${localGatewayPort} (gateway) → ${localBridgePort} (bridge) on ${bindHost}`,
-  );
+  if (localBridgePort != null) {
+    log.info(
+      `Allocated local ports  ${localGatewayPort} (gateway) → ${localBridgePort} (bridge) on ${bindHost}`,
+    );
+  } else {
+    log.info(
+      `Allocated local port   ${localGatewayPort} (gateway only, --no-bridge) on ${bindHost}`,
+    );
+  }
 
   // Warn loudly when the user binds to 0.0.0.0 — anyone on the same LAN
   // (coworking wifi, hotel network, conference hall) can reach the forward
@@ -139,7 +154,9 @@ export async function connect(
 
   // 3. Spawn detached ssh tunnel.
   const remoteGatewayPort = options.remoteGatewayPort ?? BASE_GATEWAY_PORT;
-  const remoteBridgePort = options.remoteBridgePort ?? BASE_BRIDGE_PORT;
+  const remoteBridgePort = options.noBridge
+    ? null
+    : (options.remoteBridgePort ?? BASE_BRIDGE_PORT);
 
   log.info('Spawning SSH tunnel (detached)...');
   let spawned: { pid: number; argv: string[] };
@@ -199,7 +216,11 @@ export async function connect(
   console.log('');
   log.kv('Alias             ', alias);
   log.kv('Local gateway     ', `http://${bindHost}:${localGatewayPort}`);
-  log.kv('Local bridge      ', `http://${bindHost}:${localBridgePort}`);
+  if (localBridgePort != null) {
+    log.kv('Local bridge      ', `http://${bindHost}:${localBridgePort}`);
+  } else {
+    log.kv('Local bridge      ', 'disabled (--no-bridge)');
+  }
   log.kv('Remote target     ', `${formatTargetForSsh(target)}:${target.port}`);
   console.log('');
   const mcHost = bindHost === '0.0.0.0' ? 'host.docker.internal' : bindHost;

@@ -25,21 +25,30 @@ export function isPortFree(port: number): Promise<boolean> {
  * Allocate a free (gateway, bridge) port pair, starting at BASE and stepping
  * by PORT_STEP. Skips pairs already reserved by a persisted tunnel, even if
  * the PID is dead — `pruneDead` should be called beforehand to clean stale state.
+ *
+ * When `skipBridge` is true, only the gateway port is allocated and `bridge`
+ * comes back as `null`. This is the path used for bare-OpenClaw VPSs that
+ * only expose the HTTP gateway port (e.g. the ipe.city workshop boxes).
  */
-export async function allocatePortPair(): Promise<{
+export async function allocatePortPair(options: { skipBridge?: boolean } = {}): Promise<{
   gateway: number;
-  bridge: number;
+  bridge: number | null;
 }> {
   const reserved = new Set<number>();
   for (const t of listTunnels()) {
     reserved.add(t.localGatewayPort);
-    reserved.add(t.localBridgePort);
+    if (t.localBridgePort != null) reserved.add(t.localBridgePort);
   }
 
   for (let i = 0; i < 100; i++) {
     const gateway = BASE_GATEWAY_PORT + i * PORT_STEP;
     const bridge = BASE_BRIDGE_PORT + i * PORT_STEP;
-    if (reserved.has(gateway) || reserved.has(bridge)) continue;
+    if (reserved.has(gateway)) continue;
+    if (options.skipBridge) {
+      if (await isPortFree(gateway)) return { gateway, bridge: null };
+      continue;
+    }
+    if (reserved.has(bridge)) continue;
     // Both ports must be free on the OS.
     const [freeG, freeB] = await Promise.all([
       isPortFree(gateway),
@@ -48,6 +57,6 @@ export async function allocatePortPair(): Promise<{
     if (freeG && freeB) return { gateway, bridge };
   }
   throw new Error(
-    `Could not find a free local port pair after 100 attempts (base ${BASE_GATEWAY_PORT}).`,
+    `Could not find a free local port ${options.skipBridge ? 'gateway' : 'pair'} after 100 attempts (base ${BASE_GATEWAY_PORT}).`,
   );
 }

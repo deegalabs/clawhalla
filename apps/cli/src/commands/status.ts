@@ -33,9 +33,15 @@ function printTunnel(t: Tunnel): void {
   console.log(
     `    gateway  ${colors.cyan}http://${bind}:${t.localGatewayPort}${colors.reset}  ${colors.dim}(remote :${t.remoteGatewayPort})${colors.reset}`,
   );
-  console.log(
-    `    bridge   ${colors.cyan}http://${bind}:${t.localBridgePort}${colors.reset}   ${colors.dim}(remote :${t.remoteBridgePort})${colors.reset}`,
-  );
+  if (t.localBridgePort != null && t.remoteBridgePort != null) {
+    console.log(
+      `    bridge   ${colors.cyan}http://${bind}:${t.localBridgePort}${colors.reset}   ${colors.dim}(remote :${t.remoteBridgePort})${colors.reset}`,
+    );
+  } else {
+    console.log(
+      `    bridge   ${colors.dim}disabled (--no-bridge)${colors.reset}`,
+    );
+  }
   console.log(
     `    pid ${t.pid}  ${colors.dim}·  up ${uptime}${colors.reset}`,
   );

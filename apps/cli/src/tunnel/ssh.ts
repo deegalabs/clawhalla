@@ -9,9 +9,11 @@ export interface SshTarget {
 export interface TunnelSpec {
   target: SshTarget;
   localGatewayPort: number;
-  localBridgePort: number;
+  /** null/undefined when the remote only exposes the gateway (e.g. bare OpenClaw VPSs). */
+  localBridgePort?: number | null;
   remoteGatewayPort: number;
-  remoteBridgePort: number;
+  /** null/undefined when the remote only exposes the gateway. */
+  remoteBridgePort?: number | null;
   identityFile?: string;
   /**
    * Local interface to bind the forwarded ports on. Defaults to 127.0.0.1.
@@ -105,10 +107,18 @@ export function spawnTunnel(spec: TunnelSpec): {
   args.push(
     '-L',
     `${bindPrefix}${localGatewayPort}:127.0.0.1:${remoteGatewayPort}`,
-    '-L',
-    `${bindPrefix}${localBridgePort}:127.0.0.1:${remoteBridgePort}`,
-    formatTargetForSsh(target),
   );
+  // Only forward the WS bridge when both local and remote bridge ports are set.
+  // Bare-OpenClaw VPSs (e.g. ipe.city workshop boxes) only expose the HTTP
+  // gateway; adding a second -L to a closed port would fail with
+  // ExitOnForwardFailure and tear the whole tunnel down.
+  if (localBridgePort != null && remoteBridgePort != null) {
+    args.push(
+      '-L',
+      `${bindPrefix}${localBridgePort}:127.0.0.1:${remoteBridgePort}`,
+    );
+  }
+  args.push(formatTargetForSsh(target));
 
   const child = spawn('ssh', args, {
     detached: true,

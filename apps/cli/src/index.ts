@@ -23,6 +23,10 @@ program
   .option('--skip-probe', 'Skip the BatchMode SSH probe (useful for password auth)')
   .option('--no-auto-key', 'Do not auto-generate or install a ClawHalla-managed SSH key')
   .option(
+    '--no-bridge',
+    'Skip the WS bridge forward. Use for bare-OpenClaw VPSs that only publish the HTTP gateway port (e.g. the ipe.city workshop boxes).',
+  )
+  .option(
     '--bind <host>',
     'Local interface to bind the forwarded ports on. Use 0.0.0.0 if Mission Control runs in a Docker container on Linux (default: 127.0.0.1)',
     '127.0.0.1',
@@ -36,6 +40,7 @@ program
       skipProbe: opts.skipProbe,
       bindHost: opts.bind,
       noAutoKey: opts.autoKey === false,
+      noBridge: opts.bridge === false,
     });
     process.exit(code);
   });

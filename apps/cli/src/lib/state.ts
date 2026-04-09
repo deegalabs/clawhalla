@@ -8,9 +8,11 @@ export interface Tunnel {
   port: number; // remote SSH port (default 22)
   bindHost: string; // local interface the forwards are bound on (default 127.0.0.1)
   localGatewayPort: number; // local port forwarded to remote 18789 (HTTP)
-  localBridgePort: number; // local port forwarded to remote 18790 (WS bridge)
+  /** null when --no-bridge was used (remote doesn't expose the WS bridge port) */
+  localBridgePort: number | null; // local port forwarded to remote 18790 (WS bridge)
   remoteGatewayPort: number; // default 18789
-  remoteBridgePort: number; // default 18790
+  /** null when --no-bridge was used */
+  remoteBridgePort: number | null; // default 18790
   pid: number;
   connectedAt: string; // ISO8601
 }
