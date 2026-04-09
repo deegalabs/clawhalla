@@ -69,9 +69,12 @@ const SAMPLE_CARDS: Record<string, { title: string; description: string; column:
     { title: 'Explore Mission Control', description: 'Check out the Dashboard, Chat, and Settings pages. Everything you need to manage your AI squad is here.', column: 'doing', assignee: 'claw', labels: ['getting-started'] },
   ],
   hackathon: [
-    { title: 'Define project scope', description: 'Outline what you want to build. Break it down into stories and tasks for your agents.', column: 'backlog', priority: 'high', labels: ['planning'] },
-    { title: 'Set up dev environment', description: 'Configure your local environment, repos, and CI/CD pipeline.', column: 'backlog', labels: ['setup'] },
-    { title: 'Build MVP prototype', description: 'Focus on core functionality first. Ship fast, iterate later.', column: 'backlog', priority: 'high', labels: ['dev'] },
+    { title: 'Lock the one-sentence pitch', description: 'Odin: write the single sentence "We are building X for Y so that Z." If the squad cannot agree on the sentence, there is no scope yet. Do this before any code is written.', column: 'backlog', assignee: 'odin', priority: 'high', labels: ['planning', 'scope'] },
+    { title: 'Slice the wedge', description: 'Thor: break the pitch into the thinnest vertical slice that demos end-to-end. Anything not on the critical path moves to a "parking-lot" label for later.', column: 'backlog', assignee: 'thor', priority: 'high', labels: ['planning', 'architecture'] },
+    { title: 'Scaffold the project', description: 'Freya: initialize the repo following skills/project-scaffold.md. 20 minutes from empty directory to "pnpm dev" running cleanly. Commit scaffold + README before writing feature code.', column: 'backlog', assignee: 'freya', priority: 'high', labels: ['setup', 'dev'] },
+    { title: 'Dependency audit', description: 'Tyr: run `pnpm audit` (or equivalent) on the fresh scaffold. Log any high/critical advisories as P1 cards. Repeat after every new dependency.', column: 'backlog', assignee: 'tyr', labels: ['security'] },
+    { title: 'Smoke-test checklist', description: 'Heimdall: write the 5 happy-path clicks that prove the wedge works. Run them every 30 minutes during the build phase.', column: 'backlog', assignee: 'heimdall', labels: ['qa'] },
+    { title: 'Draft the 3-minute pitch', description: 'Bragi: follow skills/pitch-demo.md. Hook → stakes → reveal → live demo → tech moment → ask. Rehearse once in the final hour with the actual demo running.', column: 'backlog', assignee: 'bragi', labels: ['pitch'] },
   ],
   social: [
     { title: 'Write launch announcement', description: 'Draft a post announcing your ClawHalla setup. Share what you are building with AI agents.', column: 'ideas', labels: ['content'] },
