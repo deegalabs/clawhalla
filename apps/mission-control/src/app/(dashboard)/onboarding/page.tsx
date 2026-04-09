@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { SQUADS } from '@/lib/squads';
 import type { SquadDefinition } from '@/lib/squads';
+import { ConnectivityBanner } from '@/components/connectivity-banner';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -938,6 +939,7 @@ function OnboardingWizard() {
 function Wrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[#0a0a0b] flex flex-col items-center justify-center p-4">
+      <ConnectivityBanner />
       {children}
     </div>
   );
