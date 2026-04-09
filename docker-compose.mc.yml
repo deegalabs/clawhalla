@@ -1,0 +1,45 @@
+# ClawHalla — Mission Control only (workshop / remote-VPS scenario)
+#
+# Use this compose when OpenClaw runs on a REMOTE machine (e.g. a VPS) and you
+# want Mission Control to control it from your laptop. The transport is an SSH
+# tunnel managed by the `clawhalla` CLI (see apps/cli/).
+#
+# Flow:
+#   1. On the remote VPS, OpenClaw is already running (gateway on 127.0.0.1:18789).
+#   2. On your laptop, open a tunnel:
+#        clawhalla connect <user>@<vps-host>
+#      This forwards local 127.0.0.1:18789 → VPS 127.0.0.1:18789 over SSH.
+#   3. Start Mission Control:
+#        docker compose -f docker-compose.mc.yml up -d
+#   4. Open http://localhost:3333
+#
+# Because the MC container reaches the tunnel on the HOST, we use
+# host.docker.internal with host-gateway so it resolves on Linux as well as
+# macOS / Windows Docker Desktop.
+#
+# Env vars (set in .env):
+#   GATEWAY_TOKEN   — the token OpenClaw on the VPS expects (Bearer auth)
+#   MC_HTTP_PORT    — optional, host port for MC (default 3333)
+
+services:
+  mission-control:
+    build:
+      context: ./apps/mission-control
+      dockerfile: Dockerfile
+    image: clawhalla-mc:local
+    container_name: clawhalla-mc
+    restart: unless-stopped
+    ports:
+      - "${MC_HTTP_PORT:-3333}:3000"
+    environment:
+      # The tunnel on the host is reachable via host.docker.internal once
+      # we add the extra_hosts entry below.
+      - GATEWAY_URL=${GATEWAY_URL:-http://host.docker.internal:18789}
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN:-}
+      - NODE_ENV=production
+    extra_hosts:
+      # Required on Linux. Noop on macOS / Windows (already resolved).
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persist MC's SQLite + uploads across restarts.
+      - ./volumes/mission-control:/app/data

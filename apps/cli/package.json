@@ -1,0 +1,56 @@
+{
+  "name": "@clawhalla/cli",
+  "version": "0.1.0",
+  "description": "ClawHalla CLI — manage SSH tunnels from your laptop to remote OpenClaw gateways",
+  "keywords": [
+    "clawhalla",
+    "openclaw",
+    "ssh",
+    "tunnel",
+    "cli",
+    "mission-control",
+    "agents"
+  ],
+  "homepage": "https://github.com/deegalabs/clawhalla/tree/main/apps/cli",
+  "bugs": {
+    "url": "https://github.com/deegalabs/clawhalla/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deegalabs/clawhalla.git",
+    "directory": "apps/cli"
+  },
+  "license": "MIT",
+  "author": "Deega Labs",
+  "bin": {
+    "clawhalla": "./bin/clawhalla.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepare": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
